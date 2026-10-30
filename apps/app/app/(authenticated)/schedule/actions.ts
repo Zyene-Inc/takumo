@@ -4,6 +4,7 @@ import { auth } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
 import { revalidatePath } from "next/cache";
 import { authorize } from "@/lib/access";
+import { track } from "@/lib/analytics";
 import { replan } from "@/lib/schedule/plan";
 import { checkToday, ISO_DAY } from "@/lib/schedule/request";
 
@@ -31,6 +32,11 @@ export const replanShop = async (today: string): Promise<BoardActionResult> => {
   }
   const { userId } = await auth();
   const result = await replan(access.orgId, userId, start);
+  track("plan_built", {
+    orgId: access.orgId,
+    userId,
+    properties: { ok: result.ok },
+  });
   if (result.ok) {
     refresh();
     return { ok: true };

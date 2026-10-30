@@ -14,6 +14,9 @@ export const NO_ACCESS_MESSAGE: Record<Permission, string> = {
   "knowledge:write": `Only ${rolesWith("knowledge:write").join(", ")} roles can add or remove documents. Ask an admin to change your role.`,
   "knowledge:review": `Only ${rolesWith("knowledge:review").join(" or ")}s can approve facts. Ask an admin to change your role.`,
   "floor:write": `Only ${rolesWith("floor:write").join(", ")} roles can log shop-floor times. Ask an admin to change your role.`,
+  "billing:manage": "Only the shop's owner or an admin can change the plan.",
+  "connectors:manage":
+    "Only the shop's owner or an admin can connect outside systems.",
 };
 
 /** The current shop and what the signed-in user may change in it. */
@@ -27,6 +30,8 @@ export const getAccess = async () => {
     canEditKnowledge: can(role, "knowledge:write"),
     canReviewFacts: can(role, "knowledge:review"),
     canLogFloor: can(role, "floor:write"),
+    canManageBilling: can(role, "billing:manage"),
+    canManageConnectors: can(role, "connectors:manage"),
   };
 };
 

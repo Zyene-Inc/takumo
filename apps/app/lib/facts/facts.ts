@@ -1,6 +1,7 @@
 import "server-only";
 
 import { database, forOrg, Prisma } from "@repo/database";
+import { track } from "../analytics";
 import {
   matchCustomer,
   matchMaterial,
@@ -348,6 +349,11 @@ export const proposeFact = async (
           noteId: proposal.noteId ?? null,
         },
         select: { id: true, number: true },
+      });
+      track("fact_proposed", {
+        orgId,
+        userId: proposal.statedBy,
+        properties: { source: proposal.source, attribute: proposal.attribute },
       });
       return {
         ok: true,

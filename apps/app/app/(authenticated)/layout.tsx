@@ -1,9 +1,12 @@
 import { listUserOrganizations, withAuth } from "@repo/auth/server";
+import { database } from "@repo/database";
 import { SidebarProvider } from "@repo/design-system/components/ui/sidebar";
 import { secure } from "@repo/security";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { env } from "@/env";
+import { BillingBanner } from "./components/billing-banner";
+import { Identify } from "./components/identify";
 import { GlobalSidebar } from "./components/sidebar";
 
 interface AppLayoutProperties {
@@ -22,7 +25,15 @@ const AppLayout = async ({ children }: AppLayoutProperties) => {
     redirect("/create-shop");
   }
 
-  const organizations = await listUserOrganizations(user.id);
+  const [organizations, shop] = await Promise.all([
+    listUserOrganizations(user.id),
+    database.org.findUnique({
+      where: { id: organizationId },
+      select: { name: true, plan: true },
+    }),
+  ]);
+  const name =
+    [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email;
 
   return (
     <SidebarProvider>
@@ -30,13 +41,20 @@ const AppLayout = async ({ children }: AppLayoutProperties) => {
         currentOrganizationId={organizationId}
         organizations={organizations}
         user={{
-          name:
-            [user.firstName, user.lastName].filter(Boolean).join(" ") ||
-            user.email,
+          name,
           email: user.email,
           imageUrl: user.profilePictureUrl,
         }}
       >
+        <Identify
+          shop={{
+            id: organizationId,
+            name: shop?.name ?? "",
+            plan: shop?.plan ?? "trial",
+          }}
+          user={{ id: user.id, email: user.email, name }}
+        />
+        <BillingBanner orgId={organizationId} />
         {children}
       </GlobalSidebar>
     </SidebarProvider>

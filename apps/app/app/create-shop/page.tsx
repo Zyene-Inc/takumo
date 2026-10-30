@@ -3,7 +3,8 @@ import { Button } from "@repo/design-system/components/ui/button";
 import { Input } from "@repo/design-system/components/ui/input";
 import { Label } from "@repo/design-system/components/ui/label";
 import type { Metadata } from "next";
-import { createShop, switchShop } from "../actions/auth";
+import { createDemoShop, createShop, switchShop } from "../actions/auth";
+import { SubmitButton } from "./submit-button";
 
 export const metadata: Metadata = { title: "Your shop · Takumo" };
 
@@ -53,7 +54,23 @@ const CreateShopPage = async () => {
           placeholder="Acme Precision"
           required
         />
-        <Button type="submit">Create shop</Button>
+        <SubmitButton pendingText="Creating your shop…">
+          Create shop
+        </SubmitButton>
+      </form>
+
+      <form
+        action={createDemoShop}
+        className="flex flex-col gap-2 border-t pt-6"
+      >
+        <p className="text-muted-foreground text-sm">
+          Want to look around first? A demo shop has machines, orders, quotes
+          and six weeks of job history to try everything on. It's separate from
+          your real shop.
+        </p>
+        <SubmitButton pendingText="Loading the demo shop…" variant="outline">
+          Create a demo shop
+        </SubmitButton>
       </form>
     </main>
   );

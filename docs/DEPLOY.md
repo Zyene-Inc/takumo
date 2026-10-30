@@ -48,11 +48,22 @@ or the service dashboards; never commit them.
 - `ENGINE_URL` = the engine's URL (step 4), `ENGINE_SECRET` = the same value as on the engine
 - `CRON_SECRET` = a new value (`openssl rand -hex 32`): Vercel sends it to the nightly
   recalibration (`/api/cron/recalibrate`, 07:00 UTC, in `apps/app/vercel.json`); without it the
-  route refuses every call and recalibration runs only from Knowledge → Calibration
+  route refuses every call and recalibration runs only from Knowledge → Calibration. The same
+  secret protects the hourly connector sync (`/api/cron/connectors`).
+- `STRIPE_SECRET_KEY` (step 6): billing; without it the Billing page can't take payment
+- `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (step 7): product analytics
+- `CONNECTOR_ENCRYPTION_KEY` = a new value (`openssl rand -base64 32`; keep it: losing it means
+  every shop reconnects): encrypts QuickBooks and Gmail tokens
+- `QUICKBOOKS_CLIENT_ID`, `QUICKBOOKS_CLIENT_SECRET`, `QUICKBOOKS_ENVIRONMENT` (`sandbox` or
+  `production`) (step 8)
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (step 9)
+- `ADMIN_USER_IDS`: WorkOS user ids (comma separated) of Takumo staff who can open `/admin`
 
 **takumo-api**
 - `DATABASE_URL`, `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`
 - `WORKOS_WEBHOOK_SECRET` (step 3)
+- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (step 6)
+- `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (step 7)
 - `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_WEB_URL`
 
 **takumo-web**
@@ -88,7 +99,68 @@ Docker web service; Render is the simplest host (Fly.io or Cloud Run work the sa
 
 Check: `curl https://<engine-url>/health` returns `{"status":"ok"}`.
 
-## 5. Check
+## 6. Stripe (billing)
+
+Plans: Shop $499/month (5 users), Pro $1,499/month (Quote Copilot, connectors, unlimited users),
+Plant (custom, set by hand). New shops get a 30-day trial with everything in Pro. See
+`packages/payments/plans.ts`.
+
+1. Test mode first. Create the products and prices (found again by lookup key, so the app needs
+   no price IDs):
+   `STRIPE_SECRET_KEY=sk_test_… pnpm --filter @repo/payments setup-stripe`
+2. Stripe → Settings → Billing → Customer portal: turn on switching between the two prices,
+   cancelling, and updating the card.
+3. Stripe → Developers → Webhooks → Add endpoint: `https://<api-url>/webhooks/payments`, events
+   `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`,
+   `customer.subscription.deleted`, `invoice.payment_failed`. Put its signing secret in
+   `STRIPE_WEBHOOK_SECRET` on `takumo-api`.
+4. Set `STRIPE_SECRET_KEY` on `takumo-app` and `takumo-api`; redeploy both.
+5. Check: Settings → Billing → Choose Pro → pay with `4242 4242 4242 4242` → back on the page the
+   plan shows Pro / Active (the webhook updates it within seconds).
+6. Going live: repeat 1–4 with the live key and a live webhook.
+
+Design partners (free for 90 days): an admin opens `/admin` and clicks **+30 days** on the shop's
+trial as needed. A Plant customer: set `plan = 'plant'` on the shop's `Org` row.
+
+## 7. PostHog (analytics)
+
+Create a PostHog project; put its key (`phc_…`) and host (`https://us.i.posthog.com`) in
+`NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` on `takumo-app` and `takumo-api`. People
+are identified by WorkOS user id and grouped by shop (group type `company`). Server events
+(`apps/app/lib/analytics.ts`): `question_answered`, `quote_drafted`, `quote_approved`,
+`rfq_received`, `capacity_checked`, `plan_built`, `fact_proposed`, `fact_reviewed`, `note_saved`,
+`job_logged`, `data_imported`, `connector_connected`, `connector_synced`, `checkout_started`,
+`demo_shop_created`, plus `subscription_started` / `_updated` / `_canceled` and `payment_failed`
+from the Stripe webhook. The north star (docs/TAKUMO.md section 14) is `question_answered` +
+`quote_approved` per shop per week; `/admin` shows it from the database too.
+
+## 8. QuickBooks connector
+
+1. developer.intuit.com → create an app (QuickBooks Online and Payments) → scope
+   **Accounting** → Redirect URI `https://<app-url>/api/connectors/quickbooks/callback`.
+2. Sandbox keys go in `QUICKBOOKS_CLIENT_ID` / `QUICKBOOKS_CLIENT_SECRET` with
+   `QUICKBOOKS_ENVIRONMENT=sandbox`; test against a sandbox company.
+3. Production keys need Intuit's app review (their questionnaire and assessment); then set the
+   production keys and `QUICKBOOKS_ENVIRONMENT=production`.
+
+What it reads: customers (with payment terms) and estimates from the last three years, as past
+quotes. Read only. Synced on connect and hourly.
+
+## 9. Gmail connector (RFQ inbox)
+
+1. Google Cloud console → a project → enable the **Gmail API** → OAuth consent screen (external)
+   → scopes `gmail.readonly` and `email` → Credentials → OAuth client (web) with redirect URI
+   `https://<app-url>/api/connectors/gmail/callback`. Put the client id and secret in
+   `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+2. `gmail.readonly` is a **restricted scope**: until Google verifies the app (including an
+   annual third-party security assessment), only test users you list on the consent screen
+   (up to 100) can connect. Add design-partner mailboxes as test users while verification runs.
+
+What it reads: new messages matching the shop's search (default: subjects like "RFQ", "request
+for quote") since the last check; each becomes an RFQ in Quotes, attachments included. Read only.
+Checked on connect and hourly; a message is never read twice.
+
+## 10. Check
 
 - Sign in on `https://<app-url>`, create a shop, upload `seed/samples/erp-open-orders.csv`.
 - WorkOS → Webhooks → the endpoint shows successful deliveries; the new shop appears in the

@@ -10,6 +10,7 @@ import {
   schedule,
 } from "@repo/engine-client";
 import { z } from "zod";
+import { featureProblem } from "@/lib/billing";
 import {
   ATTRIBUTES,
   attributeDef,
@@ -418,6 +419,10 @@ Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in 
             error: `${part_no} has several revs (${parts.map((p) => p.rev).join(", ")}). Ask which one.`,
             sources: [],
           };
+        }
+        const locked = await featureProblem(ctx.orgId, "quotes");
+        if (locked) {
+          return { error: locked, sources: [] };
         }
         const part = parts[0];
         const result = await estimateForPart(ctx.orgId, part.id, {

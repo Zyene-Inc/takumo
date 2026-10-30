@@ -7,7 +7,9 @@ export type Permission =
   | "quotes:write"
   | "knowledge:write"
   | "knowledge:review"
-  | "floor:write";
+  | "floor:write"
+  | "billing:manage"
+  | "connectors:manage";
 
 const GRANTS: Readonly<Record<Permission, readonly string[]>> = {
   // Machines, parts, routings, orders, customers, materials.
@@ -20,6 +22,10 @@ const GRANTS: Readonly<Record<Permission, readonly string[]>> = {
   "knowledge:review": ["owner", "admin", "planner"],
   // Log what an operation actually took on the shop floor.
   "floor:write": ["owner", "admin", "planner", "operator"],
+  // Plans and payment.
+  "billing:manage": ["owner", "admin"],
+  // Connect or disconnect QuickBooks and Gmail.
+  "connectors:manage": ["owner", "admin"],
 };
 
 export const can = (role: string | null | undefined, permission: Permission) =>
