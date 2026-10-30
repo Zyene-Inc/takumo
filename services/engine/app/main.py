@@ -1,5 +1,6 @@
 """Takumo engine API. Called only server-side by apps/app (never the browser)."""
 
+import hmac
 import os
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -8,12 +9,12 @@ from app.models import CapacityRequest, CapacityResponse, ScheduleRequest, Sched
 from app.scheduler.capacity import check_capacity
 from app.scheduler.cpsat_model import solve_schedule
 
-app = FastAPI(title="Takumo Engine", version="0.1.0")
+app = FastAPI(title="Takumo Engine", version="0.2.0")
 
 
 def require_secret(x_engine_secret: str | None = Header(default=None)) -> None:
     expected = os.environ.get("ENGINE_SECRET")
-    if expected and x_engine_secret != expected:
+    if expected and not hmac.compare_digest(x_engine_secret or "", expected):
         raise HTTPException(status_code=401, detail="Invalid engine secret")
 
 

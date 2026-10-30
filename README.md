@@ -69,9 +69,10 @@ pnpm dev                          # app :3000, web :3001, api :3002, …
 - ✅ Monorepo trimmed for Takumo (no CMS, i18n, Liveblocks, Storybook)
 - ✅ Factory schema (work centers, parts, routings, orders, jobs, quotes, RFQs, sources, facts, agent)
 - ✅ Tenant isolation: `forOrg(database, orgId)` + Supabase RLS policies
-- ✅ Engine: CP-SAT scheduler and capacity check, tested on the demo shop (`pnpm test:engine`)
+- ✅ Engine: CP-SAT scheduler and capacity check (`pnpm test:engine`, including random-shop plan validity checks); Docker image in `services/engine/Dockerfile`
 - ✅ Phase 1: shop data import (`/onboarding`): Excel (.xlsx, .xls), OpenDocument and CSV upload, AI column mapping with an offline fallback, preview and row-level errors, re-import updates in place
 - ✅ Shop editors (`/shop`, `/quotes/history`): machines, parts and routings, orders, customers, materials, past quotes; "needs review" for records Takumo had to create
 - ✅ Roles: admins and planners change shop data, admins and estimators change quotes; members and operators can view
 - ✅ Tests: unit tests, plus database tests for imports (`pnpm --filter @repo/ingest test:db` with `TEST_DATABASE_URL`) that CI runs on a fresh Postgres
-- ⏳ Phase 2: "Can we take this order?" and the schedule board → see docs/TAKUMO.md section 13
+- ✅ Phase 2: schedule board (`/schedule`): CP-SAT plan with shifts, efficiency, holidays and downtime (`/schedule/calendar`), drag an operation to pin it and re-plan around it, late and tight flags; "Can we take this order?" (`/schedule/check`): earliest date without moving anyone, who slips if it goes first, overtime / split-lot / alternate-machine levers with cost and margin, "Add to plan", and planner agree/disagree to track the 10-case goal; bottlenecks (`/schedule/bottlenecks`)
+- ⏳ Phase 2 sign-off: a planner judges 10 real cases on `/schedule/check` → see docs/TAKUMO.md section 13

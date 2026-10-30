@@ -1,7 +1,7 @@
 # Deploying Takumo (test environment)
 
-Three Vercel projects from this repo, one Supabase database, one WorkOS environment.
-The scheduling engine (`services/engine`) isn't needed until Phase 2.
+Three Vercel projects from this repo, one Supabase database, one WorkOS environment, and
+the scheduling engine (`services/engine`) as a Docker web service.
 
 | Vercel project | Root directory | Test URL (example) |
 |---|---|---|
@@ -34,6 +34,7 @@ or the service dashboards; never commit them.
 - `NEXT_PUBLIC_WORKOS_REDIRECT_URI` = `https://<app-url>/callback`
 - `NEXT_PUBLIC_APP_URL` = `https://<app-url>`, `NEXT_PUBLIC_WEB_URL` = `https://<web-url>`
 - `ANTHROPIC_API_KEY` (AI column matching; optional, falls back to the offline matcher)
+- `ENGINE_URL` = the engine's URL (step 4), `ENGINE_SECRET` = the same value as on the engine
 
 **takumo-api**
 - `DATABASE_URL`, `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`
@@ -58,8 +59,23 @@ In the WorkOS dashboard (staging environment for a test URL):
 3. **Roles** must include `admin`, `planner`, `estimator`, `operator`, `member`
    (see `packages/auth/permissions.ts` for what each may change).
 
-## 4. Check
+## 4. Scheduling engine
+
+The engine runs CP-SAT for the schedule board and "Can we take this order?". It's a plain
+Docker web service; Render is the simplest host (Fly.io or Cloud Run work the same way).
+
+1. Render → New → Web Service → `Zyene-Inc/takumo` → Runtime: **Docker**.
+   Dockerfile path `services/engine/Dockerfile`, build context `.` (the repo root).
+2. Instance: at least 2 CPUs and 2 GB (the solver uses several threads). Health check path `/health`.
+3. Environment: `ENGINE_SECRET` = a new value (`openssl rand -hex 32`). Render sets `PORT`.
+4. Put the service URL in `ENGINE_URL` and the same secret in `ENGINE_SECRET` on `takumo-app`,
+   then redeploy it. Without `ENGINE_SECRET` the engine accepts any caller, so always set it.
+
+Check: `curl https://<engine-url>/health` returns `{"status":"ok"}`.
+
+## 5. Check
 
 - Sign in on `https://<app-url>`, create a shop, upload `seed/samples/erp-open-orders.csv`.
 - WorkOS → Webhooks → the endpoint shows successful deliveries; the new shop appears in the
   `Org` table.
+- Schedule → Board → **Build the plan**; then Schedule → Can we take this order? returns an answer.
