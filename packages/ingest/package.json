@@ -7,7 +7,9 @@
   "scripts": {
     "clean": "git clean -xdf .cache .turbo dist node_modules",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit --emitDeclarationOnly false"
+    "typecheck": "tsc --noEmit --emitDeclarationOnly false",
+    "test:db": "vitest run __tests__/save.db.test.ts",
+    "test:load": "LOAD_TEST=1 vitest run __tests__/load.db.test.ts"
   },
   "dependencies": {
     "@repo/ai": "workspace:*",
@@ -20,6 +22,7 @@
     "@repo/typescript-config": "workspace:*",
     "@types/node": "25.3.5",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "@prisma/adapter-pg": "7.10.1"
   }
 }

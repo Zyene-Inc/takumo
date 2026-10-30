@@ -277,3 +277,5 @@ packages/database/generated
 .contentlayer
 .content-collections
 .source
+# Vendored packages are committed as-is (see vendor/README.md)
+!vendor/**

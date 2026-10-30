@@ -1,9 +1,9 @@
-import { auth } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
 import { Badge } from "@repo/design-system/components/ui/badge";
 import { ENTITIES, ENTITY_KEYS, type EntityKey } from "@repo/ingest";
 import { CheckCircle2Icon, CircleIcon, DownloadIcon } from "lucide-react";
 import type { Metadata } from "next";
+import { getAccess, NO_ACCESS_MESSAGE, permissionFor } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Header } from "../components/header";
@@ -29,11 +29,14 @@ const OnboardingPage = async ({
 }: {
   searchParams: Promise<{ type?: string }>;
 }) => {
-  const { orgId } = await auth();
+  const { orgId, canEditShop, canEditQuotes } = await getAccess();
   if (!orgId) {
     notFound();
   }
   const { type } = await searchParams;
+  const allowed = ENTITY_KEYS.filter((entity) =>
+    permissionFor(entity) === "quotes:write" ? canEditQuotes : canEditShop
+  );
   const db = forOrg(database, orgId);
 
   const [workCenters, parts, routings, orders, quotes, sources] =
@@ -68,10 +71,24 @@ const OnboardingPage = async ({
             columns, shows you what it found, and only saves after you confirm.
             Uploading a file again updates rows instead of duplicating them.
           </p>
-          <ImportWizard
-            initialEntity={isEntity(type) ? type : undefined}
-            key={type ?? "any"}
-          />
+          {allowed.length === 0 ? (
+            <p className="rounded-xl bg-muted/50 p-6 text-muted-foreground text-sm">
+              Your role can view this shop's data but not upload it.{" "}
+              {NO_ACCESS_MESSAGE["shop:write"]}
+            </p>
+          ) : (
+            <ImportWizard
+              allowedEntities={allowed}
+              initialEntity={
+                isEntity(type) && allowed.includes(type)
+                  ? type
+                  : allowed.length === 1
+                    ? allowed[0]
+                    : undefined
+              }
+              key={type ?? "any"}
+            />
+          )}
         </section>
 
         <aside className="flex w-full flex-col gap-6 lg:w-80">

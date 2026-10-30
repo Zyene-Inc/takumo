@@ -32,8 +32,8 @@
     "papaparse": "5.7.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "read-excel-file": "9.3.14",
     "require-in-the-middle": "8.0.1",
+    "xlsx": "file:../../vendor/xlsx",
     "zod": "^4.3.6"
   },
   "devDependencies": {

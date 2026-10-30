@@ -1,4 +1,3 @@
-import { auth } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
 import { Button } from "@repo/design-system/components/ui/button";
 import {
@@ -11,6 +10,7 @@ import {
 } from "@repo/design-system/components/ui/table";
 import { PencilIcon, PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
+import { getAccess } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Header } from "../../components/header";
@@ -31,7 +31,7 @@ const hoursPerDay = (shifts: unknown) =>
     : null;
 
 const WorkCentersPage = async () => {
-  const { orgId } = await auth();
+  const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
     notFound();
   }
@@ -45,6 +45,7 @@ const WorkCentersPage = async () => {
       <Header page="Work centers" pages={["Shop"]}>
         <div className="px-4">
           <RecordDialog
+            canEdit={canEditShop}
             entity="workCenters"
             title="Add a machine"
             trigger={
@@ -105,6 +106,7 @@ const WorkCentersPage = async () => {
                       <TableCell>
                         <div className="flex justify-end">
                           <RecordDialog
+                            canEdit={canEditShop}
                             entity="workCenters"
                             initial={{
                               name: m.name,
@@ -126,6 +128,7 @@ const WorkCentersPage = async () => {
                             }
                           />
                           <DeleteButton
+                            canEdit={canEditShop}
                             entity="workCenters"
                             id={m.id}
                             name={m.name}

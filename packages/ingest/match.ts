@@ -56,8 +56,7 @@ const scoreHeader = (header: string, field: FieldDef) => {
   return best;
 };
 
-const looksLikeHours = (header: string) =>
-  HOURS.test(normalizeHeader(header));
+const looksLikeHours = (header: string) => HOURS.test(normalizeHeader(header));
 
 /** Matches file headers to an entity's fields by name. Works offline. */
 export const suggestMapping = (

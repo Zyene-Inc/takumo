@@ -55,8 +55,8 @@ cd services/engine && uv sync && cd ../..
 #    (copy from the .env.example next to each)
 
 # 3. database on Supabase
-pnpm migrate                      # creates tables from packages/database/prisma/schema.prisma
-#    then run packages/database/prisma/sql/001_pgvector_rls.sql in the Supabase SQL editor
+#    first enable the vector extension: Supabase → Database → Extensions → vector
+pnpm migrate:deploy               # tables, foreign keys, RLS policies and the vector index
 SEED_ORG_ID=org_xxx pnpm db:seed  # load the demo shop into your WorkOS organization
 
 # 4. run
@@ -70,6 +70,8 @@ pnpm dev                          # app :3000, web :3001, api :3002, …
 - ✅ Factory schema (work centers, parts, routings, orders, jobs, quotes, RFQs, sources, facts, agent)
 - ✅ Tenant isolation: `forOrg(database, orgId)` + Supabase RLS policies
 - ✅ Engine: CP-SAT scheduler and capacity check, tested on the demo shop (`pnpm test:engine`)
-- ✅ Phase 1: shop data import (`/onboarding`): CSV/XLSX upload, AI column mapping with an offline fallback, preview and row-level errors, re-import updates in place
-- ✅ Shop editors (`/shop`): machines, parts and routings, orders; "needs review" for machines and materials Takumo had to create
+- ✅ Phase 1: shop data import (`/onboarding`): Excel (.xlsx, .xls), OpenDocument and CSV upload, AI column mapping with an offline fallback, preview and row-level errors, re-import updates in place
+- ✅ Shop editors (`/shop`, `/quotes/history`): machines, parts and routings, orders, customers, materials, past quotes; "needs review" for records Takumo had to create
+- ✅ Roles: admins and planners change shop data, admins and estimators change quotes; members and operators can view
+- ✅ Tests: unit tests, plus database tests for imports (`pnpm --filter @repo/ingest test:db` with `TEST_DATABASE_URL`) that CI runs on a fresh Postgres
 - ⏳ Phase 2: "Can we take this order?" and the schedule board → see docs/TAKUMO.md section 13

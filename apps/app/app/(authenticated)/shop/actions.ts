@@ -1,6 +1,5 @@
 "use server";
 
-import { auth } from "@repo/auth/server";
 import { database, forOrg, Prisma } from "@repo/database";
 import {
   type ColumnMapping,
@@ -10,19 +9,12 @@ import {
 } from "@repo/ingest";
 import { saveRecords } from "@repo/ingest/save";
 import { revalidatePath } from "next/cache";
+import { authorize, permissionFor } from "@/lib/access";
 
 export interface SaveRecordResult {
-  readonly errors: string[];
   readonly ok: boolean;
+  readonly errors: string[];
 }
-
-const requireOrg = async () => {
-  const { orgId } = await auth();
-  if (!orgId) {
-    throw new Error("Choose a shop first.");
-  }
-  return orgId;
-};
 
 // The edit forms use field keys as column names, and times in minutes.
 const formMapping = (entity: EntityKey): ColumnMapping => {
@@ -47,6 +39,10 @@ const exists = async (
   switch (entity) {
     case "workCenters":
       return (await db.workCenter.count({ where: { name: v.name } })) > 0;
+    case "customers":
+      return (await db.customer.count({ where: { name: v.name } })) > 0;
+    case "materials":
+      return (await db.material.count({ where: { name: v.name } })) > 0;
     case "parts":
       return (
         (await db.part.count({
@@ -64,6 +60,8 @@ const exists = async (
       );
     case "orders":
       return (await db.order.count({ where: { orderNo: v.orderNo } })) > 0;
+    case "quotes":
+      return (await db.quote.count({ where: { quoteNo: v.quoteNo } })) > 0;
     default:
       return false;
   }
@@ -78,10 +76,14 @@ export const saveRecord = async (
   values: Record<string, string>,
   mode: "create" | "update"
 ): Promise<SaveRecordResult> => {
-  const orgId = await requireOrg();
   if (!(entity in ENTITIES)) {
     return { ok: false, errors: ["Unknown record type."] };
   }
+  const access = await authorize(permissionFor(entity));
+  if (!access.ok) {
+    return { ok: false, errors: [access.error] };
+  }
+  const { orgId } = access;
   const { records, errors } = parseRows([values], formMapping(entity));
   if (records.length === 0 || errors.length > 0) {
     return {
@@ -104,39 +106,66 @@ const IN_USE: Partial<Record<EntityKey, string>> = {
   workCenters:
     "This machine is used in routings. Move those operations to another machine first.",
   parts: "This part has orders or quotes. Delete or change those first.",
+  customers:
+    "This customer has parts, orders or quotes. Change or delete those first.",
+  materials: "Parts use this material. Change those parts first.",
+};
+
+// deleteMany is scoped to the org by forOrg; delete() by id would not be.
+const deleteById = (
+  db: ReturnType<typeof forOrg>,
+  entity: EntityKey,
+  id: string
+) => {
+  const where = { where: { id } };
+  switch (entity) {
+    case "workCenters":
+      return db.workCenter.deleteMany(where);
+    case "customers":
+      return db.customer.deleteMany(where);
+    case "materials":
+      return db.material.deleteMany(where);
+    case "parts":
+      return db.part.deleteMany(where);
+    case "routings":
+      return db.routing.deleteMany(where);
+    case "orders":
+      return db.order.deleteMany(where);
+    case "quotes":
+      return db.quote.deleteMany(where);
+    default:
+      throw new Error("Unknown record type.");
+  }
 };
 
 export const deleteRecord = async (
-  entity: "workCenters" | "parts" | "routings" | "orders",
+  entity: EntityKey,
   id: string
 ): Promise<SaveRecordResult> => {
-  const orgId = await requireOrg();
-  const db = forOrg(database, orgId);
+  if (!(entity in ENTITIES)) {
+    return { ok: false, errors: ["Unknown record type."] };
+  }
+  const access = await authorize(permissionFor(entity));
+  if (!access.ok) {
+    return { ok: false, errors: [access.error] };
+  }
+  const { orgId } = access;
   try {
-    // deleteMany is scoped to the org by forOrg; delete() by id would not be.
-    const where = { where: { id } };
-    const { count } =
-      entity === "workCenters"
-        ? await db.workCenter.deleteMany(where)
-        : entity === "parts"
-          ? await db.part.deleteMany(where)
-          : entity === "routings"
-            ? await db.routing.deleteMany(where)
-            : await db.order.deleteMany(where);
+    const { count } = await deleteById(forOrg(database, orgId), entity, id);
     if (count === 0) {
       return { ok: false, errors: ["Not found."] };
     }
-  } catch (error) {
+  } catch (e) {
     if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2003"
+      e instanceof Prisma.PrismaClientKnownRequestError &&
+      e.code === "P2003"
     ) {
       return {
         ok: false,
         errors: [IN_USE[entity] ?? "This record is in use."],
       };
     }
-    throw error;
+    throw e;
   }
   revalidatePath("/", "layout");
   return { ok: true, errors: [] };

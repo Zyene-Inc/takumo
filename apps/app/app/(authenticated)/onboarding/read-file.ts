@@ -1,6 +1,6 @@
 import type { Cell, SheetRow } from "@repo/ingest";
 import Papa from "papaparse";
-import readXlsxFile from "read-excel-file/browser";
+import { read, utils } from "xlsx";
 
 export interface Sheet {
   // Spreadsheet row number of rows[0], so problems point at the right row.
@@ -10,7 +10,9 @@ export interface Sheet {
   readonly rows: SheetRow[];
 }
 
-export const ACCEPTED_FILES = ".csv,.xlsx,.txt,.tsv";
+export const ACCEPTED_FILES = ".csv,.xlsx,.xls,.xlsm,.ods,.txt,.tsv";
+
+const SPREADSHEET = /\.(xlsx|xlsm|xls|ods)$/;
 
 const filled = (row: readonly Cell[]) =>
   row.filter((c) => c !== null && c !== undefined && String(c).trim() !== "")
@@ -69,19 +71,37 @@ const readCsv = (file: File) =>
     });
   });
 
-/** Reads every sheet of a CSV or XLSX file in the browser. */
-export const readWorkbook = async (file: File): Promise<Sheet[]> => {
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".xls")) {
-    throw new Error(
-      "Old .xls files aren't supported. In Excel, use File → Save As → .xlsx or .csv, then upload again."
+const pad = (n: number) => String(n).padStart(2, "0");
+
+// SheetJS builds dates in the browser's time zone with the wall-clock values
+// shown in Excel; keep that calendar date (toISOString would shift it a day
+// for users east of UTC).
+const calendarDate = (d: Date) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+const readSpreadsheet = async (file: File): Promise<Sheet[]> => {
+  const workbook = read(await file.arrayBuffer(), {
+    cellDates: true,
+    dense: true,
+  });
+  return workbook.SheetNames.map((name) => {
+    const matrix = utils.sheet_to_json<Cell[]>(workbook.Sheets[name], {
+      header: 1,
+      raw: true,
+      defval: null,
+      blankrows: true,
+    });
+    return toSheet(
+      name,
+      matrix.map((row) =>
+        row.map((cell) => (cell instanceof Date ? calendarDate(cell) : cell))
+      )
     );
-  }
-  if (name.endsWith(".xlsx")) {
-    const sheets = await readXlsxFile(file);
-    return sheets
-      .map((s) => toSheet(s.sheet, s.data as unknown as Cell[][]))
-      .filter((s) => s.rows.length > 0);
-  }
-  return readCsv(file);
+  }).filter((sheet) => sheet.rows.length > 0);
 };
+
+/** Reads every sheet of an Excel (.xlsx, .xls), OpenDocument or CSV file in the browser. */
+export const readWorkbook = (file: File): Promise<Sheet[]> =>
+  SPREADSHEET.test(file.name.toLowerCase())
+    ? readSpreadsheet(file)
+    : readCsv(file);

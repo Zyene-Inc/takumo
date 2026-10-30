@@ -1,4 +1,3 @@
-import { auth } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
 import { Button } from "@repo/design-system/components/ui/button";
 import {
@@ -11,6 +10,7 @@ import {
 } from "@repo/design-system/components/ui/table";
 import { PencilIcon, PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
+import { getAccess } from "@/lib/access";
 import { notFound } from "next/navigation";
 import { Header } from "../../../components/header";
 import { DeleteButton } from "../../components/delete-button";
@@ -26,7 +26,7 @@ import { RecordDialog } from "../../components/record-dialog";
 export const metadata: Metadata = { title: "Part · Takumo" };
 
 const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
-  const { orgId } = await auth();
+  const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
     notFound();
   }
@@ -72,6 +72,7 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
       >
         <div className="flex gap-1 px-4">
           <RecordDialog
+            canEdit={canEditShop}
             entity="parts"
             initial={{
               partNo: part.partNo,
@@ -93,6 +94,7 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
             }
           />
           <DeleteButton
+            canEdit={canEditShop}
             entity="parts"
             id={part.id}
             name={part.partNo}
@@ -124,6 +126,7 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
           <div className="flex items-center justify-between">
             <h2 className="font-medium">Routing</h2>
             <RecordDialog
+              canEdit={canEditShop}
               entity="routings"
               hidden={["partNo", "rev"]}
               initial={{
@@ -181,6 +184,7 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
                         <TableCell>
                           <div className="flex justify-end">
                             <RecordDialog
+                              canEdit={canEditShop}
                               entity="routings"
                               hidden={["partNo", "rev"]}
                               initial={{
@@ -206,6 +210,7 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
                               }
                             />
                             <DeleteButton
+                              canEdit={canEditShop}
                               entity="routings"
                               id={r.id}
                               name={`operation ${r.seq}`}

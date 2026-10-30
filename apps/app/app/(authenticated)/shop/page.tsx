@@ -1,8 +1,8 @@
-import { auth } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
 import { Button } from "@repo/design-system/components/ui/button";
 import { UploadIcon } from "lucide-react";
 import type { Metadata } from "next";
+import { getAccess } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Header } from "../components/header";
@@ -10,7 +10,7 @@ import { Header } from "../components/header";
 export const metadata: Metadata = { title: "Shop · Takumo" };
 
 const ShopPage = async () => {
-  const { orgId } = await auth();
+  const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
     notFound();
   }
@@ -69,7 +69,7 @@ const ShopPage = async () => {
     {
       label: "Customers · materials",
       value: `${customers} · ${materials}`,
-      href: "/onboarding",
+      href: "/shop/customers",
     },
   ];
 
@@ -93,7 +93,7 @@ const ShopPage = async () => {
         .map((m) => m.name)
         .slice(0, 6)
         .join(", ")}: upload a materials list to fill these in.`,
-      href: "/onboarding?type=materials",
+      href: "/shop/materials",
     },
   ].filter((r): r is { title: string; detail: string; href: string } =>
     Boolean(r)
@@ -102,13 +102,15 @@ const ShopPage = async () => {
   return (
     <>
       <Header page="Overview" pages={["Shop"]}>
-        <div className="px-4">
-          <Button asChild size="sm" variant="outline">
-            <Link href="/onboarding">
-              <UploadIcon /> Upload data
-            </Link>
-          </Button>
-        </div>
+        {canEditShop && (
+          <div className="px-4">
+            <Button asChild size="sm" variant="outline">
+              <Link href="/onboarding">
+                <UploadIcon /> Upload data
+              </Link>
+            </Button>
+          </div>
+        )}
       </Header>
       <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
         <div className="grid auto-rows-min gap-4 md:grid-cols-4">

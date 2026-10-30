@@ -30,6 +30,47 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
+  database:
+    name: Migrations and import tests (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: takumo
+          POSTGRES_PASSWORD: takumo
+          POSTGRES_DB: takumo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U takumo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SKIP_ENV_VALIDATION: "true"
+      DATABASE_URL: postgresql://takumo:takumo@localhost:5432/takumo
+      TEST_DATABASE_URL: postgresql://takumo:takumo@localhost:5432/takumo
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter @repo/database build
+      # The first migration uses the vector type, so the extension comes first
+      # (on Supabase: Database → Extensions → vector).
+      - name: Enable pgvector
+        working-directory: packages/database
+        run: echo "create extension if not exists vector;" | pnpm exec prisma db execute --stdin
+      - name: Apply migrations to an empty database
+        run: pnpm migrate:deploy
+      - name: Import tests against the database
+        working-directory: packages/ingest
+        run: pnpm test:db
+
   engine:
     name: Test scheduling engine (Python)
     runs-on: ubuntu-latest

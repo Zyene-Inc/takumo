@@ -1,6 +1,5 @@
 "use server";
 
-import { auth } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
 import {
   type ColumnMapping,
@@ -15,17 +14,10 @@ import { suggestMappingWithAi } from "@repo/ingest/ai-mapping";
 import { saveRecords } from "@repo/ingest/save";
 import { log } from "@repo/observability/log";
 import { revalidatePath } from "next/cache";
+import { authorize, permissionFor } from "@/lib/access";
 
 // Enough for real shops; bigger files should be split by year or status.
 const MAX_ROWS = 20_000;
-
-const requireOrg = async () => {
-  const { orgId } = await auth();
-  if (!orgId) {
-    throw new Error("Choose a shop first.");
-  }
-  return orgId;
-};
 
 export const suggestColumns = async (input: {
   fileName: string;
@@ -34,7 +26,15 @@ export const suggestColumns = async (input: {
   sampleRows: SheetRow[];
   entity?: EntityKey;
 }): Promise<ColumnMapping> => {
-  await requireOrg();
+  // Without a chosen sheet type, any upload permission is enough to look.
+  const access = input.entity
+    ? await authorize(permissionFor(input.entity))
+    : await authorize("shop:write").then((a) =>
+        a.ok ? a : authorize("quotes:write")
+      );
+  if (!access.ok) {
+    throw new Error(access.error);
+  }
   return suggestMappingWithAi({
     fileName: input.fileName,
     sheetName: input.sheetName,
@@ -71,12 +71,15 @@ export const importSheet = async (input: {
   rows: SheetRow[];
   firstRow?: number;
 }): Promise<ImportResult> => {
-  const orgId = await requireOrg();
   const { mapping } = input;
-
   if (!(mapping.entity in ENTITIES)) {
     return failed("Unknown data type.");
   }
+  const access = await authorize(permissionFor(mapping.entity));
+  if (!access.ok) {
+    return failed(access.error);
+  }
+  const { orgId } = access;
   const missing = missingRequired(mapping);
   if (missing.length > 0) {
     return failed(`Choose a column for: ${missing.join(", ")}.`);

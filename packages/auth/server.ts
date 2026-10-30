@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getWorkOS, withAuth } from "@workos-inc/authkit-nextjs";
+import { cache } from "react";
 
 export {
   getSignInUrl,
@@ -25,13 +26,30 @@ export interface AuthContext {
   userId: string | null;
 }
 
+// The access token's `role` claim is "authenticated" because the JWT template
+// is shaped for Supabase third-party auth, so the shop role (admin, planner…)
+// comes from the WorkOS membership. Cached for the duration of a request.
+const membershipRole = cache(
+  async (userId: string, organizationId: string): Promise<string | null> => {
+    const memberships =
+      await getWorkOS().userManagement.listOrganizationMemberships({
+        userId,
+        organizationId,
+        statuses: ["active"],
+      });
+    return memberships.data[0]?.role.slug ?? null;
+  }
+);
+
 export const auth = async (): Promise<AuthContext> => {
-  const { user, organizationId, role } = await withAuth();
+  const { user, organizationId } = await withAuth();
+  const userId = user?.id ?? null;
+  const orgId = organizationId ?? null;
 
   return {
-    userId: user?.id ?? null,
-    orgId: organizationId ?? null,
-    role: role ?? null,
+    userId,
+    orgId,
+    role: userId && orgId ? await membershipRole(userId, orgId) : null,
   };
 };
 
