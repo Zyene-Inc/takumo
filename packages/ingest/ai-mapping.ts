@@ -85,6 +85,7 @@ export const suggestMappingWithAi = async ({
 Only use column names that appear exactly in the header list. Leave a field's column null when no column fits; never guess wildly.
 For setup/run time fields, say whether the column holds minutes or hours, using the header and the sample values.
 Confidence: 0.9+ when the header clearly names the field, 0.6–0.9 when you infer it from values, below 0.6 when unsure.
+Takumo converts values itself: dates in any common format, currency and thousands separators, percentages, hours to minutes, and common status words (Released/Firm → open, WIP → in_progress, Closed/Shipped → done, Won/Lost/Sent for quotes). Don't write notes about those.
 Notes: at most 3 short, plain-English remarks a shop owner should know (e.g. "Run time looks like hours, converted to minutes"). No notes if nothing stands out.
 
 Data model:

@@ -249,7 +249,7 @@ export const ImportWizard = ({
             Drop a spreadsheet here, or click to choose
           </span>
           <span className="text-muted-foreground text-sm">
-            Excel (.xlsx) or CSV: an ERP export or your own tracker
+            Excel (.xlsx or .xls) or CSV: an ERP export or your own tracker
           </span>
           <input
             accept={ACCEPTED_FILES}
