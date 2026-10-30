@@ -65,8 +65,11 @@ const showValue = (value: unknown) =>
 
 export const ImportWizard = ({
   initialEntity,
+  allowedEntities = ENTITY_KEYS,
 }: {
   initialEntity?: EntityKey;
+  // Sheet types this user's role may import.
+  allowedEntities?: readonly EntityKey[];
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState("");
@@ -135,6 +138,9 @@ export const ImportWizard = ({
   );
 
   const missing = mapping ? missingRequired(mapping) : [];
+  const notAllowed = mapping
+    ? !allowedEntities.includes(mapping.entity)
+    : false;
   const skippedRows = preview
     ? new Set(
         preview.errors.filter((e) => e.severity === "error").map((e) => e.row)
@@ -318,7 +324,7 @@ export const ImportWizard = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ENTITY_KEYS.map((key) => (
+                {allowedEntities.map((key) => (
                   <SelectItem key={key} value={key}>
                     {ENTITIES[key].label}
                   </SelectItem>
@@ -518,6 +524,7 @@ export const ImportWizard = ({
                 importing ||
                 suggesting ||
                 missing.length > 0 ||
+                notAllowed ||
                 !preview ||
                 preview.records.length === 0
               }
@@ -530,6 +537,13 @@ export const ImportWizard = ({
             {missing.length > 0 && (
               <span className="text-destructive text-sm">
                 Choose a column for: {missing.join(", ")}
+              </span>
+            )}
+            {notAllowed && (
+              <span className="text-destructive text-sm">
+                Your role can't import{" "}
+                {ENTITIES[mapping.entity].label.toLowerCase()}. Pick another
+                sheet type, or ask an admin.
               </span>
             )}
           </div>

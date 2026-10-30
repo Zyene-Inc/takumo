@@ -58,6 +58,8 @@ interface RecordDialogProps {
   readonly options?: Readonly<Record<string, readonly string[]>>;
   readonly title: string;
   readonly trigger: ReactNode;
+  // False for roles that can only view; the trigger isn't rendered.
+  readonly canEdit?: boolean;
 }
 
 export const RecordDialog = ({
@@ -68,6 +70,7 @@ export const RecordDialog = ({
   locked = [],
   hidden = [],
   options = {},
+  canEdit = true,
 }: RecordDialogProps) => {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -94,6 +97,10 @@ export const RecordDialog = ({
       }
     });
   };
+
+  if (!canEdit) {
+    return null;
+  }
 
   return (
     <Dialog

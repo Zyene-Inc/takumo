@@ -1,0 +1,24 @@
+import { can } from "@repo/auth/permissions";
+import { describe, expect, test } from "vitest";
+
+describe("role permissions", () => {
+  test("admins and planners change shop data", () => {
+    expect(can("admin", "shop:write")).toBe(true);
+    expect(can("planner", "shop:write")).toBe(true);
+    expect(can("estimator", "shop:write")).toBe(false);
+    expect(can("operator", "shop:write")).toBe(false);
+    expect(can("member", "shop:write")).toBe(false);
+  });
+
+  test("admins and estimators change quotes", () => {
+    expect(can("admin", "quotes:write")).toBe(true);
+    expect(can("estimator", "quotes:write")).toBe(true);
+    expect(can("planner", "quotes:write")).toBe(false);
+    expect(can("operator", "quotes:write")).toBe(false);
+  });
+
+  test("no role, no writes", () => {
+    expect(can(null, "shop:write")).toBe(false);
+    expect(can(undefined, "quotes:write")).toBe(false);
+  });
+});

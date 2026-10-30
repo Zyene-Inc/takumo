@@ -12,17 +12,19 @@ import {
   AlertDialogTrigger,
 } from "@repo/design-system/components/ui/alert-dialog";
 import { Button } from "@repo/design-system/components/ui/button";
+import type { EntityKey } from "@repo/ingest";
 import { Trash2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { deleteRecord } from "../actions";
 
 interface DeleteButtonProps {
-  readonly entity: "workCenters" | "parts" | "routings" | "orders";
+  readonly entity: EntityKey;
   readonly id: string;
   readonly name: string;
   // Where to go after deleting, e.g. back to the list from a detail page.
   readonly redirectTo?: string;
+  readonly canEdit?: boolean;
 }
 
 export const DeleteButton = ({
@@ -30,10 +32,15 @@ export const DeleteButton = ({
   id,
   name,
   redirectTo,
+  canEdit = true,
 }: DeleteButtonProps) => {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [deleting, startDeleting] = useTransition();
+
+  if (!canEdit) {
+    return null;
+  }
 
   return (
     <AlertDialog onOpenChange={() => setError(null)}>

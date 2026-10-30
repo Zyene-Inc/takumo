@@ -1,4 +1,3 @@
-import { auth } from "@repo/auth/server";
 import { database, forOrg, type OrderStatus } from "@repo/database";
 import { Badge } from "@repo/design-system/components/ui/badge";
 import { Button } from "@repo/design-system/components/ui/button";
@@ -12,6 +11,7 @@ import {
 } from "@repo/design-system/components/ui/table";
 import { PencilIcon, PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
+import { getAccess } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Header } from "../../components/header";
@@ -36,7 +36,7 @@ const OrdersPage = async ({
 }: {
   searchParams: Promise<{ view?: string }>;
 }) => {
-  const { orgId } = await auth();
+  const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
     notFound();
   }
@@ -72,6 +72,7 @@ const OrdersPage = async ({
       <Header page="Orders" pages={["Shop"]}>
         <div className="px-4">
           <RecordDialog
+            canEdit={canEditShop}
             entity="orders"
             initial={{ status: "open" }}
             options={options}
@@ -158,6 +159,7 @@ const OrdersPage = async ({
                       <TableCell>
                         <div className="flex justify-end">
                           <RecordDialog
+                            canEdit={canEditShop}
                             entity="orders"
                             initial={{
                               orderNo: o.orderNo,
@@ -183,6 +185,7 @@ const OrdersPage = async ({
                             }
                           />
                           <DeleteButton
+                            canEdit={canEditShop}
                             entity="orders"
                             id={o.id}
                             name={o.orderNo}

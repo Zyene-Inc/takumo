@@ -1,4 +1,3 @@
-import { auth } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
 import { Badge } from "@repo/design-system/components/ui/badge";
 import { Button } from "@repo/design-system/components/ui/button";
@@ -12,6 +11,7 @@ import {
 } from "@repo/design-system/components/ui/table";
 import { PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
+import { getAccess } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Header } from "../../components/header";
@@ -21,7 +21,7 @@ import { RecordDialog } from "../components/record-dialog";
 export const metadata: Metadata = { title: "Parts & routings · Takumo" };
 
 const PartsPage = async () => {
-  const { orgId } = await auth();
+  const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
     notFound();
   }
@@ -44,6 +44,7 @@ const PartsPage = async () => {
       <Header page="Parts & routings" pages={["Shop"]}>
         <div className="px-4">
           <RecordDialog
+            canEdit={canEditShop}
             entity="parts"
             options={{
               customer: customers.map((c) => c.name),

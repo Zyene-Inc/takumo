@@ -57,7 +57,24 @@ model Org {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  members Member[]
+  members       Member[]
+  workCenters   WorkCenter[]
+  calendarDays  CalendarDay[]
+  operators     Operator[]
+  materials     Material[]
+  customers     Customer[]
+  parts         Part[]
+  routings      Routing[]
+  bomLines      BomLine[]
+  orders        Order[]
+  jobs          Job[]
+  quotes        Quote[]
+  rfqs          Rfq[]
+  sources       Source[]
+  docChunks     DocChunk[]
+  facts         Fact[]
+  conversations Conversation[]
+  scheduleRuns  ScheduleRun[]
 }
 
 model Member {
@@ -79,6 +96,7 @@ model Member {
 model WorkCenter {
   id         String     @id @default(uuid())
   orgId      String
+  org        Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name       String
   type       String? // e.g. "cnc_mill", "lathe", "press_brake"
   hourlyRate Decimal?   @db.Decimal(10, 2)
@@ -99,6 +117,7 @@ model WorkCenter {
 model CalendarDay {
   id             String   @id @default(uuid())
   orgId          String
+  org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   workCenterId   String
   date           DateTime @db.Date
   availableHours Float
@@ -113,6 +132,7 @@ model CalendarDay {
 model Operator {
   id         String   @id @default(uuid())
   orgId      String
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name       String
   skills     String[]
   hourlyRate Decimal? @db.Decimal(10, 2)
@@ -124,6 +144,7 @@ model Operator {
 model Material {
   id           String     @id @default(uuid())
   orgId        String
+  org          Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name         String
   spec         String?
   unitCost     Decimal?   @db.Decimal(12, 4)
@@ -140,6 +161,7 @@ model Material {
 model Customer {
   id              String   @id @default(uuid())
   orgId           String
+  org             Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name            String
   paymentTermDays Int?
   createdAt       DateTime @default(now())
@@ -155,6 +177,7 @@ model Customer {
 model Part {
   id          String   @id @default(uuid())
   orgId       String
+  org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   partNo      String
   rev         String   @default("A")
   description String?
@@ -178,6 +201,7 @@ model Part {
 model Routing {
   id               String     @id @default(uuid())
   orgId            String
+  org              Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   partId           String
   seq              Int // operation number: 10, 20, 30…
   workCenterId     String
@@ -197,6 +221,7 @@ model Routing {
 model BomLine {
   id           String @id @default(uuid())
   orgId        String
+  org          Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   parentPartId String
   childPartId  String
   qty          Float
@@ -214,6 +239,7 @@ model BomLine {
 model Order {
   id         String      @id @default(uuid())
   orgId      String
+  org        Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   orderNo    String
   customerId String?
   partId     String
@@ -237,6 +263,7 @@ model Order {
 model Job {
   id             String    @id @default(uuid())
   orgId          String
+  org            Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   orderId        String
   routingSeq     Int
   workCenterId   String?
@@ -257,6 +284,7 @@ model Job {
 model Quote {
   id           String      @id @default(uuid())
   orgId        String
+  org          Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   quoteNo      String
   customerId   String?
   partId       String?
@@ -280,6 +308,7 @@ model Quote {
 model Rfq {
   id         String   @id @default(uuid())
   orgId      String
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   source     String // "email" | "upload"
   sourceId   String?
   extracted  Json? // { partNo, qty, material, tolerances, finish, dueDate }
@@ -298,6 +327,7 @@ model Rfq {
 model Source {
   id        String   @id @default(uuid())
   orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   type      String // "upload" | "quickbooks" | "gmail" | …
   filePath  String? // Supabase Storage path
@@ -314,6 +344,7 @@ model Source {
 model DocChunk {
   id        String                       @id @default(uuid())
   orgId     String
+  org       Org                          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   sourceId  String
   content   String
   page      Int?
@@ -331,6 +362,7 @@ model DocChunk {
 model Fact {
   id               String     @id @default(uuid())
   orgId            String
+  org              Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   subjectType      String // "routing" | "work_center" | "part" | "customer" | …
   subjectId        String
   attribute        String // e.g. "setupMin"
@@ -353,6 +385,7 @@ model Fact {
 model Conversation {
   id        String   @id @default(uuid())
   orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   userId    String
   title     String?
   createdAt DateTime @default(now())
@@ -377,6 +410,7 @@ model Message {
 model ScheduleRun {
   id           String   @id @default(uuid())
   orgId        String
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   objective    String
   input        Json
   output       Json?

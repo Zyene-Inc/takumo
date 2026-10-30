@@ -133,6 +133,14 @@ const data = {
           title: "Orders",
           url: "/shop/orders",
         },
+        {
+          title: "Customers",
+          url: "/shop/customers",
+        },
+        {
+          title: "Materials",
+          url: "/shop/materials",
+        },
       ],
     },
     {
