@@ -2,7 +2,12 @@
 // Roles): admin, planner, estimator, operator, member. Everyone in a shop can
 // read its data; these rules only gate writes (upload, add, edit, delete).
 
-export type Permission = "shop:write" | "quotes:write" | "knowledge:write";
+export type Permission =
+  | "shop:write"
+  | "quotes:write"
+  | "knowledge:write"
+  | "knowledge:review"
+  | "floor:write";
 
 const GRANTS: Readonly<Record<Permission, readonly string[]>> = {
   // Machines, parts, routings, orders, customers, materials.
@@ -10,6 +15,11 @@ const GRANTS: Readonly<Record<Permission, readonly string[]>> = {
   "quotes:write": ["owner", "admin", "estimator"],
   // Upload and remove documents (SOPs, setup sheets, specs) for Ask Takumo.
   "knowledge:write": ["owner", "admin", "planner", "estimator"],
+  // Approve or reject facts. An approved fact can change routings, rates and
+  // costs, so supervisors only. Anyone in the shop can propose one.
+  "knowledge:review": ["owner", "admin", "planner"],
+  // Log what an operation actually took on the shop floor.
+  "floor:write": ["owner", "admin", "planner", "operator"],
 };
 
 export const can = (role: string | null | undefined, permission: Permission) =>

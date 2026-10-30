@@ -28,6 +28,7 @@ import {
   FileTextIcon,
   FlaskConicalIcon,
   GaugeIcon,
+  LightbulbIcon,
   type LucideIcon,
   SearchIcon,
   TableIcon,
@@ -61,6 +62,7 @@ const KIND_ICON: Partial<Record<SourceKind, LucideIcon>> = {
   check: GaugeIcon,
   scenario: FlaskConicalIcon,
   estimate: CalculatorIcon,
+  fact: LightbulbIcon,
 };
 
 const sourceTitle = (source: Source) =>
@@ -229,6 +231,11 @@ const TOOL_LABEL: Record<
     running: "Pricing it",
     done: "Priced it",
   },
+  propose_fact: {
+    icon: LightbulbIcon,
+    running: "Recording it for review",
+    done: "Recorded for review",
+  },
   show_artifact: {
     icon: TableIcon,
     running: "Building a view",
@@ -283,6 +290,12 @@ const stepSummary = (part: ToolPartView) => {
       ];
     case "run_scenario":
       return [input.description as string | undefined];
+    case "propose_fact":
+      return [
+        typeof output.fact === "string"
+          ? `${output.fact}: ${output.about} · ${output.what} → ${output.proposed}`
+          : undefined,
+      ];
     case "estimate_quote":
       return [
         input.part_no && Array.isArray(input.qtys)

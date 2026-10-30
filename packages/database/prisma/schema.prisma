@@ -74,6 +74,7 @@ model Org {
   sources       Source[]
   docChunks     DocChunk[]
   facts         Fact[]
+  notes         Note[]
   conversations Conversation[]
   scheduleRuns  ScheduleRun[]
 }
@@ -265,28 +266,34 @@ model Order {
 
 // One row per routing operation actually run: the source for recalibration.
 model Job {
-  id             String    @id @default(uuid())
-  orgId          String
-  org            Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  orderId        String
-  routingSeq     Int
-  workCenterId   String?
-  plannedStart   DateTime?
-  plannedEnd     DateTime?
-  actualStart    DateTime?
-  actualEnd      DateTime?
-  actualSetupMin Float?
-  actualRunMin   Float?
-  qtyGood        Int?
-  qtyScrap       Int?
+  id                   String    @id @default(uuid())
+  orgId                String
+  org                  Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orderId              String
+  routingSeq           Int
+  workCenterId         String?
+  plannedStart         DateTime?
+  plannedEnd           DateTime?
+  actualStart          DateTime?
+  actualEnd            DateTime?
+  actualSetupMin       Float?
+  actualRunMin         Float?
+  qtyGood              Int?
+  qtyScrap             Int?
+  // What the model said when the job was planned or logged, so its error can
+  // be measured against what actually happened (calibration).
+  plannedSetupMin      Float?
+  plannedRunMinPerUnit Float?
+  loggedBy             String?
   // A planner fixed this operation to workCenterId and plannedStart's day on
   // the schedule board; re-planning keeps it there.
-  pinned         Boolean   @default(false)
+  pinned               Boolean   @default(false)
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@unique([orderId, routingSeq])
   @@index([orgId])
+  @@index([orgId, actualEnd])
 }
 
 model Quote {
@@ -438,24 +445,61 @@ model DocChunk {
 }
 
 // Tribal knowledge with history: new facts supersede old ones instead of
-// overwriting them.
+// overwriting them. A fact about a model parameter (a routing's setup time, a
+// machine's rate) changes that record when a supervisor approves it.
 model Fact {
   id               String     @id @default(uuid())
   orgId            String
   org              Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  subjectType      String // "routing" | "work_center" | "part" | "customer" | …
+  number           Int // F-12, per shop
+  subjectType      String // "routing" | "work_center" | "part" | "material" | "customer" | "shop"
   subjectId        String
-  attribute        String // e.g. "setupMin"
+  // How people refer to the subject, e.g. "P-1001 rev B op 10 (HAAS-VF2)".
+  subjectLabel     String
+  attribute        String // e.g. "setupMin", or "note" for knowledge in words
   value            Json
-  statedBy         String? // WorkOS user ID
+  // The record's value when the fact was proposed, to show the change.
+  previousValue    Json?
+  // chat | voice | note | floor | recalibration | manual
+  source           String     @default("manual")
+  statedBy         String? // WorkOS user ID, or null for Takumo (recalibration)
   evidence         String?
+  noteId           String?
   status           FactStatus @default(pending)
   supersedesFactId String?
+  reviewedBy       String?
+  reviewedAt       DateTime?
+  reviewNote       String?
   validFrom        DateTime   @default(now())
   validTo          DateTime?
   createdAt        DateTime   @default(now())
 
+  note Note? @relation(fields: [noteId], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, number])
   @@index([orgId, subjectType, subjectId])
+  @@index([orgId, status])
+}
+
+// A voice note or typed note from the shop floor. Takumo reads it for facts.
+model Note {
+  id          String   @id @default(uuid())
+  orgId       String
+  org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  kind        String // "voice" | "typed"
+  text        String
+  durationSec Float?
+  // The operation it was logged with, if any.
+  jobId       String?
+  createdBy   String?
+  // reading | done | failed
+  status      String   @default("reading")
+  error       String?
+  createdAt   DateTime @default(now())
+
+  facts Fact[]
+
+  @@index([orgId, createdAt])
 }
 
 // ---------------------------------------------------------------------------

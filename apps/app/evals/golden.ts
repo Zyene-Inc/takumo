@@ -1,6 +1,8 @@
 // Golden questions for Ask Takumo on the demo shop (seed/acme-precision).
 // Phase 3 is done when all 30 are answered correctly with sources; Phase 4
-// adds two about quoting.
+// adds two about quoting, and Phase 5's job history turned the scrap-rate
+// question from "no data" into a real answer (another question checks
+// honesty about missing data).
 // Expected values are computed from the seed CSVs; questions about the plan
 // derive their answer from the plan the eval builds.
 
@@ -17,7 +19,11 @@ export interface EvalContext {
 
 /** Estimates the eval runs itself, so it knows the right prices. */
 export const QUOTE_CASES = {
-  northwind150: { partNo: "P-1001", qtys: [150], customer: "Northwind Robotics" },
+  northwind150: {
+    partNo: "P-1001",
+    qtys: [150],
+    customer: "Northwind Robotics",
+  },
   shaftBreaks: { partNo: "P-2001", qtys: [40, 80], customer: null },
 } as const;
 
@@ -27,7 +33,11 @@ const unitPrice = (r: QuoteResponse, qty: number) => {
   if (price === null || price === undefined) {
     throw new Error(`No price at ${qty}`);
   }
-  return new RegExp(price.toLocaleString("en-US", { minimumFractionDigits: 2 }).replace(".", "\\."));
+  return new RegExp(
+    price
+      .toLocaleString("en-US", { minimumFractionDigits: 2 })
+      .replace(".", "\\.")
+  );
 };
 
 export interface Golden {
@@ -64,8 +74,8 @@ const busiest = (plan: ScheduleResponse, start: string, days: number) => {
 
 const NO_DATA =
   /(can't|cannot|don't|do not|doesn't|does not|no|none|isn't|aren't|wasn't|haven't|hasn't)\b[^.]{0,80}\b(have|record|recorded|track|tracked|data|logged|captured|reported|calculate|give)/;
-const INVENTED_RATE =
-  /scrap rate (is|was|of|at) (about |around )?\d|\d+(\.\d+)?\s?% scrap/;
+const INVENTED_ENERGY =
+  /electric(ity)?[^.\n]{0,40}\$\d|\$\d[\d.,]*[^.\n]{0,30}(of|in|for) electric/i;
 
 const NONE_LATE = /\b(no|none|not any|all (6|six)[^.]*on time|on time)\b/;
 
@@ -143,12 +153,12 @@ export const GOLDEN: Golden[] = [
   },
   {
     q: "How many machine hours does order SO-5002 need in total?",
-    expect: [/18(\.\d+)?\s?(h|hours)|1,?090/],
+    expect: [/18(\.\d+)?\s?(machine )?(h|hours)|1,?090/],
     tools: ["query_data", "get_record"],
   },
   {
     q: "How many hours of open-order work are routed to the OKUMA-LB3000?",
-    expect: [/28(\.\d+)?\s?(h|hours)|1,?685/],
+    expect: [/28(\.\d+)?\s?(machine )?(h|hours)|1,?685/],
     tools: ["query_data"],
   },
   {
@@ -240,10 +250,16 @@ export const GOLDEN: Golden[] = [
 
   // Honesty and clarifying questions
   {
+    // From the job history (seed/acme-precision/jobs.csv): 4 of 910 scrapped.
     q: "What's our scrap rate on the HAAS-VF2?",
-    // Honest about the missing data, and never invents a rate.
+    expect: [/0\.4\d?\s?%/],
+    tools: ["query_data"],
+  },
+  {
+    q: "How much does an hour of HAAS-VF2 time cost us in electricity?",
+    // Honest about the missing data, and never invents a figure.
     expect: [NO_DATA],
-    forbid: [INVENTED_RATE],
+    forbid: [INVENTED_ENERGY],
   },
   {
     q: "Can we take 100 parts by Friday?",

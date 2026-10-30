@@ -165,6 +165,61 @@ const main = async () => {
     });
   }
 
+  // Six weeks of finished operations (closed orders), for calibration.
+  const routings = new Map(
+    (
+      await prisma.routing.findMany({
+        where: { orgId },
+        select: {
+          partId: true,
+          seq: true,
+          setupMin: true,
+          runMinPerUnit: true,
+        },
+      })
+    ).map((r) => [`${r.partId}|${r.seq}`, r])
+  );
+  for (const row of readCsv("jobs.csv")) {
+    const partId = parts.get(row.part_no) ?? "";
+    const good = Number(row.qty_good);
+    const scrap = Number(row.qty_scrap);
+    const order = await prisma.order.upsert({
+      where: { orgId_orderNo: { orgId, orderNo: row.order_no } },
+      create: {
+        orgId,
+        orderNo: row.order_no,
+        partId,
+        qty: good + scrap,
+        dueDate: new Date(row.finished_on),
+        status: "done",
+      },
+      update: {},
+    });
+    const seq = Number(row.seq);
+    const setupMin = Number(row.setup_min);
+    const runMin = Number(row.run_min);
+    const end = new Date(`${row.finished_on}T15:00:00Z`);
+    const routing = routings.get(`${partId}|${seq}`);
+    await prisma.job.upsert({
+      where: { orderId_routingSeq: { orderId: order.id, routingSeq: seq } },
+      create: {
+        orgId,
+        orderId: order.id,
+        routingSeq: seq,
+        workCenterId: workCenters.get(row.work_center),
+        actualStart: new Date(end.getTime() - (setupMin + runMin) * 60_000),
+        actualEnd: end,
+        actualSetupMin: setupMin,
+        actualRunMin: runMin,
+        qtyGood: good,
+        qtyScrap: scrap,
+        plannedSetupMin: routing?.setupMin ?? null,
+        plannedRunMinPerUnit: routing?.runMinPerUnit ?? null,
+      },
+      update: {},
+    });
+  }
+
   console.log(`Seeded Acme Precision into org ${orgId}`);
 };
 

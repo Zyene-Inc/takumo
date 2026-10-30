@@ -3,9 +3,10 @@
 Two suites run against the demo shop (`seed/acme-precision`) with the real model, database
 and engine:
 
-- **Ask Takumo** (`ask.eval.ts`): 32 golden questions in `golden.ts`. Phase 3 is done when the
-  first 30 are answered correctly with sources (docs/TAKUMO.md section 13); the last two ask
-  for quote prices, checked against the engine's own estimate.
+- **Ask Takumo** (`ask.eval.ts`): 33 golden questions in `golden.ts`. Phase 3 is done when its
+  30 are answered correctly with sources (docs/TAKUMO.md section 13); Phase 4 added two that ask
+  for quote prices, checked against the engine's own estimate, and Phase 5 one about data the
+  shop doesn't have.
 - **Quote Copilot** (`quote.eval.ts`): eight RFQs in `rfqs/` (plain and HTML-only email, an
   email with the RFQ as a PDF attachment, a PDF, a Word file, a new customer and new part, a
   new revision, a vague request and a message that isn't an RFQ). Checks that each is read
@@ -13,6 +14,13 @@ and engine:
   part the shop makes is priced from its routing and its own past quotes; that a new part's
   operations are estimated from similar parts with every time traceable; and that approving,
   the PDF and "won → order" work.
+- **Tribal knowledge** (`knowledge.eval.ts`): seven floor notes (two with nothing worth keeping)
+  must become exactly the right facts; a correction told to Ask Takumo waits for review;
+  approving changes the routing and a newer fact supersedes it with history kept;
+  recalibration finds exactly what the six weeks of job history say (the P-2001 lathe setup and
+  the P-3001 brake run) and doesn't propose them twice; after the fix is approved, the next
+  week's setup-time error drops (the Phase 5 done-when); Ask Takumo uses and cites an approved
+  fact.
 
 ## Ask Takumo answers
 
@@ -26,7 +34,8 @@ An answer passes when:
 
 ## Run
 
-Needs the dev database with the demo shop loaded, the scheduling engine and an Anthropic key:
+Needs the dev database with the demo shop loaded (`SEED_ORG_ID=… pnpm db:seed`, including the
+job history), the scheduling engine and an Anthropic key:
 
 ```bash
 pnpm dev:engine            # in another terminal

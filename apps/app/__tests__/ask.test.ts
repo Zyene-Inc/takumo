@@ -132,6 +132,10 @@ describe("citations", () => {
       "- Steady rest over 200 mm.",
       "I can also show the next 7 and 14 days.",
       "Do you want the 200-piece split?",
+      "**Options (neither gets all 400 out by Nov 6):**",
+      "Op 10 on the OKUMA has no backup machine, so it takes most of the time.",
+      "Ops 10 and 20 run on different machines.",
+      "- Split into two runs of 200 [check NEW-1].",
       "Overall 12 orders.",
     ].join("\n");
     expect(uncitedNumbers(answer)).toEqual([

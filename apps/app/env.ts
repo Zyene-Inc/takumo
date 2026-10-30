@@ -8,6 +8,7 @@ import { keys as core } from "@repo/next-config/keys";
 import { keys as observability } from "@repo/observability/keys";
 import { keys as security } from "@repo/security/keys";
 import { createEnv } from "@t3-oss/env-nextjs";
+import { z } from "zod";
 
 export const env = createEnv({
   skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
@@ -23,7 +24,12 @@ export const env = createEnv({
     observability(),
     security(),
   ],
-  server: {},
+  server: {
+    // Vercel sends it as a bearer token to cron routes (vercel.json).
+    CRON_SECRET: z.string().min(16).optional(),
+  },
   client: {},
-  runtimeEnv: {},
+  runtimeEnv: {
+    CRON_SECRET: process.env.CRON_SECRET,
+  },
 });
