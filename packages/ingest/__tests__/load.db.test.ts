@@ -52,6 +52,8 @@ describe.skipIf(!(TEST_DATABASE_URL && process.env.LOAD_TEST))(
       const seconds = (performance.now() - start) / 1000;
       timings[label] =
         `${rows.toLocaleString()} rows in ${seconds.toFixed(1)} s (${Math.round(rows / seconds)}/s)`;
+      // Straight to stdout: Vitest buffers console output from hooks.
+      process.stdout.write(`LOAD ${label}: ${timings[label]}\n`);
       expect(seconds).toBeLessThan(MAX_SECONDS_PER_UPLOAD);
       return result;
     };
