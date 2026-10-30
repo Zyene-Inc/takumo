@@ -17,3 +17,10 @@ updates:
     open-pull-requests-limit: 10
     schedule:
       interval: "monthly"
+
+  # Maintain dependencies for the Python scheduling engine
+  - package-ecosystem: "uv"
+    directory: "/services/engine"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: "monthly"
