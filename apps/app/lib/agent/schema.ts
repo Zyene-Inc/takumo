@@ -51,8 +51,16 @@ export const ASK_VIEWS: ViewDoc[] = [
   {
     name: "jobs",
     columns:
-      "order_no, seq, work_center, planned_start, planned_end, actual_start, actual_end, actual_setup_min, actual_run_min, qty_good, qty_scrap, pinned",
-    notes: "The current plan of record, one row per order operation.",
+      "order_no, seq, work_center, planned_start, planned_end, actual_start, actual_end, actual_setup_min, actual_run_min (whole lot), qty_good, qty_scrap, pinned, planned_setup_min, planned_run_min_per_unit",
+    notes:
+      "One row per order operation: the plan of record, and operations finished on the floor (actual_end not null). planned_* are the times the model gave the job; compare with actuals for estimate accuracy.",
+  },
+  {
+    name: "facts",
+    columns:
+      "fact_no (F-12), subject_type (routing | work_center | part | material | customer | shop), subject, attribute (setupMin, runMinPerUnit, workCenter, hourlyRate, efficiency, hoursPerDay, unitCost, leadTimeDays, paymentTermDays, note), value, previous_value, status (pending | approved | superseded | rejected), source (chat | voice | note | floor | recalibration | manual), evidence, stated_on, reviewed_on, valid_to",
+    notes:
+      "Tribal knowledge with history. Approved = in force; superseded = replaced by a newer fact; pending = waiting for review.",
   },
   {
     name: "calendar",

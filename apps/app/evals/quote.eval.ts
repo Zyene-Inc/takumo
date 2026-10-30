@@ -56,7 +56,15 @@ const GOLDEN: RfqGolden[] = [
     customerKnown: true,
     contact: /Dana Ruiz/,
     requestedDate: "2026-12-04",
-    lines: [{ partNo: "P-1001", rev: "B", qtys: [50, 150, 400], material: AL, inShop: true }],
+    lines: [
+      {
+        partNo: "P-1001",
+        rev: "B",
+        qtys: [50, 150, 400],
+        material: AL,
+        inShop: true,
+      },
+    ],
   },
   {
     file: "bluefin-shaft.txt",
@@ -66,7 +74,14 @@ const GOLDEN: RfqGolden[] = [
     contact: /Marco Bell/,
     requestedDate: "2026-12-18",
     lines: [
-      { partNo: "P-2001", rev: "C", qtys: [40, 80], material: SS, finish: /passivat/i, inShop: true },
+      {
+        partNo: "P-2001",
+        rev: "C",
+        qtys: [40, 80],
+        material: SS,
+        finish: /passivat/i,
+        inShop: true,
+      },
     ],
   },
   {
@@ -75,7 +90,9 @@ const GOLDEN: RfqGolden[] = [
     customer: "Bluefin Marine",
     customerKnown: true,
     requestedDate: "2026-12-22",
-    lines: [{ partNo: "P-2002", rev: "A", qtys: [60], material: SS, inShop: true }],
+    lines: [
+      { partNo: "P-2002", rev: "A", qtys: [60], material: SS, inShop: true },
+    ],
   },
   {
     file: "cobalt-trays.pdf",
@@ -87,7 +104,14 @@ const GOLDEN: RfqGolden[] = [
     notes: /cert/i,
     lines: [
       { partNo: "P-3001", rev: "A", qtys: [1000], material: CRS, inShop: true },
-      { partNo: "CM-4410", rev: "A", qtys: [250, 500], material: CRS, finish: /powder/i, inShop: false },
+      {
+        partNo: "CM-4410",
+        rev: "A",
+        qtys: [250, 500],
+        material: CRS,
+        finish: /powder/i,
+        inShop: false,
+      },
     ],
   },
   {
@@ -116,7 +140,16 @@ const GOLDEN: RfqGolden[] = [
     customer: "Northwind Robotics",
     customerKnown: true,
     requestedDate: "2026-12-11",
-    lines: [{ partNo: "P-1001", rev: "C", qtys: [200], material: AL, finish: /anodi/i, inShop: false }],
+    lines: [
+      {
+        partNo: "P-1001",
+        rev: "C",
+        qtys: [200],
+        material: AL,
+        finish: /anodi/i,
+        inShop: false,
+      },
+    ],
   },
   { file: "not-rfq.txt", status: "failed" },
 ];
@@ -127,7 +160,10 @@ let started = new Date();
 beforeAll(async () => {
   started = new Date();
   const db = forOrg(database, ORG_ID);
-  const [quotes, parts] = await Promise.all([db.quote.count(), db.part.count()]);
+  const [quotes, parts] = await Promise.all([
+    db.quote.count(),
+    db.part.count(),
+  ]);
   if (!(quotes === 8 && parts === 6)) {
     throw new Error(
       `The eval shop doesn't match seed/acme-precision (${quotes} quotes, ${parts} parts; expected 8 and 6).`
@@ -138,7 +174,10 @@ beforeAll(async () => {
 afterAll(async () => {
   // Leave the demo shop as it was.
   const db = forOrg(database, ORG_ID);
-  const rfqs = await db.rfq.findMany({ where: { createdBy: EVAL_USER }, select: { id: true } });
+  const rfqs = await db.rfq.findMany({
+    where: { createdBy: EVAL_USER },
+    select: { id: true },
+  });
   const ids = rfqs.map((r) => r.id);
   await db.quote.deleteMany({ where: { rfqId: { in: ids } } });
   await db.order.deleteMany({ where: { createdAt: { gte: started } } });
@@ -160,8 +199,14 @@ const lineView = async (file: string) => {
 };
 
 describe("reading RFQs", () => {
-  test.concurrent.for(GOLDEN.map((g) => [g.file, g] as const))("%s", async ([file, golden], { expect }) => {
-    const text = await readRfqFile(file, new Uint8Array(readFileSync(path.join(DIR, file))));
+  test.concurrent.for(GOLDEN.map((g) => [g.file, g] as const))("%s", async ([
+    file,
+    golden,
+  ], { expect }) => {
+    const text = await readRfqFile(
+      file,
+      new Uint8Array(readFileSync(path.join(DIR, file)))
+    );
     const rfq = await intakeRfq(ORG_ID, EVAL_USER, text, file);
     rfqIds.set(file, rfq.id);
     const view = await loadRfqView(ORG_ID, rfq.id);
@@ -176,7 +221,9 @@ describe("reading RFQs", () => {
     }
     expect(view.requestedDate).toBe(golden.requestedDate);
     if (golden.notes) {
-      expect(`${view.notes} ${view.lines.map((l) => l.notes).join(" ")}`).toMatch(golden.notes);
+      expect(
+        `${view.notes} ${view.lines.map((l) => l.notes).join(" ")}`
+      ).toMatch(golden.notes);
     }
     expect(view.lines).toHaveLength(golden.lines?.length ?? 0);
     for (const [i, want] of (golden.lines ?? []).entries()) {
@@ -198,7 +245,10 @@ describe("reading RFQs", () => {
   });
 
   test("a vague request becomes questions for the customer, not a guess", async () => {
-    const text = await readRfqFile("vague.txt", new Uint8Array(readFileSync(path.join(DIR, "vague.txt"))));
+    const text = await readRfqFile(
+      "vague.txt",
+      new Uint8Array(readFileSync(path.join(DIR, "vague.txt")))
+    );
     const rfq = await intakeRfq(ORG_ID, EVAL_USER, text, "vague.txt");
     const view = await loadRfqView(ORG_ID, rfq.id);
     expect(view?.lines.every((l) => !l.part)).toBe(true);
@@ -223,13 +273,28 @@ describe.sequential("drafting, approving and winning a quote", () => {
     const units = r.breaks.map((b) => b.unit_price ?? 0);
     expect(units).toEqual([...units].sort((a, b) => b - a));
     // Evidence: the part's own past quotes, and Northwind's margins.
-    expect(r.comparables.slice(0, 2).map((c) => c.quote_no).sort()).toEqual(["Q-9001", "Q-9002"]);
-    expect([...r.margin.sources].sort()).toEqual(["quote Q-9001", "quote Q-9002"]);
     expect(
-      [...(r.breaks[0].lines.find((l) => l.kind === "material")?.sources ?? [])].sort()
+      r.comparables
+        .slice(0, 2)
+        .map((c) => c.quote_no)
+        .sort()
+    ).toEqual(["Q-9001", "Q-9002"]);
+    expect([...r.margin.sources].sort()).toEqual([
+      "quote Q-9001",
+      "quote Q-9002",
+    ]);
+    expect(
+      [
+        ...(r.breaks[0].lines.find((l) => l.kind === "material")?.sources ??
+          []),
+      ].sort()
     ).toEqual(["quote Q-9001", "quote Q-9002"]);
     expect(r.breaks[0].meets_requested).toBe(true);
-    expect(draft.inputs.routing.every((op) => op.source === "routing")).toBe(true);
+    // The job history has 4 finished jobs per operation: their median times are used.
+    for (const op of draft.inputs.routing) {
+      expect(op.source).toBe("actuals");
+      expect(op.note).toMatch(/^median of 4 jobs/);
+    }
   });
 
   test("a new part: operations estimated from similar parts, every time traceable", async () => {
@@ -244,12 +309,18 @@ describe.sequential("drafting, approving and winning a quote", () => {
       expect(op.note).toBeTruthy();
     }
     // At least one operation is based on a shop part's operation.
-    expect(r.inputs.routing.some((op) => /P-\d{4} op \d+/.test(op.note ?? ""))).toBe(true);
+    expect(
+      r.inputs.routing.some((op) => /P-\d{4} op \d+/.test(op.note ?? ""))
+    ).toBe(true);
     expect(r.response.breaks.every((b) => (b.unit_price ?? 0) > 0)).toBe(true);
     // Material comes from other aluminum parts, and says so; the anodize isn't priced yet.
     expect(r.response.warnings.join(" ")).toMatch(/No cost history for HA-220/);
     expect(r.response.warnings.join(" ")).toMatch(/Not priced yet: .*anodi/i);
-    expect(r.response.comparables.some((c) => c.part_no === "P-1001" || c.part_no === "P-1002")).toBe(true);
+    expect(
+      r.response.comparables.some(
+        (c) => c.part_no === "P-1001" || c.part_no === "P-1002"
+      )
+    ).toBe(true);
   });
 
   test("approve → quote with the draft beside it → PDF → won → order", async () => {
@@ -260,7 +331,9 @@ describe.sequential("drafting, approving and winning a quote", () => {
     const quoteNos = (approved as { quoteNos: string[] }).quoteNos;
     expect(quoteNos).toEqual(["Q-9009"]);
 
-    const quote = await forOrg(database, ORG_ID).quote.findFirst({ where: { quoteNo: "Q-9009" } });
+    const quote = await forOrg(database, ORG_ID).quote.findFirst({
+      where: { quoteNo: "Q-9009" },
+    });
     expect(quote?.qty).toBe(50);
     expect(Number(quote?.price)).toBe(Number(quote?.draftPrice));
     expect(quote?.leadTimeDays).toBe(quote?.draftLeadTimeDays);
@@ -270,21 +343,37 @@ describe.sequential("drafting, approving and winning a quote", () => {
     expect(view.status).toBe("quoted");
     const bytes = await renderQuotePdf(quoteDocument(view, "Acme Precision"));
     const { extractText, getDocumentProxy } = await import("unpdf");
-    const { text } = await extractText(await getDocumentProxy(bytes), { mergePages: true });
+    const { text } = await extractText(await getDocumentProxy(bytes), {
+      mergePages: true,
+    });
     expect(text).toContain("Q-9009");
     expect(text).toContain("Northwind Robotics");
     expect(text).toContain("P-1001 rev B");
 
-    const won = await recordOutcome(ORG_ID, id, { lineId: view.lines[0].id, status: "won", qty: 150 }, EVAL_TODAY);
+    const won = await recordOutcome(
+      ORG_ID,
+      id,
+      { lineId: view.lines[0].id, status: "won", qty: 150 },
+      EVAL_TODAY
+    );
     expect(won.ok, won.ok ? "" : won.error).toBe(true);
     expect((won as { orderNo: string }).orderNo).toBe("SO-5007");
-    const order = await forOrg(database, ORG_ID).order.findFirst({ where: { orderNo: "SO-5007" } });
-    const breaks = quote?.breaks as { qty: number; leadTimeDays: number; price: number }[];
+    const order = await forOrg(database, ORG_ID).order.findFirst({
+      where: { orderNo: "SO-5007" },
+    });
+    const breaks = quote?.breaks as {
+      qty: number;
+      leadTimeDays: number;
+      price: number;
+    }[];
     const chosen = breaks.find((b) => b.qty === 150);
     expect(order?.qty).toBe(150);
     expect(Number(order?.price)).toBe(chosen?.price);
     expect(order?.dueDate.toISOString().slice(0, 10)).toBe(
-      new Date(Date.parse(`${EVAL_TODAY}T00:00:00Z`) + (chosen?.leadTimeDays ?? 0) * 86_400_000)
+      new Date(
+        Date.parse(`${EVAL_TODAY}T00:00:00Z`) +
+          (chosen?.leadTimeDays ?? 0) * 86_400_000
+      )
         .toISOString()
         .slice(0, 10)
     );
@@ -293,7 +382,12 @@ describe.sequential("drafting, approving and winning a quote", () => {
     // Sent as drafted, so it counts as accepted.
     const drafted = await forOrg(database, ORG_ID).quote.findMany({
       where: { draftPrice: { not: null } },
-      select: { price: true, draftPrice: true, leadTimeDays: true, draftLeadTimeDays: true },
+      select: {
+        price: true,
+        draftPrice: true,
+        leadTimeDays: true,
+        draftLeadTimeDays: true,
+      },
     });
     expect(
       acceptance(
@@ -309,6 +403,8 @@ describe.sequential("drafting, approving and winning a quote", () => {
 
   test("history now includes the new quote", async () => {
     const history = await loadQuoteHistory(ORG_ID);
-    expect(history.history.find((q) => q.quote_no === "Q-9009")?.status).toBe("won");
+    expect(history.history.find((q) => q.quote_no === "Q-9009")?.status).toBe(
+      "won"
+    );
   });
 });

@@ -17,6 +17,7 @@ export const SOURCE_KINDS = [
   "query",
   "scenario",
   "estimate",
+  "fact",
 ] as const;
 
 export type SourceKind = (typeof SOURCE_KINDS)[number];
@@ -109,6 +110,13 @@ export const cite = {
     detail: purpose,
     sql,
   }),
+  fact: (label: string, description: string): Source => ({
+    id: `fact ${label}`,
+    kind: "fact",
+    label,
+    detail: description,
+    href: `/knowledge/facts?f=${enc(label)}`,
+  }),
   estimate: (n: number, description: string): Source => ({
     id: `estimate ${n}`,
     kind: "estimate",
@@ -133,6 +141,7 @@ const KEY_COLUMNS: Record<string, (value: string) => Source> = {
   work_center: cite.machine,
   customer: cite.customer,
   material: cite.material,
+  fact_no: (v) => cite.fact(v, "Fact"),
 };
 
 const MAX_ROW_SOURCES = 60;
@@ -225,14 +234,16 @@ export const linkCitations = (
 const TWO_DIGITS = /\d{2,}/;
 const TABLE_ROW = /^\s*\|/;
 const HEADING = /^\s*#/;
-const INTRODUCES_LIST = /:\s*$/;
+// A line ending in a colon (bold or not) introduces what follows.
+const INTRODUCES_LIST = /:\s*(\*\*|__)?\s*$/;
 const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s/;
 // Offers, questions and the agent's own assumptions aren't claims from data.
 const NOT_A_CLAIM =
   /\?\s*$|^\W*(I can|I could|I'll|I will|I assumed|I'm assuming|Assuming|If you|If the customer|Want me|Do you want|Would you like|Let me know)\b/i;
 // Record names aren't quantities: SO-5003, P-1001, HAAS-VF2, SS316, AL6061-T6.
+// Record names (SO-5003, HAAS-VF2) and operation numbers ("op 10") aren't figures.
 const IDENTIFIER =
-  /\b(?:[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9-]*\d[A-Za-z0-9-]*|[A-Z]{2,}\d+[A-Za-z0-9]*)\b/g;
+  /\b(?:[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9-]*\d[A-Za-z0-9-]*|[A-Z]{2,}\d+[A-Za-z0-9]*|op(?:eration)?s? \d+(?:(?:,| and| or) \d+)*)\b/gi;
 
 /**
  * Lines (sentences or bullets) that state a number but carry no citation.

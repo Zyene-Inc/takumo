@@ -122,6 +122,10 @@ const data = {
           title: "Calendar",
           url: "/schedule/calendar",
         },
+        {
+          title: "Shop floor",
+          url: "/schedule/floor",
+        },
       ],
     },
     {
@@ -161,8 +165,16 @@ const data = {
           url: "/knowledge",
         },
         {
-          title: "Facts to review",
+          title: "Facts",
           url: "/knowledge/facts",
+        },
+        {
+          title: "Voice notes",
+          url: "/knowledge/notes",
+        },
+        {
+          title: "Calibration",
+          url: "/knowledge/calibration",
         },
       ],
     },

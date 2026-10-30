@@ -30,6 +30,7 @@ export const ENTITY_KEYS = [
   "routings",
   "orders",
   "quotes",
+  "jobs",
 ] as const;
 
 export type EntityKey = (typeof ENTITY_KEYS)[number];
@@ -502,6 +503,127 @@ const quotes: EntityDef = {
   ],
 };
 
+const jobs: EntityDef = {
+  key: "jobs",
+  label: "Job history",
+  description:
+    "Operations already run: actual setup and run times, from the ERP or traveler logs. Takumo compares them with your routings to correct setup and run times.",
+  identity: ["orderNo", "seq"],
+  fields: [
+    {
+      key: "orderNo",
+      label: "Order number",
+      kind: "text",
+      required: true,
+      synonyms: [
+        "order no",
+        "order number",
+        "order",
+        "so",
+        "job",
+        "job number",
+        "wo",
+        "work order",
+      ],
+    },
+    {
+      key: "partNo",
+      label: "Part number",
+      kind: "text",
+      required: true,
+      synonyms: ["part no", "part number", "part", "pn", "p/n", "item"],
+    },
+    {
+      key: "seq",
+      label: "Operation number",
+      kind: "integer",
+      required: true,
+      synonyms: ["seq", "op", "operation", "op no", "op number", "step"],
+    },
+    {
+      key: "workCenter",
+      label: "Machine / work center",
+      kind: "text",
+      synonyms: ["work center", "machine", "workcenter", "resource", "wc"],
+    },
+    {
+      key: "setupMin",
+      label: "Actual setup time",
+      kind: "minutes",
+      required: true,
+      synonyms: [
+        "setup",
+        "setup time",
+        "actual setup",
+        "setup min",
+        "setup hrs",
+      ],
+    },
+    {
+      key: "runMin",
+      label: "Actual run time (whole lot)",
+      kind: "minutes",
+      required: true,
+      hint: "Total run time for all the parts, not per part",
+      synonyms: [
+        "run",
+        "run time",
+        "actual run",
+        "run min",
+        "run hrs",
+        "cycle total",
+      ],
+    },
+    {
+      key: "qtyGood",
+      label: "Good parts",
+      kind: "integer",
+      required: true,
+      synonyms: [
+        "qty good",
+        "good",
+        "good qty",
+        "qty",
+        "quantity",
+        "completed",
+      ],
+    },
+    {
+      key: "qtyScrap",
+      label: "Scrapped parts",
+      kind: "integer",
+      synonyms: ["scrap", "qty scrap", "scrap qty", "rejected", "rejects"],
+    },
+    {
+      key: "finishedAt",
+      label: "Finished on",
+      kind: "date",
+      required: true,
+      synonyms: [
+        "finished",
+        "finished on",
+        "finish date",
+        "end date",
+        "completed on",
+        "date",
+        "end",
+      ],
+    },
+    {
+      key: "plannedSetupMin",
+      label: "Planned setup time",
+      kind: "minutes",
+      hint: "What the routing said at the time; defaults to today's routing",
+      synonyms: [
+        "planned setup",
+        "standard setup",
+        "est setup",
+        "estimated setup",
+      ],
+    },
+  ],
+};
+
 export const ENTITIES: Readonly<Record<EntityKey, EntityDef>> = {
   workCenters,
   customers,
@@ -510,6 +632,7 @@ export const ENTITIES: Readonly<Record<EntityKey, EntityDef>> = {
   routings,
   orders,
   quotes,
+  jobs,
 };
 
 // A CSV header row users can download and fill in.

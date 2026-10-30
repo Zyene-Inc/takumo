@@ -73,7 +73,9 @@ beforeAll(async () => {
         })
       : null;
     if (!estimate?.ok) {
-      throw new Error(`Couldn't estimate ${c.partNo} for the quoting questions.`);
+      throw new Error(
+        `Couldn't estimate ${c.partNo} for the quoting questions.`
+      );
     }
     ctx.estimates[key] = estimate.response;
   }

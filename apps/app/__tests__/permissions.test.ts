@@ -25,6 +25,17 @@ describe("role permissions", () => {
     expect(can("member", "knowledge:write")).toBe(false);
   });
 
+  test("supervisors approve facts; operators log floor times", () => {
+    expect(can("planner", "knowledge:review")).toBe(true);
+    expect(can("admin", "knowledge:review")).toBe(true);
+    expect(can("estimator", "knowledge:review")).toBe(false);
+    expect(can("operator", "knowledge:review")).toBe(false);
+    expect(can("operator", "floor:write")).toBe(true);
+    expect(can("planner", "floor:write")).toBe(true);
+    expect(can("estimator", "floor:write")).toBe(false);
+    expect(can("member", "floor:write")).toBe(false);
+  });
+
   test("no role, no writes", () => {
     expect(can(null, "shop:write")).toBe(false);
     expect(can(undefined, "quotes:write")).toBe(false);
