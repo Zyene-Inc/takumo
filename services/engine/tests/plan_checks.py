@@ -2,8 +2,9 @@
 
 Re-derives everything from the request, not from the solver's internals:
 machines never run two operations at once, operations follow routing order
-in clock time, run on an allowed machine, fit the machine's working hours,
-and pinned operations stay where they were pinned.
+in clock time, start no earlier than the material arrives, run on an allowed
+machine, fit the machine's working hours, and pinned operations stay where
+they were pinned.
 """
 
 from collections import defaultdict
@@ -30,6 +31,9 @@ def assert_valid_plan(request: ScheduleRequest, response: ScheduleResponse) -> N
     for order in request.orders:
         routing = sorted(parts[order.part_no].routing, key=lambda r: r.seq)
         previous_end: datetime | None = None
+        if order.release_date:
+            first = ops[(order.order_no, routing[0].seq)]
+            assert first.start_date >= order.release_date, order.order_no
         for step in routing:
             op = ops[(order.order_no, step.seq)]
             assert op.work_center in [step.work_center, *step.alt_work_centers]

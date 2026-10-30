@@ -4,6 +4,8 @@ import { keys } from "./keys";
 import type {
   CapacityRequest,
   CapacityResponse,
+  QuoteRequest,
+  QuoteResponse,
   ScheduleRequest,
   ScheduleResponse,
 } from "./types";
@@ -62,3 +64,7 @@ export const schedule = (request: ScheduleRequest) =>
 /** "Can we take this order?": compares the plan with and without it. */
 export const checkCapacity = (request: CapacityRequest) =>
   post<CapacityResponse>("/capacity", request);
+
+/** Quote estimate: cost build-up, price and lead time for each quantity. */
+export const estimateQuote = (request: QuoteRequest) =>
+  post<QuoteResponse>("/quote", request);

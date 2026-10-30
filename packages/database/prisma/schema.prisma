@@ -70,6 +70,7 @@ model Org {
   jobs          Job[]
   quotes        Quote[]
   rfqs          Rfq[]
+  rfqLines      RfqLine[]
   sources       Source[]
   docChunks     DocChunk[]
   facts         Fact[]
@@ -152,7 +153,8 @@ model Material {
   leadTimeDays Int?
   provenance   Provenance @default(data)
 
-  parts Part[]
+  parts    Part[]
+  rfqLines RfqLine[]
 
   @@unique([orgId, name])
   @@index([orgId])
@@ -169,6 +171,7 @@ model Customer {
   parts  Part[]
   orders Order[]
   quotes Quote[]
+  rfqs   Rfq[]
 
   @@unique([orgId, name])
   @@index([orgId])
@@ -191,6 +194,7 @@ model Part {
   routings  Routing[]
   orders    Order[]
   quotes    Quote[]
+  rfqLines  RfqLine[]
   bomParent BomLine[] @relation("BomParent")
   bomChild  BomLine[] @relation("BomChild")
 
@@ -286,41 +290,113 @@ model Job {
 }
 
 model Quote {
-  id           String      @id @default(uuid())
-  orgId        String
-  org          Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  quoteNo      String
-  customerId   String?
-  partId       String?
-  qty          Int
-  price        Decimal?    @db.Decimal(12, 2)
-  leadTimeDays Int?
-  estCost      Decimal?    @db.Decimal(12, 2)
-  actualCost   Decimal?    @db.Decimal(12, 2)
-  status       QuoteStatus @default(open)
-  quotedAt     DateTime    @default(now())
-  rfqId        String?
+  id                String      @id @default(uuid())
+  orgId             String
+  org               Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  quoteNo           String
+  customerId        String?
+  partId            String?
+  qty               Int
+  price             Decimal?    @db.Decimal(12, 2)
+  leadTimeDays      Int?
+  estCost           Decimal?    @db.Decimal(12, 2)
+  actualCost        Decimal?    @db.Decimal(12, 2)
+  status            QuoteStatus @default(open)
+  quotedAt          DateTime    @default(now())
+  rfqId             String?
+  // Quote Copilot: what Takumo suggested, kept beside what was sent so we can
+  // measure how often estimators accept the draft with small edits.
+  draftPrice        Decimal?    @db.Decimal(12, 2)
+  draftLeadTimeDays Int?
+  // Every quantity quoted: [{ qty, unitPrice, price, draftUnitPrice }].
+  breaks            Json?
+  approvedBy        String?
 
   customer Customer? @relation(fields: [customerId], references: [id])
   part     Part?     @relation(fields: [partId], references: [id])
-  rfq      Rfq?      @relation(fields: [rfqId], references: [id])
+  rfq      Rfq?      @relation(fields: [rfqId], references: [id], onDelete: SetNull)
+  rfqLine  RfqLine?
 
   @@unique([orgId, quoteNo])
   @@index([orgId, status])
+  @@index([rfqId])
 }
 
+// A request for quote: an email or a document from a customer. Quote Copilot
+// reads it into lines, drafts a price and lead time per line, and an
+// estimator approves the quote.
 model Rfq {
-  id         String   @id @default(uuid())
-  orgId      String
-  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  source     String // "email" | "upload"
-  sourceId   String?
-  extracted  Json? // { partNo, qty, material, tolerances, finish, dueDate }
-  status     String   @default("new")
-  receivedAt DateTime @default(now())
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number        Int // RFQ-0001, per shop
+  source        String // "email" | "upload" | "paste"
+  sourceId      String?
+  fileName      String?
+  subject       String?
+  sender        String?
+  // The text Takumo read the RFQ from.
+  body          String
+  customerName  String?
+  customerId    String?
+  contact       String?
+  requestedDate DateTime? @db.Date
+  notes         String?
+  // The model's raw reading, kept for audit.
+  extracted     Json?
+  // reading | review | drafted | quoted | won | lost | declined | failed
+  status        String    @default("reading")
+  error         String?
+  createdBy     String?
+  receivedAt    DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
 
-  quotes Quote[]
+  customer Customer? @relation(fields: [customerId], references: [id])
+  lines    RfqLine[]
+  quotes   Quote[]
 
+  @@unique([orgId, number])
+  @@index([orgId, status])
+}
+
+// One part on an RFQ, with the quantities asked for.
+model RfqLine {
+  id           String  @id @default(uuid())
+  orgId        String
+  org          Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  rfqId        String
+  lineNo       Int
+  partNo       String?
+  rev          String?
+  description  String?
+  materialText String? // as the customer wrote it
+  qtys         Int[]
+  tolerances   String?
+  finish       String?
+  notes        String?
+  // Matched shop records (null = a part or material the shop hasn't made).
+  partId       String?
+  materialId   String?
+  // Estimator inputs: operations for a new part ([QuoteOperation]), outside
+  // processes ([OutsideProcess]), stock per part or material cost per part,
+  // and a margin override.
+  routing      Json?
+  outside      Json?
+  usagePerPart Float?
+  materialCost Float?
+  targetMargin Float?
+  // The engine's estimate ({ estimatedAt, request summary, response }).
+  draft        Json?
+  // What the estimator approved: { leadTimeDays, breaks: [{ qty, unitPrice }] }.
+  final        Json?
+  quoteId      String? @unique
+
+  rfq      Rfq       @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  part     Part?     @relation(fields: [partId], references: [id], onDelete: SetNull)
+  material Material? @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  quote    Quote?    @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+
+  @@unique([rfqId, lineNo])
   @@index([orgId])
 }
 

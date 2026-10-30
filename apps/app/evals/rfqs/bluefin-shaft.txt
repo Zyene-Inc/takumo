@@ -1,0 +1,14 @@
+From: Marco Bell <mbell@bluefinmarine.example>
+Subject: RFQ: pump shafts P-2001
+
+Hi Acme team,
+
+Can you quote pump shaft P-2001 rev C, 40 pcs and 80 pcs?
+Material per drawing: 316 stainless bar, 1.5" dia.
+Passivate per ASTM A967 after machining.
+We need them by December 18, 2026.
+
+Thanks,
+Marco Bell
+Purchasing, Bluefin Marine
+(555) 201-4410

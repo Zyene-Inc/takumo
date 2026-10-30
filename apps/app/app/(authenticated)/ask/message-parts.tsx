@@ -21,6 +21,7 @@ import { cn } from "@repo/design-system/lib/utils";
 import {
   AlertTriangleIcon,
   BookOpenIcon,
+  CalculatorIcon,
   CalendarRangeIcon,
   ChevronRightIcon,
   DatabaseIcon,
@@ -59,6 +60,7 @@ const KIND_ICON: Partial<Record<SourceKind, LucideIcon>> = {
   plan: CalendarRangeIcon,
   check: GaugeIcon,
   scenario: FlaskConicalIcon,
+  estimate: CalculatorIcon,
 };
 
 const sourceTitle = (source: Source) =>
@@ -222,6 +224,11 @@ const TOOL_LABEL: Record<
     running: "Re-planning the scenario",
     done: "Ran a scenario",
   },
+  estimate_quote: {
+    icon: CalculatorIcon,
+    running: "Pricing it",
+    done: "Priced it",
+  },
   show_artifact: {
     icon: TableIcon,
     running: "Building a view",
@@ -276,6 +283,12 @@ const stepSummary = (part: ToolPartView) => {
       ];
     case "run_scenario":
       return [input.description as string | undefined];
+    case "estimate_quote":
+      return [
+        input.part_no && Array.isArray(input.qtys)
+          ? `${input.qtys.join(" / ")} × ${input.part_no}`
+          : undefined,
+      ];
     default:
       return [];
   }

@@ -71,7 +71,8 @@ def order_cost(
             missing.append(f"hourly rate for {op.work_center}")
             continue
         routing = next(r for r in part.routing if r.seq == op.seq)
-        machine += routing.duration(order.qty) / 60 * rate
+        # Clock time: standard minutes ÷ efficiency, as in quotes (app/quote).
+        machine += routing.duration(order.qty) / rates[op.work_center].efficiency / 60 * rate
     material = None
     if part.material_cost is None:
         missing.append(f"material cost for {part.part_no}")

@@ -1,13 +1,34 @@
 // Golden questions for Ask Takumo on the demo shop (seed/acme-precision).
-// Phase 3 is done when all 30 are answered correctly with sources.
+// Phase 3 is done when all 30 are answered correctly with sources; Phase 4
+// adds two about quoting.
 // Expected values are computed from the seed CSVs; questions about the plan
 // derive their answer from the plan the eval builds.
 
-import type { ScheduleResponse } from "@repo/engine-client/types";
+import type {
+  QuoteResponse,
+  ScheduleResponse,
+} from "@repo/engine-client/types";
 
 export interface EvalContext {
+  /** Engine estimates for the quoting questions, by QUOTE_CASES key. */
+  estimates: Record<string, QuoteResponse>;
   plan: ScheduleResponse;
 }
+
+/** Estimates the eval runs itself, so it knows the right prices. */
+export const QUOTE_CASES = {
+  northwind150: { partNo: "P-1001", qtys: [150], customer: "Northwind Robotics" },
+  shaftBreaks: { partNo: "P-2001", qtys: [40, 80], customer: null },
+} as const;
+
+/** "$42.44" or "42.44" for a unit price. */
+const unitPrice = (r: QuoteResponse, qty: number) => {
+  const price = r.breaks.find((b) => b.qty === qty)?.unit_price;
+  if (price === null || price === undefined) {
+    throw new Error(`No price at ${qty}`);
+  }
+  return new RegExp(price.toLocaleString("en-US", { minimumFractionDigits: 2 }).replace(".", "\\."));
+};
 
 export interface Golden {
   /** Every pattern must appear in the answer (case-insensitive). */
@@ -171,6 +192,25 @@ export const GOLDEN: Golden[] = [
     q: "What happens to our orders if the OKUMA-LB3000 is down from November 3 to November 6?",
     expect: [/SO-5002|SO-5005/],
     tools: ["run_scenario"],
+  },
+
+  // Quoting
+  {
+    q: "What should we quote Northwind Robotics for 150 pieces of P-1001?",
+    tools: ["estimate_quote"],
+    expect: ({ estimates }) => [
+      unitPrice(estimates.northwind150, 150),
+      /Q-900[12]/,
+      /\bdays?\b/,
+    ],
+  },
+  {
+    q: "Give me price breaks for P-2001 at 40 and 80 pieces.",
+    tools: ["estimate_quote"],
+    expect: ({ estimates }) => [
+      unitPrice(estimates.shaftBreaks, 40),
+      unitPrice(estimates.shaftBreaks, 80),
+    ],
   },
 
   // Documents

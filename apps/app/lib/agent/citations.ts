@@ -16,6 +16,7 @@ export const SOURCE_KINDS = [
   "check",
   "query",
   "scenario",
+  "estimate",
 ] as const;
 
 export type SourceKind = (typeof SOURCE_KINDS)[number];
@@ -107,6 +108,13 @@ export const cite = {
     label: `Query ${n}`,
     detail: purpose,
     sql,
+  }),
+  estimate: (n: number, description: string): Source => ({
+    id: `estimate ${n}`,
+    kind: "estimate",
+    label: `Estimate ${n}`,
+    detail: description,
+    href: "/quotes",
   }),
   scenario: (n: number, description: string): Source => ({
     id: `scenario ${n}`,
