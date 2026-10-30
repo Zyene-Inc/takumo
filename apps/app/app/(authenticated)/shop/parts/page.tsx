@@ -11,23 +11,36 @@ import {
 } from "@repo/design-system/components/ui/table";
 import { PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
-import { getAccess } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getAccess } from "@/lib/access";
 import { Header } from "../../components/header";
-import { EmptyState } from "../components/format";
+import { EmptyState, FilterNote, textFilter } from "../components/format";
 import { RecordDialog } from "../components/record-dialog";
 
 export const metadata: Metadata = { title: "Parts & routings · Takumo" };
 
-const PartsPage = async () => {
+const PartsPage = async ({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) => {
   const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
     notFound();
   }
+  const q = textFilter((await searchParams).q);
   const db = forOrg(database, orgId);
   const [parts, customers, materials] = await Promise.all([
     db.part.findMany({
+      where: q
+        ? {
+            OR: [
+              { partNo: { contains: q, mode: "insensitive" } },
+              { description: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {},
       orderBy: [{ partNo: "asc" }, { rev: "asc" }],
       include: {
         customer: { select: { name: true } },
@@ -60,6 +73,7 @@ const PartsPage = async () => {
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        {q && <FilterNote href="/shop/parts" q={q} />}
         {parts.length === 0 ? (
           <EmptyState>
             No parts yet.{" "}

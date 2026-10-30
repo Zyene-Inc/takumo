@@ -19,12 +19,12 @@ import { useState, useTransition } from "react";
 import { deleteRecord } from "../actions";
 
 interface DeleteButtonProps {
+  readonly canEdit?: boolean;
   readonly entity: EntityKey;
   readonly id: string;
   readonly name: string;
   // Where to go after deleting, e.g. back to the list from a detail page.
   readonly redirectTo?: string;
-  readonly canEdit?: boolean;
 }
 
 export const DeleteButton = ({

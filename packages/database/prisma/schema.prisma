@@ -393,10 +393,12 @@ model Conversation {
   userId    String
   title     String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   messages Message[]
 
   @@index([orgId, userId])
+  @@index([orgId, userId, updatedAt])
 }
 
 model Message {
@@ -406,9 +408,14 @@ model Message {
   content        String
   toolCalls      Json?
   citations      Json?
+  // The full UI message (text, tool calls and results, artifacts), so a
+  // conversation re-opens exactly as it was shown.
+  parts          Json?
   createdAt      DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
 }
 
 model ScheduleRun {

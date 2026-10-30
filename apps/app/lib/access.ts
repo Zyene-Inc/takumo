@@ -11,6 +11,7 @@ export const permissionFor = (entity: EntityKey): Permission =>
 export const NO_ACCESS_MESSAGE: Record<Permission, string> = {
   "shop:write": `Only ${rolesWith("shop:write").join(" or ")}s can change shop data. Ask an admin to change your role.`,
   "quotes:write": `Only ${rolesWith("quotes:write").join(" or ")}s can change quotes. Ask an admin to change your role.`,
+  "knowledge:write": `Only ${rolesWith("knowledge:write").join(", ")} roles can add or remove documents. Ask an admin to change your role.`,
 };
 
 /** The current shop and what the signed-in user may change in it. */
@@ -21,6 +22,7 @@ export const getAccess = async () => {
     role,
     canEditShop: can(role, "shop:write"),
     canEditQuotes: can(role, "quotes:write"),
+    canEditKnowledge: can(role, "knowledge:write"),
   };
 };
 

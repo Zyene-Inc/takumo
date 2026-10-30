@@ -48,6 +48,8 @@ const unitSuffix = (field: FieldDef) =>
   field.kind === "minutes" ? " (minutes)" : "";
 
 interface RecordDialogProps {
+  // False for roles that can only view; the trigger isn't rendered.
+  readonly canEdit?: boolean;
   readonly entity: EntityKey;
   // Fields hidden from the form; their initial value is still submitted.
   readonly hidden?: readonly string[];
@@ -58,8 +60,6 @@ interface RecordDialogProps {
   readonly options?: Readonly<Record<string, readonly string[]>>;
   readonly title: string;
   readonly trigger: ReactNode;
-  // False for roles that can only view; the trigger isn't rendered.
-  readonly canEdit?: boolean;
 }
 
 export const RecordDialog = ({

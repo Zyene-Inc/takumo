@@ -10,16 +10,18 @@ import {
 } from "@repo/design-system/components/ui/table";
 import { PencilIcon, PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
-import { getAccess } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getAccess } from "@/lib/access";
 import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
 import {
   EmptyState,
+  FilterNote,
   formValue,
   money,
   ProvenanceBadge,
+  textFilter,
 } from "../components/format";
 import { RecordDialog } from "../components/record-dialog";
 
@@ -30,12 +32,18 @@ const hoursPerDay = (shifts: unknown) =>
     ? Number((shifts as { hoursPerDay: unknown }).hoursPerDay)
     : null;
 
-const WorkCentersPage = async () => {
+const WorkCentersPage = async ({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) => {
   const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
     notFound();
   }
+  const q = textFilter((await searchParams).q);
   const machines = await forOrg(database, orgId).workCenter.findMany({
+    where: q ? { name: { contains: q, mode: "insensitive" } } : {},
     orderBy: { name: "asc" },
     include: { _count: { select: { routings: true } } },
   });
@@ -57,6 +65,7 @@ const WorkCentersPage = async () => {
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        {q && <FilterNote href="/shop/work-centers" q={q} />}
         {machines.length === 0 ? (
           <EmptyState>
             No machines yet.{" "}

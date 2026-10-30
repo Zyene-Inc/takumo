@@ -2,9 +2,9 @@ import { database, forOrg } from "@repo/database";
 import { Button } from "@repo/design-system/components/ui/button";
 import { UploadIcon } from "lucide-react";
 import type { Metadata } from "next";
-import { getAccess } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getAccess } from "@/lib/access";
 import { Header } from "../components/header";
 
 export const metadata: Metadata = { title: "Shop · Takumo" };

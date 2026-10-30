@@ -2,22 +2,12 @@
 
 import { auth } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
-import {
-  type CapacityResponse,
-  checkCapacity,
-  SOLVED_STATUSES,
-} from "@repo/engine-client";
+import { type CapacityResponse, SOLVED_STATUSES } from "@repo/engine-client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { authorize } from "@/lib/access";
-import {
-  CAPACITY_CHECK,
-  CHECK_TIME_LIMIT_S,
-  type CheckInput,
-  engineProblem,
-  loadShop,
-  replan,
-} from "@/lib/schedule/plan";
+import { type CapacityAnswer, runCapacityCheck } from "@/lib/schedule/check";
+import { CAPACITY_CHECK, type CheckInput, replan } from "@/lib/schedule/plan";
 import { checkToday } from "@/lib/schedule/request";
 
 const optionalNumber = z
@@ -40,24 +30,7 @@ const CheckForm = z.object({
 
 export type CheckFormValues = z.input<typeof CheckForm>;
 
-export type CheckResult =
-  | { ok: true; runId: string; input: CheckInput; result: CapacityResponse }
-  | { ok: false; error: string };
-
-const nextOrderNo = async (orgId: string, today: string) => {
-  const db = forOrg(database, orgId);
-  const prefix = `NEW-${today.replaceAll("-", "").slice(2)}-`;
-  const taken = await db.order.findMany({
-    where: { orderNo: { startsWith: prefix } },
-    select: { orderNo: true },
-  });
-  const used = new Set(taken.map((o) => o.orderNo));
-  let n = 1;
-  while (used.has(`${prefix}${n}`)) {
-    n += 1;
-  }
-  return `${prefix}${n}`;
-};
+export type CheckResult = CapacityAnswer;
 
 /** "Can we take this order?" Anyone in the shop can ask; nothing is saved to the plan. */
 export const checkOrder = async (
@@ -82,77 +55,11 @@ export const checkOrder = async (
       error: "Your computer's date looks wrong; reload and try again.",
     };
   }
-
-  const db = forOrg(database, orgId);
-  const part = await db.part.findFirst({
-    where: { id: form.partId },
-    select: { id: true, partNo: true, _count: { select: { routings: true } } },
-  });
-  if (!part) {
-    return { ok: false, error: "That part no longer exists." };
+  const answer = await runCapacityCheck(orgId, userId, start, form);
+  if (answer.ok) {
+    revalidatePath("/schedule/check");
   }
-  if (part._count.routings === 0) {
-    return {
-      ok: false,
-      error: `${part.partNo} has no routing, so Takumo can't tell how long it takes. Add its operations first.`,
-    };
-  }
-  const orderNo = form.orderNo || (await nextOrderNo(orgId, start));
-  if (await db.order.findFirst({ where: { orderNo }, select: { id: true } })) {
-    return {
-      ok: false,
-      error: `Order ${orderNo} already exists. Use a different order number.`,
-    };
-  }
-
-  const built = await loadShop(orgId, start, {
-    includeParts: [part.id],
-    materialCost:
-      form.materialCost === null ? {} : { [part.id]: form.materialCost },
-  });
-
-  let result: CapacityResponse;
-  try {
-    result = await checkCapacity({
-      ...built.request,
-      time_limit_s: CHECK_TIME_LIMIT_S,
-      new_order: {
-        order_no: orderNo,
-        part_no: built.partKeys[part.id],
-        qty: form.qty,
-        due_date: form.dueDate,
-        price: form.price,
-        priority: 0,
-      },
-    });
-  } catch (error) {
-    return { ok: false, error: engineProblem(error) };
-  }
-
-  const input: CheckInput = {
-    orderNo,
-    partId: part.id,
-    partNo: part.partNo,
-    qty: form.qty,
-    dueDate: form.dueDate,
-    customer: form.customer || null,
-    price: form.price,
-    materialCost: form.materialCost,
-    priority: 0,
-    startDate: start,
-  };
-  const run = await database.scheduleRun.create({
-    data: {
-      orgId,
-      objective: CAPACITY_CHECK,
-      input: input as object,
-      output: result as object,
-      solverStatus: result.status,
-      createdBy: userId,
-    },
-  });
-  revalidatePath("/schedule/check");
-  return { ok: true, runId: run.id, input, result };
+  return answer;
 };
 
 /** "Add to plan": create the order and re-plan. `rush` puts it first. */

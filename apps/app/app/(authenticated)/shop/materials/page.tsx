@@ -15,7 +15,13 @@ import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
-import { EmptyState, formValue, ProvenanceBadge } from "../components/format";
+import {
+  EmptyState,
+  FilterNote,
+  formValue,
+  ProvenanceBadge,
+  textFilter,
+} from "../components/format";
 import { RecordDialog } from "../components/record-dialog";
 
 export const metadata: Metadata = { title: "Materials · Takumo" };
@@ -29,12 +35,18 @@ const unitCost = (cost: { toString(): string } | null, unit: string) =>
         maximumFractionDigits: 2,
       })} / ${unit}`;
 
-const MaterialsPage = async () => {
+const MaterialsPage = async ({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) => {
   const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
     notFound();
   }
+  const q = textFilter((await searchParams).q);
   const materials = await forOrg(database, orgId).material.findMany({
+    where: q ? { name: { contains: q, mode: "insensitive" } } : {},
     orderBy: { name: "asc" },
     include: { _count: { select: { parts: true } } },
   });
@@ -56,6 +68,7 @@ const MaterialsPage = async () => {
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        {q && <FilterNote href="/shop/materials" q={q} />}
         {materials.length === 0 ? (
           <EmptyState>
             No materials yet.{" "}

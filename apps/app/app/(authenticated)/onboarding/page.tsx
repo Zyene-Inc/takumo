@@ -3,9 +3,9 @@ import { Badge } from "@repo/design-system/components/ui/badge";
 import { ENTITIES, ENTITY_KEYS, type EntityKey } from "@repo/ingest";
 import { CheckCircle2Icon, CircleIcon, DownloadIcon } from "lucide-react";
 import type { Metadata } from "next";
-import { getAccess, NO_ACCESS_MESSAGE, permissionFor } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getAccess, NO_ACCESS_MESSAGE, permissionFor } from "@/lib/access";
 import { Header } from "../components/header";
 import { ImportWizard } from "./import-wizard";
 

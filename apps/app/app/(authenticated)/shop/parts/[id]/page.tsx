@@ -10,8 +10,8 @@ import {
 } from "@repo/design-system/components/ui/table";
 import { PencilIcon, PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
-import { getAccess } from "@/lib/access";
 import { notFound } from "next/navigation";
+import { getAccess } from "@/lib/access";
 import { Header } from "../../../components/header";
 import { DeleteButton } from "../../components/delete-button";
 import {

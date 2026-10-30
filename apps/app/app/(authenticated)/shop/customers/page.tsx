@@ -15,17 +15,28 @@ import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
-import { EmptyState, formValue } from "../components/format";
+import {
+  EmptyState,
+  FilterNote,
+  formValue,
+  textFilter,
+} from "../components/format";
 import { RecordDialog } from "../components/record-dialog";
 
 export const metadata: Metadata = { title: "Customers · Takumo" };
 
-const CustomersPage = async () => {
+const CustomersPage = async ({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) => {
   const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
     notFound();
   }
+  const q = textFilter((await searchParams).q);
   const customers = await forOrg(database, orgId).customer.findMany({
+    where: q ? { name: { contains: q, mode: "insensitive" } } : {},
     orderBy: { name: "asc" },
     include: {
       _count: { select: { parts: true, orders: true, quotes: true } },
@@ -49,6 +60,7 @@ const CustomersPage = async () => {
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        {q && <FilterNote href="/shop/customers" q={q} />}
         {customers.length === 0 ? (
           <EmptyState>
             No customers yet. They're added automatically when you{" "}

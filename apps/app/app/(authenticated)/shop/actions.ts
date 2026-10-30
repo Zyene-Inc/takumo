@@ -12,8 +12,8 @@ import { revalidatePath } from "next/cache";
 import { authorize, permissionFor } from "@/lib/access";
 
 export interface SaveRecordResult {
-  readonly ok: boolean;
   readonly errors: string[];
+  readonly ok: boolean;
 }
 
 // The edit forms use field keys as column names, and times in minutes.

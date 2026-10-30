@@ -50,6 +50,7 @@ jobs:
       SKIP_ENV_VALIDATION: "true"
       DATABASE_URL: postgresql://takumo:takumo@localhost:5432/takumo
       TEST_DATABASE_URL: postgresql://takumo:takumo@localhost:5432/takumo
+      TEST_ASK_DATABASE_URL: postgresql://takumo_reader:ci-reader@localhost:5432/takumo
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -69,6 +70,13 @@ jobs:
         run: pnpm migrate:deploy
       - name: Import tests against the database
         working-directory: packages/ingest
+        run: pnpm test:db
+      # Ask Takumo's read-only login (set per environment, see docs/DEPLOY.md).
+      - name: Give the reader a password
+        working-directory: packages/database
+        run: echo "alter role takumo_reader password 'ci-reader';" | pnpm exec prisma db execute --stdin
+      - name: Ask Takumo reader isolation tests
+        working-directory: packages/database
         run: pnpm test:db
 
   engine:
