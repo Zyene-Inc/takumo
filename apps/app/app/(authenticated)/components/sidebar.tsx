@@ -205,8 +205,8 @@ const data = {
       icon: UploadIcon,
     },
     {
-      title: "Support",
-      url: "#",
+      title: "Help",
+      url: "/help",
       icon: LifeBuoyIcon,
     },
   ],

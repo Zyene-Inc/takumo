@@ -58,6 +58,13 @@ or the service dashboards; never commit them.
   `production`) (step 8)
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (step 9)
 - `ADMIN_USER_IDS`: WorkOS user ids (comma separated) of Takumo staff who can open `/admin`
+- `AI_MONTHLY_BUDGET_USD` (optional): Claude spend cap per shop per calendar month; when a shop
+  reaches it, Ask Takumo, quote drafting and note reading pause until the 1st. `/admin` shows each
+  shop's spend.
+
+Check a project's variables before going live (names only, never values):
+`vercel env pull .env.production` in the project, then
+`pnpm check:env app .env.production --production` (or `api`), then delete the file.
 
 **takumo-api**
 - `DATABASE_URL`, `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`
@@ -161,6 +168,8 @@ for quote") since the last check; each becomes an RFQ in Quotes, attachments inc
 Checked on connect and hourly; a message is never read twice.
 
 ## 10. Check
+
+See `docs/LAUNCH.md` for the full go-live runbook. Quick checks:
 
 - Sign in on `https://<app-url>`, create a shop, upload `seed/samples/erp-open-orders.csv`.
 - WorkOS → Webhooks → the endpoint shows successful deliveries; the new shop appears in the

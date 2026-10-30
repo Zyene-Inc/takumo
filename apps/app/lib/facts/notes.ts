@@ -5,6 +5,7 @@ import { models } from "@repo/ai/lib/models";
 import { database, forOrg } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { z } from "zod";
+import { recordUsage } from "../ai-usage";
 import { ATTRIBUTES, SUBJECT_TYPES } from "./attributes";
 import { type FactSource, findSubject, proposeFact } from "./facts";
 
@@ -94,7 +95,7 @@ Customers: ${customers.map((c) => c.name).join(", ")}`;
 };
 
 export const extractFacts = async (orgId: string, text: string) => {
-  const { output } = await generateText({
+  const { output, usage, response } = await generateText({
     model: models.agent,
     output: Output.object({ schema }),
     system: SYSTEM,
@@ -105,6 +106,7 @@ Note:
 ${text.slice(0, MAX_NOTE_CHARS)}
 </note>`,
   });
+  await recordUsage(orgId, "note_read", response.modelId, usage);
   return output?.facts ?? [];
 };
 

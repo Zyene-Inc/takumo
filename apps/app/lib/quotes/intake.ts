@@ -2,6 +2,7 @@ import "server-only";
 
 import { database, forOrg, Prisma } from "@repo/database";
 import { log } from "@repo/observability/log";
+import { recordUsage } from "../ai-usage";
 import { extractRfq } from "./extract";
 import { partsMentioned } from "./match";
 import type { RfqText } from "./read";
@@ -89,6 +90,7 @@ export const readRfq = async (orgId: string, rfqId: string) => {
       rfq.receivedAt.toISOString().slice(0, 10),
       { customers, materials, parts: partsMentioned(rfq.body, parts) }
     );
+    await recordUsage(orgId, "rfq_read", read.usage.modelId, read.usage.tokens);
     await database.$transaction([
       database.rfqLine.deleteMany({ where: { orgId, rfqId } }),
       database.rfq.update({

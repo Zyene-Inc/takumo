@@ -83,6 +83,7 @@ model Org {
   facts         Fact[]
   notes         Note[]
   connections   Connection[]
+  aiUsage       AiUsage[]
   conversations Conversation[]
   scheduleRuns  ScheduleRun[]
 }
@@ -595,4 +596,24 @@ model Connection {
   updatedAt    DateTime  @default(now()) @updatedAt
 
   @@unique([orgId, provider])
+}
+
+// One Claude call (or one Ask Takumo answer): tokens and what it cost, for
+// per-shop AI spend and the monthly cap (AI_MONTHLY_BUDGET_USD).
+model AiUsage {
+  id               String   @id @default(uuid())
+  orgId            String
+  org              Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId           String?
+  // ask | rfq_read | routing_proposal | note_read
+  feature          String
+  model            String
+  inputTokens      Int
+  cacheReadTokens  Int      @default(0)
+  cacheWriteTokens Int      @default(0)
+  outputTokens     Int
+  costUsd          Decimal  @db.Decimal(10, 4)
+  createdAt        DateTime @default(now())
+
+  @@index([orgId, createdAt])
 }

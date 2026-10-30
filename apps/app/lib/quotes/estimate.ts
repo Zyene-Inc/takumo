@@ -10,6 +10,7 @@ import {
   type QuoteOperation,
   type QuoteResponse,
 } from "@repo/engine-client";
+import { recordUsage } from "../ai-usage";
 import { CHECK_TIME_LIMIT_S, engineProblem, loadShop } from "../schedule/plan";
 import { isoDay } from "../schedule/request";
 import { proposeRouting } from "./propose";
@@ -327,6 +328,12 @@ const operationsFor = async (
         notes: line.notes,
       },
     });
+    await recordUsage(
+      orgId,
+      "routing_proposal",
+      proposal.usage.modelId,
+      proposal.usage.tokens
+    );
     await forOrg(database, orgId).rfqLine.updateMany({
       where: { id: line.id },
       data: { routing: proposal.ops as object[] },

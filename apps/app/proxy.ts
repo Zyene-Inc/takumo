@@ -12,9 +12,10 @@ const securityHeaders = env.FLAGS_SECRET
   : securityMiddleware(noseconeOptions);
 
 // WorkOS AuthKit manages the session; everything except these paths
-// requires a signed-in user. Cron routes check CRON_SECRET themselves.
+// requires a signed-in user. Cron routes check CRON_SECRET themselves; the
+// health check reveals only up/down.
 export default authMiddleware(() => securityHeaders(), {
-  publicPaths: ["/sign-in", "/sign-up", "/callback", "/.well-known", "/api/cron"],
+  publicPaths: ["/sign-in", "/sign-up", "/callback", "/.well-known", "/api/cron", "/api/health"],
 }) as unknown as NextProxy;
 
 export const config = {

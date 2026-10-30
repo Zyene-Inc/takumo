@@ -11,6 +11,10 @@ const sitemap = (): MetadataRoute.Sitemap => [
     url: new URL("/", url).href,
     lastModified: new Date(),
   },
+  {
+    url: new URL("/pricing", url).href,
+    lastModified: new Date(),
+  },
 ];
 
 export default sitemap;

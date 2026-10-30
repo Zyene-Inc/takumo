@@ -2,6 +2,7 @@ import "server-only";
 
 import { database } from "@repo/database";
 import { entitlements, type Feature, lockedReason } from "@repo/payments/plans";
+import { budgetProblem } from "./ai-usage";
 
 /** The shop's plan and what it may use now. */
 export const getBilling = async (orgId: string) => {
@@ -29,6 +30,13 @@ export const getBilling = async (orgId: string) => {
 
 export type Billing = Awaited<ReturnType<typeof getBilling>>;
 
-/** For server actions: null when the shop may use the feature, else why not. */
+/** Features that call Claude, and so count against the monthly AI cap. */
+const AI_FEATURES: readonly Feature[] = ["ask", "quotes", "knowledge"];
+
+/**
+ * For server actions: null when the shop may use the feature, else why not
+ * (not on its plan, or its monthly AI allowance is spent).
+ */
 export const featureProblem = async (orgId: string, feature: Feature) =>
-  lockedReason((await getBilling(orgId)).entitlements, feature);
+  lockedReason((await getBilling(orgId)).entitlements, feature) ??
+  (AI_FEATURES.includes(feature) ? await budgetProblem(orgId) : null);

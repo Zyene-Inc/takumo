@@ -176,6 +176,23 @@ const BillingPage = async ({
             Only the shop's owner or an admin can change the plan.
           </p>
         )}
+        <section className="grid gap-1 rounded-xl border p-4">
+          <h2 className="font-medium">Your data</h2>
+          <p className="text-muted-foreground text-sm">
+            Everything you've put into Takumo, as CSV files you can open in
+            Excel or upload again: machines, parts and routings, orders, quotes,
+            job history, facts and notes.
+          </p>
+          {canManageBilling && (
+            <a
+              className="justify-self-start text-sm underline"
+              download
+              href="/api/export"
+            >
+              Download all data (.zip)
+            </a>
+          )}
+        </section>
       </div>
     </>
   );
