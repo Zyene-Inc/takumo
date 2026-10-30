@@ -10,6 +10,13 @@ import {
   schedule,
 } from "@repo/engine-client";
 import { z } from "zod";
+import {
+  ATTRIBUTES,
+  attributeDef,
+  formatValue,
+  SUBJECT_TYPES,
+} from "@/lib/facts/attributes";
+import { findSubject, proposeFact } from "@/lib/facts/facts";
 import { searchDocuments } from "@/lib/knowledge/documents";
 import { estimateForPart } from "@/lib/quotes/estimate";
 import { runCapacityCheck } from "@/lib/schedule/check";
@@ -21,7 +28,7 @@ import {
   PLAN_TIME_LIMIT_S,
 } from "@/lib/schedule/plan";
 import { cite, type Source, sourcesFromRows } from "./citations";
-import { getRecord, RECORD_TYPES } from "./records";
+import { getRecordWithKnowledge, RECORD_TYPES } from "./records";
 import { describeViews } from "./schema";
 
 /** Numbering for [query n], [scenario n] and [estimate n] within a conversation. */
@@ -206,7 +213,7 @@ Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in 
           ),
       }),
       execute: async ({ type, key }) => {
-        const found = await getRecord(ctx.orgId, type, key);
+        const found = await getRecordWithKnowledge(ctx.orgId, type, key);
         return "error" in found ? { ...found, sources: [] } : found;
       },
     }),
@@ -385,7 +392,14 @@ Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in 
           .optional()
           .describe("Only if the user asks for a specific margin."),
       }),
-      execute: async ({ part_no, rev, qtys, customer, needed_by, target_margin_pct }) => {
+      execute: async ({
+        part_no,
+        rev,
+        qtys,
+        customer,
+        needed_by,
+        target_margin_pct,
+      }) => {
         const parts = await forOrg(database, ctx.orgId).part.findMany({
           where: {
             partNo: { equals: part_no.trim(), mode: "insensitive" },
@@ -438,7 +452,10 @@ Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in 
             suggested_unit_price: b.unit_price,
             suggested_total: b.price,
             total_range: [b.price_low, b.price_high],
-            margin_pct: b.margin_pct === null ? null : Math.round(b.margin_pct * 1000) / 10,
+            margin_pct:
+              b.margin_pct === null
+                ? null
+                : Math.round(b.margin_pct * 1000) / 10,
             lead_time_days: b.lead_time_days,
             finishes: b.completion_date,
             meets_needed_by: b.meets_requested,
@@ -458,7 +475,10 @@ Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in 
             qty: c.qty,
             unit_price: c.unit_price,
             outcome: c.status,
-            margin_pct: c.margin_pct === null ? null : Math.round(c.margin_pct * 1000) / 10,
+            margin_pct:
+              c.margin_pct === null
+                ? null
+                : Math.round(c.margin_pct * 1000) / 10,
             margin_basis: c.margin_basis,
             why: c.reasons,
           })),
@@ -487,6 +507,79 @@ Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in 
                 : [];
             }),
           ],
+        };
+      },
+    }),
+
+    propose_fact: tool({
+      description: `Record shop knowledge the user tells you, for a supervisor to review: a corrected number ("setup on the OKUMA for P-2001 is really 2 hours") or knowledge in words ("P-2001 chatters above 1,200 rpm"). Nothing changes until it's approved under Knowledge → Facts to review. Attributes by subject type:
+${Object.entries(ATTRIBUTES)
+  .map(
+    ([t, defs]) =>
+      `- ${t}: ${defs.map((d) => `${d.key}${d.unit ? ` (${d.unit})` : ""}${d.percent ? " (fraction, 0.9 = 90%)" : ""}`).join(", ")}`
+  )
+  .join("\n")}
+Times in minutes (2 hours → 120). Use attribute "note" for anything that isn't one of the numbers.`,
+      inputSchema: z.object({
+        subject_type: z.enum(SUBJECT_TYPES),
+        part_no: z
+          .string()
+          .optional()
+          .describe("For an operation (routing) or part."),
+        rev: z.string().optional(),
+        op: z
+          .number()
+          .int()
+          .optional()
+          .describe("Operation number, for an operation."),
+        machine: z
+          .string()
+          .optional()
+          .describe(
+            "For an operation named by its machine, or a machine fact."
+          ),
+        name: z.string().optional().describe("Material or customer name."),
+        attribute: z.string(),
+        value: z.union([z.number(), z.string()]),
+        evidence: z.string().describe("The user's own words, verbatim."),
+      }),
+      execute: async (input) => {
+        const found = await findSubject(ctx.orgId, input.subject_type, {
+          partNo: input.part_no,
+          rev: input.rev,
+          seq: input.op,
+          workCenter: input.subject_type === "routing" ? input.machine : null,
+          name:
+            input.subject_type === "work_center"
+              ? (input.machine ?? input.name)
+              : input.name,
+        });
+        if (!found.ok) {
+          return { error: found.error, sources: [] };
+        }
+        const made = await proposeFact(ctx.orgId, {
+          subject: found.subject,
+          attribute: input.attribute,
+          value: input.value,
+          evidence: input.evidence,
+          source: "chat",
+          statedBy: ctx.userId,
+        });
+        if (!made.ok) {
+          return { error: made.error, sources: [] };
+        }
+        const def = attributeDef(input.subject_type, input.attribute);
+        const fact = cite.fact(made.fact.label, found.subject.label);
+        return {
+          fact: made.fact.label,
+          status: "pending review",
+          already_waiting: made.existing,
+          about: found.subject.label,
+          what: def?.label ?? input.attribute,
+          proposed: formatValue(def, input.value),
+          note: "Not applied yet: a supervisor approves it under Knowledge → Facts to review.",
+          cite_as: fact.id,
+          sources: [fact],
         };
       },
     }),

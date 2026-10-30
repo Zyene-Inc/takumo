@@ -96,6 +96,10 @@ export const loadShop = async (
         dueDate: true,
         priority: true,
         price: true,
+        jobs: {
+          where: { actualEnd: { not: null } },
+          select: { routingSeq: true },
+        },
       },
     }),
     db.job.findMany({
@@ -137,7 +141,10 @@ export const loadShop = async (
     {
       workCenters,
       parts,
-      orders,
+      orders: orders.map(({ jobs, ...order }) => ({
+        ...order,
+        doneSeqs: jobs.map((j) => j.routingSeq),
+      })),
       pins: pins.flatMap((p) =>
         p.plannedStart && p.workCenterId
           ? [
@@ -238,6 +245,18 @@ export const replan = async (
     db.workCenter.findMany({ select: { id: true, name: true } }),
   ]);
   const orderId = new Map(orders.map((o) => [o.orderNo, o.id]));
+  // The times the model gave each operation, kept on the job for calibration.
+  const partOf = new Map(request.orders.map((o) => [o.order_no, o.part_no]));
+  const routingOf = new Map(request.parts.map((p) => [p.part_no, p.routing]));
+  const plannedTimes = (orderNo: string, seq: number) => {
+    const op = routingOf
+      .get(partOf.get(orderNo) ?? "")
+      ?.find((r) => r.seq === seq);
+    return {
+      plannedSetupMin: op?.setup_min ?? null,
+      plannedRunMinPerUnit: op?.run_min_per_unit ?? null,
+    };
+  };
   const wcId = new Map(workCenters.map((w) => [w.name, w.id]));
 
   const run = await database.$transaction(async (tx) => {
@@ -267,6 +286,7 @@ export const replan = async (
                 plannedStart: naive(op.start_at),
                 plannedEnd: naive(op.end_at),
                 pinned: op.pinned,
+                ...plannedTimes(op.order_no, op.seq),
               },
             ]
           : [];

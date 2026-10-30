@@ -37,6 +37,8 @@ export interface PartRow {
 }
 
 export interface OrderRow {
+  /** Operations already finished on the floor; only the rest are planned. */
+  doneSeqs?: number[];
   dueDate: Date;
   orderNo: string;
   partId: string;
@@ -245,10 +247,37 @@ export const buildScheduleRequest = (
       });
       continue;
     }
-    addPart(part);
+    const done = new Set(order.doneSeqs ?? []);
+    const remaining = part.routings.filter((r) => !done.has(r.seq));
+    if (remaining.length === 0) {
+      skipped.push({
+        orderNo: order.orderNo,
+        reason: "every operation is finished; mark the order done",
+      });
+      continue;
+    }
+    let partNo = partKeys[part.id];
+    if (remaining.length < part.routings.length) {
+      // The rest of the routing, as its own part for the engine.
+      const last = Math.max(...done);
+      partNo = `${partKeys[part.id]} after op ${last}`;
+      if (!usedParts.has(partNo)) {
+        usedParts.set(
+          partNo,
+          toPart(
+            { ...part, routings: remaining },
+            partNo,
+            wcName,
+            options.materialCost?.[part.id]
+          )
+        );
+      }
+    } else {
+      addPart(part);
+    }
     orders.push({
       order_no: order.orderNo,
-      part_no: partKeys[part.id],
+      part_no: partNo,
       qty: order.qty,
       due_date: isoDay(order.dueDate),
       priority: Math.max(0, Math.min(10, order.priority)),

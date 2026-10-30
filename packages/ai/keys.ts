@@ -7,7 +7,7 @@ export const keys = () =>
     emptyStringAsUndefined: true,
     server: {
       ANTHROPIC_API_KEY: z.string().startsWith("sk-ant-").optional(),
-      // Only used for embeddings.
+      // Optional: document embeddings and voice-note transcription.
       OPENAI_API_KEY: z.string().startsWith("sk-").optional(),
     },
     runtimeEnv: {

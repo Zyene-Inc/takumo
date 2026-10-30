@@ -63,7 +63,9 @@ const rfqEmail = () =>
     'Content-Disposition: attachment; filename="drawing.pdf"',
     "Content-Transfer-Encoding: base64",
     "",
-    fixture("sample.pdf").toString("base64").replace(/(.{76})/g, `$1${CRLF}`),
+    fixture("sample.pdf")
+      .toString("base64")
+      .replace(/(.{76})/g, `$1${CRLF}`),
     "--outer--",
     "",
   ].join(CRLF);
@@ -84,7 +86,10 @@ describe("RFQ emails", () => {
   });
 
   test("an .eml upload includes the text of its PDF attachment", async () => {
-    const read = await readRfqFile("rfq.eml", new TextEncoder().encode(rfqEmail()));
+    const read = await readRfqFile(
+      "rfq.eml",
+      new TextEncoder().encode(rfqEmail())
+    );
     expect(read.source).toBe("email");
     expect(read.subject).toBe("RFQ – gripper brackets");
     expect(read.body).toContain("P-1001 rev B");
@@ -110,7 +115,9 @@ describe("RFQ emails", () => {
   });
 
   test("pasted text keeps Subject and From when present", () => {
-    expect(readPasted("From: buyer@x.com\nSubject: RFQ 12\n\nQuote 10 pcs")).toMatchObject({
+    expect(
+      readPasted("From: buyer@x.com\nSubject: RFQ 12\n\nQuote 10 pcs")
+    ).toMatchObject({
       source: "email",
       subject: "RFQ 12",
       sender: "buyer@x.com",
@@ -119,9 +126,9 @@ describe("RFQ emails", () => {
   });
 
   test("refuses file types it can't read", async () => {
-    await expect(readRfqFile("drawing.step", new Uint8Array([1]))).rejects.toThrow(
-      /reads RFQs/
-    );
+    await expect(
+      readRfqFile("drawing.step", new Uint8Array([1]))
+    ).rejects.toThrow(/reads RFQs/);
   });
 });
 
@@ -145,22 +152,35 @@ describe("matching an RFQ to the shop", () => {
   test("customers by name, ignoring Inc. and punctuation", () => {
     expect(matchCustomer("Bluefin Marine, Inc.", customers)?.id).toBe("c1");
     expect(matchCustomer("northwind robotics llc", customers)?.id).toBe("c2");
-    expect(matchCustomer("Northwind Robotics Europe", customers)?.id).toBe("c2");
+    expect(matchCustomer("Northwind Robotics Europe", customers)?.id).toBe(
+      "c2"
+    );
     expect(matchCustomer("Harbor Automation", customers)).toBeNull();
     expect(matchCustomer("", customers)).toBeNull();
   });
 
   test("parts by number and revision", () => {
-    expect(matchPart("p 1001", "b", parts)).toEqual({ part: parts[0], otherRev: null });
+    expect(matchPart("p 1001", "b", parts)).toEqual({
+      part: parts[0],
+      otherRev: null,
+    });
     // No revision given: the latest one.
     expect(matchPart("P1001", null, parts).part?.rev).toBe("B");
     // A revision the shop hasn't made is a new part, based on the latest it has.
-    expect(matchPart("P-1001", "C", parts)).toEqual({ part: null, otherRev: parts[0] });
-    expect(matchPart("HA-220", null, parts)).toEqual({ part: null, otherRev: null });
+    expect(matchPart("P-1001", "C", parts)).toEqual({
+      part: null,
+      otherRev: parts[0],
+    });
+    expect(matchPart("HA-220", null, parts)).toEqual({
+      part: null,
+      otherRev: null,
+    });
   });
 
   test("materials need the same alloy, then the closest wording", () => {
-    expect(matchMaterial("6061-T6 aluminum, 2 in round bar", materials)?.id).toBe("m1");
+    expect(
+      matchMaterial("6061-T6 aluminum, 2 in round bar", materials)?.id
+    ).toBe("m1");
     expect(matchMaterial("316 stainless bar 1.5 in", materials)?.id).toBe("m2");
     expect(matchMaterial("304 stainless bar 1.5 in", materials)).toBeNull();
     expect(matchMaterial("14 ga CRS sheet", materials)?.id).toBe("m3");
@@ -169,11 +189,9 @@ describe("matching an RFQ to the shop", () => {
 
   test("finds shop part numbers written in the RFQ", () => {
     expect(normalizePartNo("P-1001 Rev.B")).toBe("p1001revb");
-    expect(partsMentioned("Need P1001 and p-2001 asap", parts).map((p) => p.id)).toEqual([
-      "p1",
-      "p0",
-      "p2",
-    ]);
+    expect(
+      partsMentioned("Need P1001 and p-2001 asap", parts).map((p) => p.id)
+    ).toEqual(["p1", "p0", "p2"]);
   });
 });
 
@@ -216,13 +234,24 @@ describe("operations for a quote", () => {
       description: "Pump shaft",
       material: "SS316 bar 1.5in",
       customer: "Bluefin Marine",
-      routing: [{ seq: 10, work_center: "OKUMA-LB3000", setup_min: 90, run_min_per_unit: 12 }],
+      routing: [
+        {
+          seq: 10,
+          work_center: "OKUMA-LB3000",
+          setup_min: 90,
+          run_min_per_unit: 12,
+        },
+      ],
     },
   ];
 
   test("similar parts: same material and shared words first", () => {
     const found = similarParts(
-      { partNo: "HA-220", description: "Sensor bracket", materialName: "AL6061-T6 bar 2in" },
+      {
+        partNo: "HA-220",
+        description: "Sensor bracket",
+        materialName: "AL6061-T6 bar 2in",
+      },
       null,
       candidates
     );
@@ -273,7 +302,11 @@ describe("operations for a quote", () => {
       source: "comparable",
     });
     expect(ops[0].note).toContain("P-1001 op 10 (45 min + 6 min/ea)");
-    expect(ops[1]).toMatchObject({ seq: 20, setup_min: 8, run_min_per_unit: 2 });
+    expect(ops[1]).toMatchObject({
+      seq: 20,
+      setup_min: 8,
+      run_min_per_unit: 2,
+    });
     expect(ops[1].note).toContain("Takumo's estimate");
     expect(dropped).toEqual(["LASER-9 isn't one of the shop's machines"]);
   });
@@ -308,7 +341,9 @@ const response = (
 describe("numbers", () => {
   test("next number in the shop's own series", () => {
     expect(nextNumber(["Q-9001", "Q-9008", "Q-9003"], "Q-0001")).toBe("Q-9009");
-    expect(nextNumber(["SO-0099", "SO-0100", "NEW-261102-1"], "SO-1")).toBe("SO-0101");
+    expect(nextNumber(["SO-0099", "SO-0100", "NEW-261102-1"], "SO-1")).toBe(
+      "SO-0101"
+    );
     expect(nextNumber(["Q-9009"], "Q-0001")).toBe("Q-9010");
     expect(nextNumber([], "Q-0001")).toBe("Q-0001");
     expect(nextNumber(["ACME"], "Q-0001")).toBe("Q-0001");
@@ -325,15 +360,28 @@ describe("numbers", () => {
 
   test("a draft is accepted within 5% on price and 2 days on lead time", () => {
     const base = { draftPrice: 1000, draftLeadTimeDays: 10 };
-    expect(acceptedWithSmallEdits({ ...base, price: 1050, leadTimeDays: 12 })).toBe(true);
-    expect(acceptedWithSmallEdits({ ...base, price: 1051, leadTimeDays: 10 })).toBe(false);
-    expect(acceptedWithSmallEdits({ ...base, price: 1000, leadTimeDays: 13 })).toBe(false);
-    expect(acceptedWithSmallEdits({ ...base, price: 980, leadTimeDays: null })).toBe(true);
+    expect(
+      acceptedWithSmallEdits({ ...base, price: 1050, leadTimeDays: 12 })
+    ).toBe(true);
+    expect(
+      acceptedWithSmallEdits({ ...base, price: 1051, leadTimeDays: 10 })
+    ).toBe(false);
+    expect(
+      acceptedWithSmallEdits({ ...base, price: 1000, leadTimeDays: 13 })
+    ).toBe(false);
+    expect(
+      acceptedWithSmallEdits({ ...base, price: 980, leadTimeDays: null })
+    ).toBe(true);
     expect(
       acceptance([
         { ...base, price: 1000, leadTimeDays: 10 },
         { ...base, price: 1500, leadTimeDays: 10 },
-        { draftPrice: null, draftLeadTimeDays: null, price: 10, leadTimeDays: 1 },
+        {
+          draftPrice: null,
+          draftLeadTimeDays: null,
+          price: 10,
+          leadTimeDays: 1,
+        },
       ])
     ).toEqual({ drafted: 2, accepted: 1, rate: 0.5 });
     expect(acceptance([]).rate).toBeNull();
@@ -341,14 +389,21 @@ describe("numbers", () => {
 
   test("the estimator starts from the draft's prices", () => {
     expect(
-      startingFinal(response([{ qty: 50, unit_price: 44, lead: 3 }, { qty: 400, unit_price: 42, lead: 9 }]))
+      startingFinal(
+        response([
+          { qty: 50, unit_price: 44, lead: 3 },
+          { qty: 400, unit_price: 42, lead: 9 },
+        ])
+      )
     ).toEqual({
       breaks: [
         { qty: 50, unitPrice: 44, leadTimeDays: 3 },
         { qty: 400, unitPrice: 42, leadTimeDays: 9 },
       ],
     });
-    expect(startingFinal(response([{ qty: 50, unit_price: null, lead: 3 }]))).toBeNull();
+    expect(
+      startingFinal(response([{ qty: 50, unit_price: null, lead: 3 }]))
+    ).toBeNull();
   });
 });
 
@@ -357,7 +412,13 @@ describe("approval", () => {
   const line = { lineNo: 1, partNo: "P-1001", qtys: [50], draft, final: null };
 
   test("a complete RFQ has no problems; the draft's prices are sent", () => {
-    expect(approvalProblems({ customerName: "Northwind", customerId: null, lines: [line] })).toEqual([]);
+    expect(
+      approvalProblems({
+        customerName: "Northwind",
+        customerId: null,
+        lines: [line],
+      })
+    ).toEqual([]);
     expect(finalFor(line)?.breaks[0].unitPrice).toBe(44);
   });
 
@@ -368,8 +429,18 @@ describe("approval", () => {
         customerId: null,
         lines: [
           { ...line, partNo: null, draft: null },
-          { ...line, lineNo: 2, final: { breaks: [{ qty: 50, unitPrice: 0, leadTimeDays: 3 }] } },
-          { ...line, lineNo: 3, draft: { response: response([{ qty: 50, unit_price: null, lead: 1 }]) } },
+          {
+            ...line,
+            lineNo: 2,
+            final: { breaks: [{ qty: 50, unitPrice: 0, leadTimeDays: 3 }] },
+          },
+          {
+            ...line,
+            lineNo: 3,
+            draft: {
+              response: response([{ qty: 50, unit_price: null, lead: 1 }]),
+            },
+          },
         ],
       })
     ).toEqual([
@@ -418,7 +489,9 @@ describe("the quote the customer gets", () => {
       notes: ["Your reference: RFQ – gripper brackets"],
     });
     const { extractText, getDocumentProxy } = await import("unpdf");
-    const { text } = await extractText(await getDocumentProxy(bytes), { mergePages: true });
+    const { text } = await extractText(await getDocumentProxy(bytes), {
+      mergePages: true,
+    });
     for (const expected of [
       "QUOTATION",
       "Q-9009 – Q-9010",
@@ -454,9 +527,17 @@ describe("the quote the customer gets", () => {
     });
     expect(email.subject).toBe("Quote Q-9009 – RFQ – gripper brackets");
     expect(email.body).toMatch(/^Hi Dana,/);
-    expect(email.body).toContain("P-1001 rev B (Q-9009)\n  - 50 pcs: $43.97/ea, 3 days");
-    expect(replyEmail({ contact: null, subject: null, shop: "A", reference: "Q", lines: [] }).body).toMatch(
-      /^Hello,/
+    expect(email.body).toContain(
+      "P-1001 rev B (Q-9009)\n  - 50 pcs: $43.97/ea, 3 days"
     );
+    expect(
+      replyEmail({
+        contact: null,
+        subject: null,
+        shop: "A",
+        reference: "Q",
+        lines: [],
+      }).body
+    ).toMatch(/^Hello,/);
   });
 });

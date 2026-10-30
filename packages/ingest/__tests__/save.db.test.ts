@@ -61,6 +61,39 @@ describe.skipIf(!TEST_DATABASE_URL)("saving imports (database)", () => {
     expect(routing?.altWorkCenterIds).toHaveLength(1);
   });
 
+  test("job history: closed orders added, planned times kept for calibration", async () => {
+    const result = await importSeed("jobs", "jobs.csv");
+    expect(result.errors).toEqual([]);
+    expect(result).toMatchObject({ created: 52, updated: 0 });
+    expect(result.notes.join(" ")).toMatch(
+      /Closed orders added from the job history: SO-4901/
+    );
+    const order = await db.order.findFirst({
+      where: { orgId, orderNo: "SO-4901" },
+    });
+    expect(order?.status).toBe("done");
+    const job = await db.job.findFirst({
+      where: { orgId, order: { orderNo: "SO-4901" }, routingSeq: 10 },
+      include: { order: true },
+    });
+    // The lathe setup really took 122 min; the routing says 90.
+    expect(job).toMatchObject({
+      actualSetupMin: 122,
+      actualRunMin: 759.6,
+      qtyGood: 58,
+      qtyScrap: 2,
+      plannedSetupMin: 90,
+      plannedRunMinPerUnit: 12,
+    });
+    // Open orders are untouched.
+    expect(await db.order.count({ where: { orgId, status: "open" } })).toBe(6);
+    // Importing it again updates in place.
+    expect(await importSeed("jobs", "jobs.csv")).toMatchObject({
+      created: 0,
+      updated: 52,
+    });
+  }, 60_000);
+
   test("re-importing the same file updates instead of duplicating", async () => {
     const again = await importSeed("workCenters", "work_centers.csv");
     expect(again).toMatchObject({ created: 0, updated: 5 });

@@ -482,6 +482,115 @@ const saveQuotes = async (
   ctx.notes.push(...notes.filter((n): n is string => n !== null));
 };
 
+// Finished operations from the ERP: matched to orders by number (a closed
+// order that isn't in the shop yet is added as done) and to routing
+// operations by number.
+const saveJobs = async (ctx: Context, records: ParsedRecord[], c: Counter) => {
+  const { db, orgId } = ctx;
+  const parts = await partLookup(ctx);
+  const machines = await lookup(ctx, "workCenter");
+  const orders = new Map(
+    (
+      await db.order.findMany({
+        where: { orgId },
+        select: { id: true, orderNo: true, partId: true },
+      })
+    ).map((o) => [o.orderNo, o])
+  );
+  const routings = new Map(
+    (
+      await db.routing.findMany({
+        where: { orgId },
+        select: {
+          partId: true,
+          seq: true,
+          setupMin: true,
+          runMinPerUnit: true,
+        },
+      })
+    ).map((r) => [`${r.partId}|${r.seq}`, r])
+  );
+  const existing = new Set(
+    (
+      await db.job.findMany({
+        where: { orgId },
+        select: { orderId: true, routingSeq: true },
+      })
+    ).map((j) => `${j.orderId}|${j.routingSeq}`)
+  );
+  const addedOrders = new Set<string>();
+  const rows: {
+    orderId: string;
+    seq: number;
+    data: Record<string, unknown>;
+  }[] = [];
+  // Orders one at a time (two rows may add the same closed order), then the
+  // jobs in batches.
+  for (const { values: v } of records) {
+    const orderNo = str(v.orderNo) as string;
+    const good = num(v.qtyGood) as number;
+    const scrap = num(v.qtyScrap) ?? 0;
+    const finishedAt = new Date(str(v.finishedAt) as string);
+    const setupMin = num(v.setupMin) as number;
+    const runMin = num(v.runMin) as number;
+    let order = orders.get(orderNo);
+    if (!order) {
+      const partId = await parts.get(str(v.partNo) as string);
+      order = await db.order.upsert({
+        where: { orgId_orderNo: { orgId, orderNo } },
+        create: {
+          orgId,
+          orderNo,
+          partId,
+          qty: good + scrap,
+          dueDate: finishedAt,
+          status: "done",
+        },
+        update: {},
+        select: { id: true, orderNo: true, partId: true },
+      });
+      orders.set(orderNo, order);
+      addedOrders.add(orderNo);
+    }
+    const seq = num(v.seq) as number;
+    const routing = routings.get(`${order.partId}|${seq}`);
+    rows.push({
+      orderId: order.id,
+      seq,
+      data: {
+        actualStart: new Date(
+          finishedAt.getTime() - (setupMin + runMin) * 60_000
+        ),
+        actualEnd: finishedAt,
+        actualSetupMin: setupMin,
+        actualRunMin: runMin,
+        qtyGood: good,
+        qtyScrap: scrap,
+        plannedSetupMin: num(v.plannedSetupMin) ?? routing?.setupMin ?? null,
+        plannedRunMinPerUnit: routing?.runMinPerUnit ?? null,
+        ...defined({ workCenterId: await machines.get(str(v.workCenter)) }),
+      },
+    });
+  }
+  await inBatches(rows, async ({ orderId, seq, data }) => {
+    await db.job.upsert({
+      where: { orderId_routingSeq: { orderId, routingSeq: seq } },
+      create: { orgId, orderId, routingSeq: seq, ...data },
+      update: data,
+    });
+    count(c, existing.has(`${orderId}|${seq}`));
+  });
+  const notes = [
+    listNote("Closed orders added from the job history", addedOrders),
+    listNote("New part numbers added", parts.created),
+    listNote(
+      "Machines not in your machine list were added (please review)",
+      machines.created
+    ),
+  ];
+  ctx.notes.push(...notes.filter((n): n is string => n !== null));
+};
+
 const SAVERS: Record<
   EntityKey,
   (ctx: Context, records: ParsedRecord[], c: Counter) => Promise<void>
@@ -493,6 +602,7 @@ const SAVERS: Record<
   routings: saveRoutings,
   orders: saveOrders,
   quotes: saveQuotes,
+  jobs: saveJobs,
 };
 
 // Keeps the last row when a file lists the same record twice.
@@ -506,6 +616,7 @@ const dedupe = (entity: EntityKey, records: readonly ParsedRecord[]) => {
       `${String(v.partNo).toLowerCase()}|${String(v.rev ?? "").toLowerCase()}|${v.seq}`,
     orders: (v) => String(v.orderNo),
     quotes: (v) => String(v.quoteNo),
+    jobs: (v) => `${v.orderNo}|${v.seq}`,
   };
   const byKey = new Map<string, ParsedRecord>();
   for (const record of records) {

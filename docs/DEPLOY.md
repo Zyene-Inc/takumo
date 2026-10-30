@@ -43,8 +43,12 @@ or the service dashboards; never commit them.
 - `NEXT_PUBLIC_APP_URL` = `https://<app-url>`, `NEXT_PUBLIC_WEB_URL` = `https://<web-url>`
 - `ANTHROPIC_API_KEY` (Ask Takumo and AI column matching; column matching falls back to the offline matcher without it)
 - `ASK_DATABASE_URL` (step 1.3): the reader's connection string; without it Ask Takumo can't query data
-- `OPENAI_API_KEY` (optional): vector search over documents; keyword search works without it
+- `OPENAI_API_KEY` (optional): vector search over documents, and transcribing uploaded voice-note
+  recordings; keyword search and recording in the browser work without it
 - `ENGINE_URL` = the engine's URL (step 4), `ENGINE_SECRET` = the same value as on the engine
+- `CRON_SECRET` = a new value (`openssl rand -hex 32`): Vercel sends it to the nightly
+  recalibration (`/api/cron/recalibrate`, 07:00 UTC, in `apps/app/vercel.json`); without it the
+  route refuses every call and recalibration runs only from Knowledge → Calibration
 
 **takumo-api**
 - `DATABASE_URL`, `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`
@@ -94,3 +98,6 @@ Check: `curl https://<engine-url>/health` returns `{"status":"ok"}`.
   numbered sources.
 - Quotes → New RFQ → paste an RFQ email → **Draft quote** shows prices, lead times and
   comparable quotes; **Approve quote**, then **Quote PDF** opens the quote.
+- Knowledge → Voice notes → record or type "setup on <machine> for <part> is really 2 hours" →
+  a fact shows under Knowledge → Facts; approving it changes the routing.
+- Vercel → takumo-app → Settings → Cron Jobs lists `/api/cron/recalibrate`.
