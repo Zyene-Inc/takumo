@@ -1,0 +1,8 @@
+Open Order Report - Run 10/29/2026
+,,,,,,
+Job #,Customer Name,Part Number,Rev,Qty Ordered,Ship Date,Ext Price,Job Status
+J-24101,Northwind Robotics,P-1001,B,"1,200",11/20/2026,"$48,000.00",Released
+J-24102,Bluefin Marine,P-2001,A,40,12/04/2026,"$9,600.00",WIP
+J-24103,Kestrel Aerospace,P-7777,A,25,12/11/2026,"$6,250.00",Firm
+J-24104,Northwind Robotics,P-1002,A,300,,"$7,500.00",Released
+J-24105,Bluefin Marine,P-2002,A,80,01/15/2027,TBD,On Hold
