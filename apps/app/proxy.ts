@@ -11,10 +11,11 @@ const securityHeaders = env.FLAGS_SECRET
   ? securityMiddleware(noseconeOptionsWithToolbar)
   : securityMiddleware(noseconeOptions);
 
-// Clerk middleware wraps other middleware in its callback
-// For apps using Clerk, compose middleware inside authMiddleware callback
-// For apps without Clerk, use createNEMO for composition (see apps/web)
-export default authMiddleware(() => securityHeaders()) as unknown as NextProxy;
+// WorkOS AuthKit manages the session; everything except these paths
+// requires a signed-in user.
+export default authMiddleware(() => securityHeaders(), {
+  publicPaths: ["/sign-in", "/sign-up", "/callback", "/.well-known"],
+}) as unknown as NextProxy;
 
 export const config = {
   matcher: [

@@ -1,0 +1,7 @@
+part_no,rev,description,customer,material
+P-1001,B,Gripper bracket,Northwind Robotics,AL6061-T6 bar 2in
+P-1002,A,Motor mount plate,Northwind Robotics,AL6061-T6 bar 2in
+P-2001,C,Pump shaft,Bluefin Marine,SS316 bar 1.5in
+P-2002,A,Impeller hub,Bluefin Marine,SS316 bar 1.5in
+P-3001,A,Instrument tray,Cobalt Medical,CRS sheet 14ga
+P-3002,B,Enclosure lid,Cobalt Medical,CRS sheet 14ga

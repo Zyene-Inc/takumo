@@ -1,5 +1,5 @@
 import { analytics } from "@repo/analytics/server";
-import { clerkClient } from "@repo/auth/server";
+import { database } from "@repo/database";
 import { parseError } from "@repo/observability/error";
 import { log } from "@repo/observability/log";
 import type { Stripe } from "@repo/payments";
@@ -8,16 +8,9 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { env } from "@/env";
 
-const getUserFromCustomerId = async (customerId: string) => {
-  const clerk = await clerkClient();
-  const users = await clerk.users.getUserList();
-
-  const user = users.data.find(
-    (currentUser) => currentUser.privateMetadata.stripeCustomerId === customerId
-  );
-
-  return user;
-};
+// Billing is per shop: the Stripe customer is stored on the Org row.
+const getOrgFromCustomerId = (customerId: string) =>
+  database.org.findUnique({ where: { stripeCustomerId: customerId } });
 
 const handleCheckoutSessionCompleted = async (
   data: Stripe.Checkout.Session
@@ -28,15 +21,15 @@ const handleCheckoutSessionCompleted = async (
 
   const customerId =
     typeof data.customer === "string" ? data.customer : data.customer.id;
-  const user = await getUserFromCustomerId(customerId);
+  const org = await getOrgFromCustomerId(customerId);
 
-  if (!user) {
+  if (!org) {
     return;
   }
 
   analytics?.capture({
     event: "User Subscribed",
-    distinctId: user.id,
+    distinctId: org.id,
   });
 };
 
@@ -49,15 +42,15 @@ const handleSubscriptionScheduleCanceled = async (
 
   const customerId =
     typeof data.customer === "string" ? data.customer : data.customer.id;
-  const user = await getUserFromCustomerId(customerId);
+  const org = await getOrgFromCustomerId(customerId);
 
-  if (!user) {
+  if (!org) {
     return;
   }
 
   analytics?.capture({
     event: "User Unsubscribed",
-    distinctId: user.id,
+    distinctId: org.id,
   });
 };
 

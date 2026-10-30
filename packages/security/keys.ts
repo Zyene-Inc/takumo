@@ -4,6 +4,7 @@ import { z } from "zod";
 export const keys = () =>
   createEnv({
     skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
+    emptyStringAsUndefined: true,
     server: {
       ARCJET_KEY: z.string().startsWith("ajkey_").optional(),
     },

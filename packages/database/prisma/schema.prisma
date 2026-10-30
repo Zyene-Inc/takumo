@@ -1,5 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Takumo factory schema. See docs/TAKUMO.md section 8.
+// Every tenant-owned row carries `orgId` (the WorkOS organization ID).
+// Queries must always filter by orgId; RLS in prisma/sql/ is the backstop.
 
 generator client {
   provider = "prisma-client"
@@ -7,13 +8,381 @@ generator client {
 }
 
 datasource db {
-  provider     = "postgresql"
-  relationMode = "prisma"
+  provider = "postgresql"
 }
 
-// This is a stub model.
-// Delete it and add your own Prisma models.
-model Page {
-  id   Int    @id @default(autoincrement())
-  name String
+enum Role {
+  owner
+  admin
+  planner
+  estimator
+  operator
+}
+
+enum Provenance {
+  data // read from an uploaded file or connected system
+  stated // told to us by a person
+  assumed // a default Takumo filled in; needs review
+}
+
+enum OrderStatus {
+  open
+  in_progress
+  done
+  cancelled
+}
+
+enum QuoteStatus {
+  open
+  won
+  lost
+}
+
+enum FactStatus {
+  pending
+  approved
+  superseded
+  rejected
+}
+
+// ---------------------------------------------------------------------------
+// Orgs & members (mirrored from WorkOS: on shop creation and via apps/api webhook)
+// ---------------------------------------------------------------------------
+
+model Org {
+  id               String   @id // WorkOS organization ID (org_…)
+  name             String
+  plan             String   @default("trial")
+  stripeCustomerId String?  @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  members Member[]
+}
+
+model Member {
+  id        String   @id @default(uuid())
+  orgId     String
+  userId    String // WorkOS user ID (user_…)
+  role      Role     @default(planner)
+  createdAt DateTime @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+}
+
+// ---------------------------------------------------------------------------
+// Shop model
+// ---------------------------------------------------------------------------
+
+model WorkCenter {
+  id         String     @id @default(uuid())
+  orgId      String
+  name       String
+  type       String? // e.g. "cnc_mill", "lathe", "press_brake"
+  hourlyRate Decimal?   @db.Decimal(10, 2)
+  efficiency Float      @default(1.0)
+  shifts     Json? // [{ "days": [1,2,3,4,5], "start": "07:00", "end": "15:30" }]
+  provenance Provenance @default(data)
+  sourceId   String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  calendar CalendarDay[]
+  routings Routing[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+model CalendarDay {
+  id             String   @id @default(uuid())
+  orgId          String
+  workCenterId   String
+  date           DateTime @db.Date
+  availableHours Float
+  reason         String? // holiday, maintenance, breakdown
+
+  workCenter WorkCenter @relation(fields: [workCenterId], references: [id], onDelete: Cascade)
+
+  @@unique([workCenterId, date])
+  @@index([orgId])
+}
+
+model Operator {
+  id         String   @id @default(uuid())
+  orgId      String
+  name       String
+  skills     String[]
+  hourlyRate Decimal? @db.Decimal(10, 2)
+  createdAt  DateTime @default(now())
+
+  @@index([orgId])
+}
+
+model Material {
+  id           String     @id @default(uuid())
+  orgId        String
+  name         String
+  spec         String?
+  unitCost     Decimal?   @db.Decimal(12, 4)
+  unit         String     @default("ea")
+  leadTimeDays Int?
+  provenance   Provenance @default(data)
+
+  parts Part[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+model Customer {
+  id              String   @id @default(uuid())
+  orgId           String
+  name            String
+  paymentTermDays Int?
+  createdAt       DateTime @default(now())
+
+  parts  Part[]
+  orders Order[]
+  quotes Quote[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+model Part {
+  id          String   @id @default(uuid())
+  orgId       String
+  partNo      String
+  rev         String   @default("A")
+  description String?
+  customerId  String?
+  materialId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customer  Customer? @relation(fields: [customerId], references: [id])
+  material  Material? @relation(fields: [materialId], references: [id])
+  routings  Routing[]
+  orders    Order[]
+  quotes    Quote[]
+  bomParent BomLine[] @relation("BomParent")
+  bomChild  BomLine[] @relation("BomChild")
+
+  @@unique([orgId, partNo, rev])
+  @@index([orgId])
+}
+
+model Routing {
+  id               String     @id @default(uuid())
+  orgId            String
+  partId           String
+  seq              Int // operation number: 10, 20, 30…
+  workCenterId     String
+  setupMin         Float
+  runMinPerUnit    Float
+  altWorkCenterIds String[]
+  provenance       Provenance @default(data)
+  confidence       Float      @default(1.0)
+
+  part       Part       @relation(fields: [partId], references: [id], onDelete: Cascade)
+  workCenter WorkCenter @relation(fields: [workCenterId], references: [id])
+
+  @@unique([partId, seq])
+  @@index([orgId])
+}
+
+model BomLine {
+  id           String @id @default(uuid())
+  orgId        String
+  parentPartId String
+  childPartId  String
+  qty          Float
+
+  parent Part @relation("BomParent", fields: [parentPartId], references: [id], onDelete: Cascade)
+  child  Part @relation("BomChild", fields: [childPartId], references: [id])
+
+  @@index([orgId])
+}
+
+// ---------------------------------------------------------------------------
+// Demand & history
+// ---------------------------------------------------------------------------
+
+model Order {
+  id         String      @id @default(uuid())
+  orgId      String
+  orderNo    String
+  customerId String?
+  partId     String
+  qty        Int
+  dueDate    DateTime    @db.Date
+  price      Decimal?    @db.Decimal(12, 2)
+  priority   Int         @default(0)
+  status     OrderStatus @default(open)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  customer Customer? @relation(fields: [customerId], references: [id])
+  part     Part      @relation(fields: [partId], references: [id])
+  jobs     Job[]
+
+  @@unique([orgId, orderNo])
+  @@index([orgId, status])
+}
+
+// One row per routing operation actually run: the source for recalibration.
+model Job {
+  id             String    @id @default(uuid())
+  orgId          String
+  orderId        String
+  routingSeq     Int
+  workCenterId   String?
+  plannedStart   DateTime?
+  plannedEnd     DateTime?
+  actualStart    DateTime?
+  actualEnd      DateTime?
+  actualSetupMin Float?
+  actualRunMin   Float?
+  qtyGood        Int?
+  qtyScrap       Int?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+model Quote {
+  id           String      @id @default(uuid())
+  orgId        String
+  quoteNo      String
+  customerId   String?
+  partId       String?
+  qty          Int
+  price        Decimal?    @db.Decimal(12, 2)
+  leadTimeDays Int?
+  estCost      Decimal?    @db.Decimal(12, 2)
+  actualCost   Decimal?    @db.Decimal(12, 2)
+  status       QuoteStatus @default(open)
+  quotedAt     DateTime    @default(now())
+  rfqId        String?
+
+  customer Customer? @relation(fields: [customerId], references: [id])
+  part     Part?     @relation(fields: [partId], references: [id])
+  rfq      Rfq?      @relation(fields: [rfqId], references: [id])
+
+  @@unique([orgId, quoteNo])
+  @@index([orgId, status])
+}
+
+model Rfq {
+  id         String   @id @default(uuid())
+  orgId      String
+  source     String // "email" | "upload"
+  sourceId   String?
+  extracted  Json? // { partNo, qty, material, tolerances, finish, dueDate }
+  status     String   @default("new")
+  receivedAt DateTime @default(now())
+
+  quotes Quote[]
+
+  @@index([orgId])
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge
+// ---------------------------------------------------------------------------
+
+model Source {
+  id        String   @id @default(uuid())
+  orgId     String
+  name      String
+  type      String // "upload" | "quickbooks" | "gmail" | …
+  filePath  String? // Supabase Storage path
+  status    String   @default("pending") // pending | parsing | ready | failed
+  profile   String? // quotes | routings | travelers | sops | erp_export | generic
+  summary   String?
+  createdAt DateTime @default(now())
+
+  chunks DocChunk[]
+
+  @@index([orgId])
+}
+
+model DocChunk {
+  id        String                       @id @default(uuid())
+  orgId     String
+  sourceId  String
+  content   String
+  page      Int?
+  meta      Json?
+  // Created and indexed by prisma/sql/001_pgvector_rls.sql
+  embedding Unsupported("vector(1024)")?
+
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+// Tribal knowledge with history: new facts supersede old ones instead of
+// overwriting them.
+model Fact {
+  id               String     @id @default(uuid())
+  orgId            String
+  subjectType      String // "routing" | "work_center" | "part" | "customer" | …
+  subjectId        String
+  attribute        String // e.g. "setupMin"
+  value            Json
+  statedBy         String? // WorkOS user ID
+  evidence         String?
+  status           FactStatus @default(pending)
+  supersedesFactId String?
+  validFrom        DateTime   @default(now())
+  validTo          DateTime?
+  createdAt        DateTime   @default(now())
+
+  @@index([orgId, subjectType, subjectId])
+}
+
+// ---------------------------------------------------------------------------
+// Agent
+// ---------------------------------------------------------------------------
+
+model Conversation {
+  id        String   @id @default(uuid())
+  orgId     String
+  userId    String
+  title     String?
+  createdAt DateTime @default(now())
+
+  messages Message[]
+
+  @@index([orgId, userId])
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  role           String // "user" | "assistant" | "tool"
+  content        String
+  toolCalls      Json?
+  citations      Json?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model ScheduleRun {
+  id           String   @id @default(uuid())
+  orgId        String
+  objective    String
+  input        Json
+  output       Json?
+  solverStatus String?
+  createdBy    String?
+  createdAt    DateTime @default(now())
+
+  @@index([orgId])
 }

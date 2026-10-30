@@ -1,39 +1,28 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
+// WorkOS AuthKit. Values come from https://dashboard.workos.com.
+// The AuthKit SDK reads these from process.env itself; this validates them.
 export const keys = () =>
   createEnv({
     skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
+    emptyStringAsUndefined: true,
     server: {
-      CLERK_SECRET_KEY: z.string().startsWith("sk_").optional(),
-      CLERK_WEBHOOK_SECRET: z.string().startsWith("whsec_").optional(),
+      WORKOS_API_KEY: z.string().startsWith("sk_").optional(),
+      WORKOS_CLIENT_ID: z.string().startsWith("client_").optional(),
+      // Encrypts the session cookie; at least 32 characters.
+      WORKOS_COOKIE_PASSWORD: z.string().min(32).optional(),
+      WORKOS_WEBHOOK_SECRET: z.string().optional(),
     },
     client: {
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z
-        .string()
-        .startsWith("pk_")
-        .optional(),
-      NEXT_PUBLIC_CLERK_SIGN_IN_URL: z.string().startsWith("/").optional(),
-      NEXT_PUBLIC_CLERK_SIGN_UP_URL: z.string().startsWith("/").optional(),
-      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: z
-        .string()
-        .startsWith("/")
-        .optional(),
-      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: z
-        .string()
-        .startsWith("/")
-        .optional(),
+      NEXT_PUBLIC_WORKOS_REDIRECT_URI: z.url().optional(),
     },
     runtimeEnv: {
-      CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
-      CLERK_WEBHOOK_SECRET: process.env.CLERK_WEBHOOK_SECRET,
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
-        process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
-      NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL,
-      NEXT_PUBLIC_CLERK_SIGN_UP_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL,
-      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL:
-        process.env.NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL,
-      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL:
-        process.env.NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL,
+      WORKOS_API_KEY: process.env.WORKOS_API_KEY,
+      WORKOS_CLIENT_ID: process.env.WORKOS_CLIENT_ID,
+      WORKOS_COOKIE_PASSWORD: process.env.WORKOS_COOKIE_PASSWORD,
+      WORKOS_WEBHOOK_SECRET: process.env.WORKOS_WEBHOOK_SECRET,
+      NEXT_PUBLIC_WORKOS_REDIRECT_URI:
+        process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI,
     },
   });

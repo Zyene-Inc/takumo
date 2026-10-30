@@ -4,10 +4,14 @@ import { z } from "zod";
 export const keys = () =>
   createEnv({
     skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
+    emptyStringAsUndefined: true,
     server: {
+      ANTHROPIC_API_KEY: z.string().startsWith("sk-ant-").optional(),
+      // Only used for embeddings.
       OPENAI_API_KEY: z.string().startsWith("sk-").optional(),
     },
     runtimeEnv: {
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
       OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     },
   });

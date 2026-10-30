@@ -1,140 +1,82 @@
-# ▲ / next-forge
+# Takumo
 
-**Production-grade Turborepo template for Next.js apps.**
+**Your shop's master craftsman, in AI form.** An AI operations brain for job shops
+and contract manufacturers: it knows your shop, checks your capacity, and answers
+*"can we take this job, by when, and at what margin?"* with the evidence behind every number.
 
-<div>
-  <img src="https://img.shields.io/npm/dy/next-forge" alt="" />
-  <img src="https://img.shields.io/npm/v/next-forge" alt="" />
-  <img src="https://img.shields.io/github/license/vercel/next-forge" alt="" />
-</div>
+Full product and build spec: [docs/TAKUMO.md](docs/TAKUMO.md).
 
-## Overview
+Built on [next-forge](https://github.com/vercel/next-forge) (Turborepo) + a Python engine.
 
-[next-forge](https://github.com/vercel/next-forge) is a production-grade [Turborepo](https://turborepo.com) template for [Next.js](https://nextjs.org/) apps. It's designed to be a comprehensive starting point for building SaaS applications, providing a solid, opinionated foundation with minimal configuration required.
-
-Built on a decade of experience building web applications, next-forge balances speed and quality to help you ship thoroughly-built products faster.
-
-### Philosophy
-
-next-forge is built around five core principles:
-
-- **Fast** — Quick to build, run, deploy, and iterate on
-- **Cheap** — Free to start with services that scale with you
-- **Opinionated** — Integrated tooling designed to work together
-- **Modern** — Latest stable features with healthy community support
-- **Safe** — End-to-end type safety and robust security posture
-
-## Demo
-
-Experience next-forge in action:
-
-- [Web](https://demo.next-forge.com) — Marketing website
-- [App](https://app.demo.next-forge.com) — Main application
-- [Storybook](https://storybook.demo.next-forge.com) — Component library
-- [API](https://api.demo.next-forge.com/health) — API health check
-
-## Features
-
-next-forge comes with batteries included:
-
-### Apps
-
-- **Web** — Marketing site built with Tailwind CSS and TWBlocks
-- **App** — Main application with authentication and database integration
-- **API** — RESTful API with health checks and monitoring
-- **Docs** — Documentation site powered by Mintlify
-- **Email** — Email templates with React Email
-- **Storybook** — Component development environment
-
-### Packages
-
-- **Authentication** — Powered by [Clerk](https://clerk.com)
-- **Database** — Type-safe ORM with migrations
-- **Design System** — Comprehensive component library with dark mode
-- **Payments** — Subscription management via [Stripe](https://stripe.com)
-- **Email** — Transactional emails via [Resend](https://resend.com)
-- **Analytics** — Web ([Google Analytics](https://developers.google.com/analytics)) and product ([Posthog](https://posthog.com))
-- **Observability** — Error tracking ([Sentry](https://sentry.io)), logging, and uptime monitoring ([BetterStack](https://betterstack.com))
-- **Security** — Application security ([Arcjet](https://arcjet.com)), rate limiting, and secure headers
-- **CMS** — Type-safe content management for blogs and documentation
-- **SEO** — Metadata management, sitemaps, and JSON-LD
-- **AI** — AI integration utilities
-- **Webhooks** — Inbound and outbound webhook handling
-- **Collaboration** — Real-time features with avatars and live cursors
-- **Feature Flags** — Feature flag management
-- **Cron** — Scheduled job management
-- **Storage** — File upload and management
-- **Internationalization** — Multi-language support
-- **Notifications** — In-app notification system
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 20+
-- [Bun](https://bun.sh) (or npm/yarn/pnpm)
-- [Stripe CLI](https://docs.stripe.com/stripe-cli) for local webhook testing
-
-### Installation
-
-Create a new next-forge project:
-
-```sh
-npx next-forge@latest init
-```
-
-### Setup
-
-1. Configure your environment variables
-2. Set up required service accounts (Clerk, Stripe, Resend, etc.)
-3. Run the development server
-
-For detailed setup instructions, read the [documentation](https://www.next-forge.com/docs).
-
-## Structure
-
-next-forge uses a monorepo structure managed by Turborepo:
+## Layout
 
 ```
-next-forge/
-├── apps/           # Deployable applications
-│   ├── web/        # Marketing website (port 3001)
-│   ├── app/        # Main application (port 3000)
-│   ├── api/        # API server
-│   ├── docs/       # Documentation
-│   ├── email/      # Email templates
-│   └── storybook/  # Component library
-└── packages/       # Shared packages
-    ├── design-system/
-    ├── database/
-    ├── auth/
-    └── ...
+apps/
+  app/        Takumo product (Next.js, :3000): Ask, Quotes, Schedule, Shop, Knowledge
+  web/        takumo.ai marketing site (:3001)
+  api/        Webhooks (Stripe, WorkOS org/member sync), cron (:3002)
+  email/      React Email templates (:3003)
+  docs/       Mintlify help center (:3004)
+  studio/     Prisma Studio (:3005)
+packages/
+  database/   Prisma on Supabase Postgres: factory schema, forOrg() tenant guard, seed
+  engine-client/  Typed client for services/engine
+  ai/         Claude models (agent/chat/extract) via the AI SDK
+  auth/ design-system/ payments/ analytics/ observability/ security/ email/ …
+services/
+  engine/     Python FastAPI: CP-SAT scheduler + "can we take this order?" (:8000)
+seed/acme-precision/   Demo shop CSVs used by db:seed and engine tests
+evals/  jobs/  docs/
 ```
 
-Each app is self-contained and independently deployable. Packages are shared across apps for consistency and maintainability.
+## Setup
 
-## Documentation
+**Accounts:** WorkOS (AuthKit; free up to 1M users), Supabase (enable the `vector` extension),
+Anthropic, plus optionally Stripe, Resend, PostHog, Sentry, BetterStack, Arcjet.
 
-Full documentation is available at [next-forge.com/docs](https://www.next-forge.com/docs), including:
+**WorkOS dashboard** (dashboard.workos.com → your application):
+- Authentication → enable AuthKit (email + password, Google, Microsoft as you like)
+- Redirects → Redirect URI `http://localhost:3000/callback`,
+  Initiate login URI `http://localhost:3000/sign-in`, Sign-out redirect `http://localhost:3001`
+- API Keys → copy `WORKOS_API_KEY` and `WORKOS_CLIENT_ID` into `apps/app/.env.local` and `apps/api/.env.local`;
+  set `WORKOS_COOKIE_PASSWORD` in `apps/app/.env.local` (`openssl rand -base64 32`)
+- Webhooks (optional locally) → `https://<api-host>/webhooks/auth` for `user.*`, `organization.*`,
+  `organization_membership.*`; put the secret in `WORKOS_WEBHOOK_SECRET`
 
-- Detailed setup guides
-- Package documentation
-- Migration guides for swapping providers
-- Deployment instructions
-- Examples and recipes
+First sign-in lands on **Create your shop**, which creates the WorkOS organization; its `org_…` ID is your `SEED_ORG_ID`.
 
-## Contributing
+```bash
+# 1. dependencies (pnpm 10; Node ≥ 20) and Python engine (uv)
+pnpm install
+cd services/engine && uv sync && cd ../..
 
-We welcome contributions! See the [contributing guide](https://github.com/vercel/next-forge/blob/main/.github/CONTRIBUTING.md) for details.
+# 2. env files: fill in keys
+#    apps/app/.env.local, apps/web/.env.local, apps/api/.env.local, packages/database/.env
+#    (copy from the .env.example next to each)
 
-## Contributors
+# 3. database on Supabase
+pnpm migrate                      # creates tables from packages/database/prisma/schema.prisma
+#    then run packages/database/prisma/sql/001_pgvector_rls.sql in the Supabase SQL editor
+SEED_ORG_ID=org_xxx pnpm db:seed  # load the demo shop into your WorkOS organization
 
-<a href="https://github.com/vercel/next-forge/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=vercel/next-forge" />
-</a>
+# 4. run
+pnpm dev:engine                   # engine on :8000
+pnpm dev                          # app :3000, web :3001, api :3002, …
+```
 
-Made with [contrib.rocks](https://contrib.rocks).
+## Status
 
-## License
+- ✅ Monorepo trimmed for Takumo (no CMS, i18n, Liveblocks, Storybook)
+- ✅ Factory schema (work centers, parts, routings, orders, jobs, quotes, RFQs, sources, facts, agent)
+- ✅ Tenant isolation: `forOrg(database, orgId)` + Supabase RLS policies
+- ✅ Engine: CP-SAT scheduler and capacity check, tested on the demo shop (`pnpm test:engine`)
+- ⏳ Phase 1: onboarding upload + column mapping → see docs/TAKUMO.md section 13
 
-MIT
+## Known template issues
+
+These come from next-forge dependencies resolving to newer majors. They don't affect
+`apps/app`, `apps/web` or `apps/api`, but `pnpm typecheck` reports them:
+
+- `packages/design-system/components/ui/chart.tsx`: Recharts 3 types (`pnpm bump-ui` regenerates shadcn components)
+- `packages/notifications`: Knock client constructor signature
+- `packages/payments/ai.ts`: Stripe agent toolkit config

@@ -1,6 +1,6 @@
 "use client";
 
-import { OrganizationSwitcher, UserButton } from "@repo/auth/client";
+import type { UserOrganization } from "@repo/auth/server";
 import { ModeToggle } from "@repo/design-system/components/mode-toggle";
 import { Button } from "@repo/design-system/components/ui/button";
 import {
@@ -37,27 +37,33 @@ import { cn } from "@repo/design-system/lib/utils";
 import { NotificationsTrigger } from "@repo/notifications/components/trigger";
 import {
   AnchorIcon,
-  BookOpenIcon,
-  BotIcon,
+  BrainIcon,
+  CalculatorIcon,
+  CalendarRangeIcon,
   ChevronRightIcon,
+  ClipboardListIcon,
+  FactoryIcon,
   FolderIcon,
-  FrameIcon,
   LifeBuoyIcon,
-  MapIcon,
+  MessageSquareIcon,
   MoreHorizontalIcon,
-  PieChartIcon,
-  SendIcon,
   Settings2Icon,
   ShareIcon,
-  SquareTerminalIcon,
   Trash2Icon,
+  UploadIcon,
+  WrenchIcon,
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Search } from "./search";
+import { ShopSwitcher } from "./shop-switcher";
+import { UserMenu, type UserMenuUser } from "./user-menu";
 
 interface GlobalSidebarProperties {
   readonly children: ReactNode;
+  readonly currentOrganizationId: string;
+  readonly organizations: UserOrganization[];
+  readonly user: UserMenuUser;
 }
 
 const data = {
@@ -68,64 +74,82 @@ const data = {
   },
   navMain: [
     {
-      title: "Playground",
-      url: "#",
-      icon: SquareTerminalIcon,
+      title: "Ask Takumo",
+      url: "/ask",
+      icon: MessageSquareIcon,
       isActive: true,
       items: [
         {
+          title: "Can we take this order?",
+          url: "/ask?mode=capacity",
+        },
+        {
           title: "History",
-          url: "#",
-        },
-        {
-          title: "Starred",
-          url: "#",
-        },
-        {
-          title: "Settings",
-          url: "#",
+          url: "/ask/history",
         },
       ],
     },
     {
-      title: "Models",
-      url: "#",
-      icon: BotIcon,
+      title: "Quotes",
+      url: "/quotes",
+      icon: CalculatorIcon,
       items: [
         {
-          title: "Genesis",
-          url: "#",
+          title: "RFQ inbox",
+          url: "/quotes",
         },
         {
-          title: "Explorer",
-          url: "#",
-        },
-        {
-          title: "Quantum",
-          url: "#",
+          title: "Past quotes",
+          url: "/quotes/history",
         },
       ],
     },
     {
-      title: "Documentation",
-      url: "#",
-      icon: BookOpenIcon,
+      title: "Schedule",
+      url: "/schedule",
+      icon: CalendarRangeIcon,
       items: [
         {
-          title: "Introduction",
-          url: "#",
+          title: "Board",
+          url: "/schedule",
         },
         {
-          title: "Get Started",
-          url: "#",
+          title: "Bottlenecks",
+          url: "/schedule/bottlenecks",
+        },
+      ],
+    },
+    {
+      title: "Shop",
+      url: "/shop",
+      icon: FactoryIcon,
+      items: [
+        {
+          title: "Work centers",
+          url: "/shop/work-centers",
         },
         {
-          title: "Tutorials",
-          url: "#",
+          title: "Parts & routings",
+          url: "/shop/parts",
         },
         {
-          title: "Changelog",
-          url: "#",
+          title: "Orders",
+          url: "/shop/orders",
+        },
+      ],
+    },
+    {
+      title: "Knowledge",
+      url: "/knowledge",
+      icon: BrainIcon,
+      items: [
+        {
+          title: "Sources",
+          url: "/knowledge",
+        },
+        {
+          title: "Facts to review",
+          url: "/knowledge/facts",
         },
       ],
     },
@@ -135,7 +159,7 @@ const data = {
       icon: Settings2Icon,
       items: [
         {
-          title: "General",
+          title: "Organization",
           url: "#",
         },
         {
@@ -143,17 +167,22 @@ const data = {
           url: "#",
         },
         {
-          title: "Billing",
+          title: "Integrations",
           url: "#",
         },
         {
-          title: "Limits",
+          title: "Billing",
           url: "#",
         },
       ],
     },
   ],
   navSecondary: [
+    {
+      title: "Set up your shop",
+      url: "/onboarding",
+      icon: UploadIcon,
+    },
     {
       title: "Webhooks",
       url: "/webhooks",
@@ -164,32 +193,32 @@ const data = {
       url: "#",
       icon: LifeBuoyIcon,
     },
-    {
-      title: "Feedback",
-      url: "#",
-      icon: SendIcon,
-    },
   ],
   projects: [
     {
-      name: "Design Engineering",
-      url: "#",
-      icon: FrameIcon,
+      name: "Open orders",
+      url: "/shop/orders",
+      icon: ClipboardListIcon,
     },
     {
-      name: "Sales & Marketing",
-      url: "#",
-      icon: PieChartIcon,
+      name: "Open quotes",
+      url: "/quotes",
+      icon: CalculatorIcon,
     },
     {
-      name: "Travel",
-      url: "#",
-      icon: MapIcon,
+      name: "Machines",
+      url: "/shop/work-centers",
+      icon: WrenchIcon,
     },
   ],
 };
 
-export const GlobalSidebar = ({ children }: GlobalSidebarProperties) => {
+export const GlobalSidebar = ({
+  children,
+  currentOrganizationId,
+  organizations,
+  user,
+}: GlobalSidebarProperties) => {
   const sidebar = useSidebar();
 
   return (
@@ -200,13 +229,13 @@ export const GlobalSidebar = ({ children }: GlobalSidebarProperties) => {
             <SidebarMenuItem>
               <div
                 className={cn(
-                  "h-[36px] overflow-hidden transition-all [&>div]:w-full",
+                  "overflow-hidden transition-all",
                   sidebar.open ? "" : "-mx-1"
                 )}
               >
-                <OrganizationSwitcher
-                  afterSelectOrganizationUrl="/"
-                  hidePersonal
+                <ShopSwitcher
+                  currentOrganizationId={currentOrganizationId}
+                  organizations={organizations}
                 />
               </div>
             </SidebarMenuItem>
@@ -215,7 +244,7 @@ export const GlobalSidebar = ({ children }: GlobalSidebarProperties) => {
         <Search />
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Platform</SidebarGroupLabel>
+            <SidebarGroupLabel>Takumo</SidebarGroupLabel>
             <SidebarMenu>
               {data.navMain.map((item) => (
                 <Collapsible
@@ -259,7 +288,7 @@ export const GlobalSidebar = ({ children }: GlobalSidebarProperties) => {
             </SidebarMenu>
           </SidebarGroup>
           <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-            <SidebarGroupLabel>Projects</SidebarGroupLabel>
+            <SidebarGroupLabel>Quick links</SidebarGroupLabel>
             <SidebarMenu>
               {data.projects.map((item) => (
                 <SidebarMenuItem key={item.name}>
@@ -326,16 +355,7 @@ export const GlobalSidebar = ({ children }: GlobalSidebarProperties) => {
         <SidebarFooter>
           <SidebarMenu>
             <SidebarMenuItem className="flex items-center gap-2">
-              <UserButton
-                appearance={{
-                  elements: {
-                    rootBox: "flex overflow-hidden w-full",
-                    userButtonBox: "flex-row-reverse",
-                    userButtonOuterIdentifier: "truncate pl-0",
-                  },
-                }}
-                showName
-              />
+              <UserMenu user={user} />
               <div className="flex shrink-0 items-center gap-px">
                 <ModeToggle />
                 <Button

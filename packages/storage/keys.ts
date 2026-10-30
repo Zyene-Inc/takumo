@@ -4,6 +4,7 @@ import { z } from "zod";
 export const keys = () =>
   createEnv({
     skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
+    emptyStringAsUndefined: true,
     server: {
       BLOB_READ_WRITE_TOKEN: z.string().optional(),
     },

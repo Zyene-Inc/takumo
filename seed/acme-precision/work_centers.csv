@@ -1,0 +1,6 @@
+name,type,hourly_rate,efficiency,hours_per_day
+HAAS-VF2,cnc_mill,95,0.90,16
+HAAS-VF4,cnc_mill,105,0.90,16
+OKUMA-LB3000,cnc_lathe,110,0.92,16
+AMADA-HG1303,press_brake,85,0.95,8
+DEBURR-1,manual,45,1.00,8

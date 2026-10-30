@@ -1,0 +1,9 @@
+quote_no,customer,part_no,qty,price,lead_time_days,est_cost,actual_cost,status,quoted_at
+Q-9001,Northwind Robotics,P-1001,100,4500,10,3100,3350,won,2026-06-02
+Q-9002,Northwind Robotics,P-1001,250,10000,14,6900,7600,won,2026-08-15
+Q-9003,Bluefin Marine,P-2001,40,9200,18,6400,7300,won,2026-05-20
+Q-9004,Bluefin Marine,P-2002,50,9800,20,6800,,lost,2026-07-11
+Q-9005,Cobalt Medical,P-3001,1000,11500,12,8200,8000,won,2026-04-08
+Q-9006,Cobalt Medical,P-3002,200,3500,10,2600,2900,won,2026-09-01
+Q-9007,Northwind Robotics,P-1002,60,5100,12,3600,,lost,2026-09-22
+Q-9008,Bluefin Marine,P-2001,80,17000,16,12400,,open,2026-10-20

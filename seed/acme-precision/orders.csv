@@ -1,0 +1,7 @@
+order_no,customer,part_no,qty,due_date,price,priority
+SO-5001,Northwind Robotics,P-1001,200,2026-11-13,8400,1
+SO-5002,Bluefin Marine,P-2001,60,2026-11-20,13200,2
+SO-5003,Cobalt Medical,P-3001,500,2026-11-11,6250,1
+SO-5004,Northwind Robotics,P-1002,120,2026-11-25,9600,0
+SO-5005,Bluefin Marine,P-2002,80,2026-11-27,15200,1
+SO-5006,Cobalt Medical,P-3002,300,2026-11-18,5100,0
