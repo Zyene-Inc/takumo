@@ -17,6 +17,14 @@ describe("role permissions", () => {
     expect(can("operator", "quotes:write")).toBe(false);
   });
 
+  test("planners and estimators add documents; operators and members don't", () => {
+    expect(can("planner", "knowledge:write")).toBe(true);
+    expect(can("estimator", "knowledge:write")).toBe(true);
+    expect(can("admin", "knowledge:write")).toBe(true);
+    expect(can("operator", "knowledge:write")).toBe(false);
+    expect(can("member", "knowledge:write")).toBe(false);
+  });
+
   test("no role, no writes", () => {
     expect(can(null, "shop:write")).toBe(false);
     expect(can(undefined, "quotes:write")).toBe(false);

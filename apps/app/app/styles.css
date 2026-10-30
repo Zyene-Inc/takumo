@@ -1,2 +1,5 @@
 @import "tailwindcss";
 @import "@repo/design-system/styles/globals.css";
+
+/* Ask Takumo renders answers with Streamdown. */
+@source "../node_modules/streamdown/dist/*.js";

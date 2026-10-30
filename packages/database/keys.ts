@@ -10,9 +10,12 @@ export const keys = () =>
       DATABASE_URL: z.url(),
       // Direct connection (port 5432) for migrations. Falls back to DATABASE_URL.
       DIRECT_URL: z.url().optional(),
+      // Read-only login for Ask Takumo's SQL tool (role takumo_reader).
+      ASK_DATABASE_URL: z.url().optional(),
     },
     runtimeEnv: {
       DATABASE_URL: process.env.DATABASE_URL,
       DIRECT_URL: process.env.DIRECT_URL,
+      ASK_DATABASE_URL: process.env.ASK_DATABASE_URL,
     },
   });

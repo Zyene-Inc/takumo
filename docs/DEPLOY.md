@@ -19,6 +19,14 @@ Use a separate Supabase project for anything customers touch; the dev project is
    pnpm migrate:deploy
    ```
    This creates the tables, the shop foreign keys, the RLS policies and the vector index.
+3. Give Ask Takumo's read-only login a password (once per database). In the Supabase SQL
+   editor, with a new value from `openssl rand -hex 24`:
+   ```sql
+   alter role takumo_reader password '<new password>';
+   ```
+   Its connection string is the app's pooled `DATABASE_URL` with the user changed to
+   `takumo_reader.<project-ref>` and that password. It can only read the `ask.*` views, one
+   shop at a time, read-only, with a 5-second statement timeout.
 
 ## 2. Vercel projects
 
@@ -33,7 +41,9 @@ or the service dashboards; never commit them.
 - `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_COOKIE_PASSWORD` (new value: `openssl rand -base64 32`)
 - `NEXT_PUBLIC_WORKOS_REDIRECT_URI` = `https://<app-url>/callback`
 - `NEXT_PUBLIC_APP_URL` = `https://<app-url>`, `NEXT_PUBLIC_WEB_URL` = `https://<web-url>`
-- `ANTHROPIC_API_KEY` (AI column matching; optional, falls back to the offline matcher)
+- `ANTHROPIC_API_KEY` (Ask Takumo and AI column matching; column matching falls back to the offline matcher without it)
+- `ASK_DATABASE_URL` (step 1.3): the reader's connection string; without it Ask Takumo can't query data
+- `OPENAI_API_KEY` (optional): vector search over documents; keyword search works without it
 - `ENGINE_URL` = the engine's URL (step 4), `ENGINE_SECRET` = the same value as on the engine
 
 **takumo-api**
@@ -79,3 +89,5 @@ Check: `curl https://<engine-url>/health` returns `{"status":"ok"}`.
 - WorkOS → Webhooks → the endpoint shows successful deliveries; the new shop appears in the
   `Org` table.
 - Schedule → Board → **Build the plan**; then Schedule → Can we take this order? returns an answer.
+- Knowledge → upload a PDF; Ask Takumo answers a question about it and about your orders, with
+  numbered sources.

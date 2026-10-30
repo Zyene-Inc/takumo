@@ -18,9 +18,11 @@ import { Header } from "../../components/header";
 import { DeleteButton } from "../../shop/components/delete-button";
 import {
   EmptyState,
+  FilterNote,
   formValue,
   isoDate,
   money,
+  textFilter,
 } from "../../shop/components/format";
 import { RecordDialog } from "../../shop/components/record-dialog";
 
@@ -48,18 +50,30 @@ const margin = (
 const PastQuotesPage = async ({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ q?: string; status?: string }>;
 }) => {
   const { orgId, canEditQuotes } = await getAccess();
   if (!orgId) {
     notFound();
   }
-  const { status } = await searchParams;
+  const { status, q: rawQ } = await searchParams;
+  const q = textFilter(rawQ);
   const filter = (["open", "won", "lost"] as const).find((s) => s === status);
   const db = forOrg(database, orgId);
   const [quotes, counts, parts, customers] = await Promise.all([
     db.quote.findMany({
-      where: filter ? { status: filter } : {},
+      where: {
+        ...(filter ? { status: filter } : {}),
+        ...(q
+          ? {
+              OR: [
+                { quoteNo: { contains: q, mode: "insensitive" } },
+                { part: { partNo: { contains: q, mode: "insensitive" } } },
+                { customer: { name: { contains: q, mode: "insensitive" } } },
+              ],
+            }
+          : {}),
+      },
       orderBy: [{ quotedAt: "desc" }, { quoteNo: "desc" }],
       include: {
         part: { select: { id: true, partNo: true } },
@@ -115,6 +129,7 @@ const PastQuotesPage = async ({
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        {q && <FilterNote href="/quotes/history" q={q} />}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <nav className="flex gap-2">
             {tabs.map((tab) => (

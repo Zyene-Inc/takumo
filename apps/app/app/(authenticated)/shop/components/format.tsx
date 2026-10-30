@@ -1,4 +1,5 @@
 import { Badge } from "@repo/design-system/components/ui/badge";
+import Link from "next/link";
 
 export const money = (value: { toString(): string } | null) =>
   value === null
@@ -21,12 +22,14 @@ export const ProvenanceBadge = ({
   provenance,
 }: {
   provenance: "data" | "stated" | "assumed";
-}) =>
-  provenance === "assumed" ? (
-    <Badge variant="outline">Needs review</Badge>
-  ) : provenance === "stated" ? (
+}) => {
+  if (provenance === "assumed") {
+    return <Badge variant="outline">Needs review</Badge>;
+  }
+  return provenance === "stated" ? (
     <Badge variant="secondary">Edited</Badge>
   ) : null;
+};
 
 // Form values are strings; empty means "not set".
 export const formValue = (value: { toString(): string } | null | undefined) =>
@@ -35,5 +38,17 @@ export const formValue = (value: { toString(): string } | null | undefined) =>
 export const EmptyState = ({ children }: { children: React.ReactNode }) => (
   <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground text-sm">
     {children}
+  </div>
+);
+
+/** ?q= from a link (e.g. an Ask Takumo citation): a trimmed search term. */
+export const textFilter = (q?: string) => q?.trim().slice(0, 100) || null;
+
+export const FilterNote = ({ q, href }: { q: string; href: string }) => (
+  <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm">
+    Showing matches for <span className="font-medium">“{q}”</span>
+    <Link className="ml-auto underline" href={href}>
+      Show all
+    </Link>
   </div>
 );

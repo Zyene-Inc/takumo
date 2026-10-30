@@ -279,3 +279,6 @@ packages/database/generated
 .source
 # Vendored packages are committed as-is (see vendor/README.md)
 !vendor/**
+
+# Ask Takumo eval output
+apps/app/evals/results/

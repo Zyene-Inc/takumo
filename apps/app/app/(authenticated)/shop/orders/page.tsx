@@ -11,12 +11,19 @@ import {
 } from "@repo/design-system/components/ui/table";
 import { PencilIcon, PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
-import { getAccess } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getAccess } from "@/lib/access";
 import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
-import { EmptyState, formValue, isoDate, money } from "../components/format";
+import {
+  EmptyState,
+  FilterNote,
+  formValue,
+  isoDate,
+  money,
+  textFilter,
+} from "../components/format";
 import { RecordDialog } from "../components/record-dialog";
 
 export const metadata: Metadata = { title: "Orders · Takumo" };
@@ -34,18 +41,28 @@ const VIEWS: { key: string; label: string; statuses: OrderStatus[] }[] = [
 const OrdersPage = async ({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ q?: string; view?: string }>;
 }) => {
   const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
     notFound();
   }
-  const { view: viewKey } = await searchParams;
+  const { view: viewKey, q: rawQ } = await searchParams;
   const view = VIEWS.find((v) => v.key === viewKey) ?? VIEWS[0];
+  // A search (e.g. from an Ask Takumo citation) looks across every status.
+  const q = textFilter(rawQ);
   const db = forOrg(database, orgId);
   const [orders, parts, customers] = await Promise.all([
     db.order.findMany({
-      where: { status: { in: view.statuses } },
+      where: q
+        ? {
+            OR: [
+              { orderNo: { contains: q, mode: "insensitive" } },
+              { part: { partNo: { contains: q, mode: "insensitive" } } },
+              { customer: { name: { contains: q, mode: "insensitive" } } },
+            ],
+          }
+        : { status: { in: view.statuses } },
       orderBy: [{ dueDate: "asc" }, { orderNo: "asc" }],
       include: {
         part: {
@@ -86,6 +103,7 @@ const OrdersPage = async ({
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        {q && <FilterNote href="/shop/orders" q={q} />}
         <nav className="flex gap-2">
           {VIEWS.map((v) => (
             <Button
