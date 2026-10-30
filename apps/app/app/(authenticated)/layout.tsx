@@ -1,11 +1,9 @@
 import { listUserOrganizations, withAuth } from "@repo/auth/server";
 import { SidebarProvider } from "@repo/design-system/components/ui/sidebar";
-import { showBetaFeature } from "@repo/feature-flags";
 import { secure } from "@repo/security";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { env } from "@/env";
-import { NotificationsProvider } from "./components/notifications-provider";
 import { GlobalSidebar } from "./components/sidebar";
 
 interface AppLayoutProperties {
@@ -24,34 +22,24 @@ const AppLayout = async ({ children }: AppLayoutProperties) => {
     redirect("/create-shop");
   }
 
-  const [organizations, betaFeature] = await Promise.all([
-    listUserOrganizations(user.id),
-    showBetaFeature(),
-  ]);
+  const organizations = await listUserOrganizations(user.id);
 
   return (
-    <NotificationsProvider userId={user.id}>
-      <SidebarProvider>
-        <GlobalSidebar
-          currentOrganizationId={organizationId}
-          organizations={organizations}
-          user={{
-            name:
-              [user.firstName, user.lastName].filter(Boolean).join(" ") ||
-              user.email,
-            email: user.email,
-            imageUrl: user.profilePictureUrl,
-          }}
-        >
-          {betaFeature && (
-            <div className="m-4 rounded-full bg-blue-500 p-1.5 text-center text-sm text-white">
-              Beta feature now available
-            </div>
-          )}
-          {children}
-        </GlobalSidebar>
-      </SidebarProvider>
-    </NotificationsProvider>
+    <SidebarProvider>
+      <GlobalSidebar
+        currentOrganizationId={organizationId}
+        organizations={organizations}
+        user={{
+          name:
+            [user.firstName, user.lastName].filter(Boolean).join(" ") ||
+            user.email,
+          email: user.email,
+          imageUrl: user.profilePictureUrl,
+        }}
+      >
+        {children}
+      </GlobalSidebar>
+    </SidebarProvider>
   );
 };
 

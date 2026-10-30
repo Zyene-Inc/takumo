@@ -78,5 +78,4 @@ These come from next-forge dependencies resolving to newer majors. They don't af
 `apps/app`, `apps/web` or `apps/api`, but `pnpm typecheck` reports them:
 
 - `packages/design-system/components/ui/chart.tsx`: Recharts 3 types (`pnpm bump-ui` regenerates shadcn components)
-- `packages/notifications`: Knock client constructor signature
 - `packages/payments/ai.ts`: Stripe agent toolkit config

@@ -75,7 +75,7 @@ Built on **[next-forge](https://github.com/vercel/next-forge)** (Vercel's MIT-li
 ┌──────────── next-forge monorepo on Vercel ────────────────────────────────────────────┐
 │  apps/app  (product UI): Onboarding · Ask · Quote Copilot · Schedule · Knowledge      │
 │            Server Actions → Agent orchestrator (Claude, tool use, streaming)          │
-│  apps/web  (takumo.ai marketing) · apps/api (webhooks, cron) · apps/email · apps/docs │
+│  apps/web  (takumo.ai marketing) · apps/api (webhooks, cron) · apps/email            │
 │  Auth: WorkOS AuthKit (hosted sign-in, organizations, roles, SSO-ready)               │
 └───────────────┬────────────────────────┬───────────────────────────┬──────────────────┘
                 │                        │                           │
