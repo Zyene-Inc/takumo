@@ -187,8 +187,8 @@ importers:
         specifier: 8.0.1
         version: 8.0.1
       xlsx:
-        specifier: file:../../vendor/xlsx-0.20.3.tgz
-        version: file:vendor/xlsx-0.20.3.tgz
+        specifier: file:../../vendor/xlsx
+        version: file:vendor/xlsx
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -7507,9 +7507,8 @@ packages:
     resolution: {integrity: sha512-sqMMuL1rc0FmMBOzCpd0yuy9trqF2yTTVe+E9ogwCSWQCdDEtQUwrZPT6AxqtsFGRNxycgncbP/xmOOSPw5ZUw==}
     engines: {node: '>= 6.0'}
 
-  xlsx@file:vendor/xlsx-0.20.3.tgz:
-    resolution: {integrity: sha512-oLDq3jw7AcLqKWH2AhCpVTZl8mf6X2YReP+Neh0SJUzV/BdZYjth94tG5toiMB1PPrYtxOCfaoUCkvtuH+3AJA==}
-    version: 0.20.3
+  xlsx@file:vendor/xlsx:
+    resolution: {directory: vendor/xlsx, type: directory}
     engines: {node: '>=0.8'}
     hasBin: true
 
@@ -14238,7 +14237,7 @@ snapshots:
     dependencies:
       os-paths: 4.4.0
 
-  xlsx@file:vendor/xlsx-0.20.3.tgz: {}
+  xlsx@file:vendor/xlsx: {}
 
   xml-name-validator@5.0.0: {}
 
