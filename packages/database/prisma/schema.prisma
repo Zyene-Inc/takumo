@@ -275,9 +275,13 @@ model Job {
   actualRunMin   Float?
   qtyGood        Int?
   qtyScrap       Int?
+  // A planner fixed this operation to workCenterId and plannedStart's day on
+  // the schedule board; re-planning keeps it there.
+  pinned         Boolean   @default(false)
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
+  @@unique([orderId, routingSeq])
   @@index([orgId])
 }
 
@@ -417,6 +421,10 @@ model ScheduleRun {
   solverStatus String?
   createdBy    String?
   createdAt    DateTime @default(now())
+  // Capacity checks: did the planner agree with the answer? ("agree" | "disagree")
+  verdict      String?
+  verdictNote  String?
+  verdictBy    String?
 
-  @@index([orgId])
+  @@index([orgId, objective, createdAt])
 }

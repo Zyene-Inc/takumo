@@ -78,7 +78,7 @@ const data = {
       items: [
         {
           title: "Can we take this order?",
-          url: "/ask?mode=capacity",
+          url: "/schedule/check",
         },
         {
           title: "History",
@@ -111,8 +111,16 @@ const data = {
           url: "/schedule",
         },
         {
+          title: "Can we take this order?",
+          url: "/schedule/check",
+        },
+        {
           title: "Bottlenecks",
           url: "/schedule/bottlenecks",
+        },
+        {
+          title: "Calendar",
+          url: "/schedule/calendar",
         },
       ],
     },

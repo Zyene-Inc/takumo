@@ -1,6 +1,8 @@
 import { auth } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
+import { Button } from "@repo/design-system/components/ui/button";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Header } from "./components/header";
 
@@ -47,8 +49,18 @@ const App = async () => {
             </div>
           ))}
         </div>
-        <div className="flex min-h-[50vh] flex-1 items-center justify-center rounded-xl bg-muted/50 p-6 text-muted-foreground md:min-h-min">
-          Ask Takumo: "Can we take 500 × P-1001 by next Friday?"
+        <div className="flex min-h-[50vh] flex-1 flex-col items-center justify-center gap-3 rounded-xl bg-muted/50 p-6 text-center md:min-h-min">
+          <p className="text-muted-foreground">
+            "Can we take 500 × P-1001 by next Friday?"
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button asChild>
+              <Link href="/schedule/check">Check an order</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/schedule">Open the schedule</Link>
+            </Button>
+          </div>
         </div>
       </div>
     </>

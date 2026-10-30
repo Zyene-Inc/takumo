@@ -84,3 +84,20 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen
       - run: uv run pytest -q
+
+  engine-image:
+    name: Build engine Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: docker build -f services/engine/Dockerfile -t takumo-engine .
+      - name: Start and check /health
+        run: |
+          docker run -d --name engine -p 8000:8000 -e ENGINE_SECRET=ci takumo-engine
+          for i in $(seq 1 30); do
+            curl -fsS localhost:8000/health && exit 0
+            sleep 1
+          done
+          docker logs engine
+          exit 1

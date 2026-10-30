@@ -20,6 +20,7 @@ def load_demo_shop(start_date: date) -> ScheduleRequest:
             name=row["name"],
             hours_per_day=float(row["hours_per_day"]),
             efficiency=float(row["efficiency"]),
+            hourly_rate=float(row["hourly_rate"]),
         )
         for row in _rows("work_centers.csv")
     ]
@@ -44,6 +45,7 @@ def load_demo_shop(start_date: date) -> ScheduleRequest:
             qty=int(row["qty"]),
             due_date=date.fromisoformat(row["due_date"]),
             priority=int(row["priority"]),
+            price=float(row["price"]),
         )
         for row in _rows("orders.csv")
     ]

@@ -1,0 +1,7 @@
+# Only services/engine/Dockerfile builds from the repo root today.
+**/node_modules
+**/.venv
+**/__pycache__
+**/.next
+**/.turbo
+.git
