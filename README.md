@@ -70,4 +70,6 @@ pnpm dev                          # app :3000, web :3001, api :3002, …
 - ✅ Factory schema (work centers, parts, routings, orders, jobs, quotes, RFQs, sources, facts, agent)
 - ✅ Tenant isolation: `forOrg(database, orgId)` + Supabase RLS policies
 - ✅ Engine: CP-SAT scheduler and capacity check, tested on the demo shop (`pnpm test:engine`)
-- ⏳ Phase 1: onboarding upload + column mapping → see docs/TAKUMO.md section 13
+- ✅ Phase 1: shop data import (`/onboarding`): CSV/XLSX upload, AI column mapping with an offline fallback, preview and row-level errors, re-import updates in place
+- ✅ Shop editors (`/shop`): machines, parts and routings, orders; "needs review" for machines and materials Takumo had to create
+- ⏳ Phase 2: "Can we take this order?" and the schedule board → see docs/TAKUMO.md section 13

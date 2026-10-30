@@ -1,0 +1,4 @@
+Part #,Op #,Machine,Setup (hrs),Cycle Time (min),Alt Machine
+P-7777,10,HAAS-VF4,1.5,12,HAAS-VF2
+P-7777,20,MAZAK-QTN,0.75,8,
+P-7777,30,DEBURR-1,0.25,2.5,

@@ -6,6 +6,18 @@ import { env } from "@/env";
 
 let nextConfig: NextConfig = withToolbar(withLogging(config));
 
+// Shop spreadsheets are sent to the import server action as rows.
+nextConfig = {
+  ...nextConfig,
+  experimental: {
+    ...nextConfig.experimental,
+    serverActions: {
+      ...nextConfig.experimental?.serverActions,
+      bodySizeLimit: "20mb",
+    },
+  },
+};
+
 if (env.VERCEL) {
   nextConfig = withSentry(nextConfig);
 }
