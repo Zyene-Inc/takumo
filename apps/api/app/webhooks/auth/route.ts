@@ -2,6 +2,7 @@ import { analytics } from "@repo/analytics/server";
 import { getWorkOS, type WebhookEvent } from "@repo/auth/server";
 import { database } from "@repo/database";
 import { log } from "@repo/observability/log";
+import { trialEndsAt } from "@repo/payments/plans";
 import { NextResponse } from "next/server";
 import { env } from "@/env";
 
@@ -40,7 +41,11 @@ const handleEvent = async (event: WebhookEvent) => {
       const organization = event.data;
       await database.org.upsert({
         where: { id: organization.id },
-        create: { id: organization.id, name: organization.name },
+        create: {
+          id: organization.id,
+          name: organization.name,
+          trialEndsAt: trialEndsAt(),
+        },
         update: { name: organization.name },
       });
       analytics?.groupIdentify({

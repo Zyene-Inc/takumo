@@ -6,6 +6,8 @@ import { type CapacityResponse, SOLVED_STATUSES } from "@repo/engine-client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { authorize } from "@/lib/access";
+import { track } from "@/lib/analytics";
+import { featureProblem } from "@/lib/billing";
 import { type CapacityAnswer, runCapacityCheck } from "@/lib/schedule/check";
 import { CAPACITY_CHECK, type CheckInput, replan } from "@/lib/schedule/plan";
 import { checkToday } from "@/lib/schedule/request";
@@ -40,6 +42,10 @@ export const checkOrder = async (
   if (!orgId) {
     return { ok: false, error: "Choose a shop first." };
   }
+  const locked = await featureProblem(orgId, "schedule");
+  if (locked) {
+    return { ok: false, error: locked };
+  }
   const parsed = CheckForm.safeParse(values);
   if (!parsed.success) {
     return {
@@ -56,6 +62,11 @@ export const checkOrder = async (
     };
   }
   const answer = await runCapacityCheck(orgId, userId, start, form);
+  track("capacity_checked", {
+    orgId,
+    userId,
+    properties: { can_take: answer.ok ? answer.result.can_take : null },
+  });
   if (answer.ok) {
     revalidatePath("/schedule/check");
   }

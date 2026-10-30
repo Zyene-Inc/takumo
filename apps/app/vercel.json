@@ -6,6 +6,10 @@
     {
       "path": "/api/cron/recalibrate",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/connectors",
+      "schedule": "0 * * * *"
     }
   ]
 }

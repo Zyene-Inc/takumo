@@ -2,6 +2,8 @@
 
 import { auth } from "@repo/auth/server";
 import { revalidatePath } from "next/cache";
+import { track } from "@/lib/analytics";
+import { featureProblem } from "@/lib/billing";
 import { rereadNote, saveNote } from "@/lib/facts/notes";
 import {
   AUDIO_TYPES,
@@ -28,6 +30,10 @@ export const submitNote = async (note: {
   if (!orgId) {
     return { ok: false, error: "Choose a shop first." };
   }
+  const locked = await featureProblem(orgId, "knowledge");
+  if (locked) {
+    return { ok: false, error: locked };
+  }
   const text = note.text.trim();
   if (text.length < 3) {
     return { ok: false, error: "The note is empty." };
@@ -41,6 +47,11 @@ export const submitNote = async (note: {
     durationSec: note.durationSec ?? null,
   });
   refresh();
+  track("note_saved", {
+    orgId,
+    userId,
+    properties: { kind: note.kind, facts: result.proposed.length },
+  });
   return { ok: true, proposed: result.proposed, skipped: result.skipped };
 };
 
@@ -51,6 +62,10 @@ export const transcribe = async (
   const { orgId } = await auth();
   if (!orgId) {
     return { ok: false, error: "Choose a shop first." };
+  }
+  const locked = await featureProblem(orgId, "knowledge");
+  if (locked) {
+    return { ok: false, error: locked };
   }
   const file = form.get("audio");
   if (!(file instanceof File) || file.size === 0) {

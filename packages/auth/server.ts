@@ -97,3 +97,80 @@ export const createOrganizationForUser = async (
 
   return organization;
 };
+
+export interface ShopMember {
+  email: string;
+  id: string;
+  name: string;
+  role: string;
+  userId: string;
+}
+
+export interface ShopInvitation {
+  email: string;
+  expiresAt: string;
+  id: string;
+}
+
+/** People in a shop, with their role. */
+export const listShopMembers = async (
+  organizationId: string
+): Promise<ShopMember[]> => {
+  const workos = getWorkOS();
+  const [memberships, users] = await Promise.all([
+    workos.userManagement.listOrganizationMemberships({
+      organizationId,
+      statuses: ["active"],
+      limit: 100,
+    }),
+    workos.userManagement.listUsers({ organizationId, limit: 100 }),
+  ]);
+  const byId = new Map(users.data.map((u) => [u.id, u]));
+  return memberships.data.map((m) => {
+    const user = byId.get(m.userId);
+    return {
+      id: m.id,
+      userId: m.userId,
+      role: m.role.slug,
+      email: user?.email ?? "",
+      name:
+        [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
+        user?.email ||
+        m.userId,
+    };
+  });
+};
+
+/** Invitations sent but not yet accepted. */
+export const listShopInvitations = async (
+  organizationId: string
+): Promise<ShopInvitation[]> => {
+  const invitations = await getWorkOS().userManagement.listInvitations({
+    organizationId,
+    limit: 100,
+  });
+  return invitations.data
+    .filter((i) => i.state === "pending")
+    .map((i) => ({
+      id: i.id,
+      email: i.email,
+      expiresAt: new Date(i.expiresAt).toISOString(),
+    }));
+};
+
+/** WorkOS emails the invitation; accepting it adds them to the shop. */
+export const inviteToShop = (
+  organizationId: string,
+  email: string,
+  roleSlug: string,
+  inviterUserId: string
+) =>
+  getWorkOS().userManagement.sendInvitation({
+    email,
+    organizationId,
+    roleSlug,
+    inviterUserId,
+  });
+
+export const revokeShopInvitation = (invitationId: string) =>
+  getWorkOS().userManagement.revokeInvitation(invitationId);

@@ -7,6 +7,8 @@ import { log } from "@repo/observability/log";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { authorize } from "@/lib/access";
+import { track } from "@/lib/analytics";
+import { featureProblem } from "@/lib/billing";
 import { approveRfq, type Outcome, recordOutcome } from "@/lib/quotes/approve";
 import { estimateLine, loadQuoteHistory } from "@/lib/quotes/estimate";
 import { intakeRfq, readRfq } from "@/lib/quotes/intake";
@@ -45,6 +47,10 @@ export const submitRfq = async (
   if (!access.ok) {
     return access;
   }
+  const locked = await featureProblem(access.orgId, "quotes");
+  if (locked) {
+    return { ok: false, error: locked };
+  }
   const { userId } = await auth();
   const file = form.get("file");
   const pasted = String(form.get("text") ?? "").trim();
@@ -80,6 +86,11 @@ export const submitRfq = async (
       };
     }
     const rfq = await intakeRfq(access.orgId, userId, text, fileName);
+    track("rfq_received", {
+      orgId: access.orgId,
+      userId,
+      properties: { source: text.source },
+    });
     refresh(rfq.id);
     return { ok: true, id: rfq.id };
   } catch (error) {
@@ -104,6 +115,10 @@ export const rereadRfq = async (rfqId: string): Promise<Result> => {
   const access = await authorize("quotes:write");
   if (!access.ok) {
     return access;
+  }
+  const locked = await featureProblem(access.orgId, "quotes");
+  if (locked) {
+    return { ok: false, error: locked };
   }
   const rfq = await loadRfq(access.orgId, rfqId);
   if (!(rfq && EDITABLE.includes(rfq.status))) {
@@ -361,6 +376,10 @@ export const draftQuote = async (
   if (!access.ok) {
     return access;
   }
+  const locked = await featureProblem(access.orgId, "quotes");
+  if (locked) {
+    return { ok: false, error: locked };
+  }
   const start = checkToday(today);
   if (!start) {
     return { ok: false, error: WRONG_DATE };
@@ -395,6 +414,10 @@ export const draftQuote = async (
       }
     });
   }
+  track("quote_drafted", {
+    orgId: access.orgId,
+    properties: { lines: todo.length, failed: errors.length },
+  });
   const drafted = await forOrg(database, access.orgId).rfqLine.count({
     where: { rfqId, draft: { not: Prisma.DbNull } },
   });
@@ -444,6 +467,10 @@ export const reestimateLine = async (
   const access = await authorize("quotes:write");
   if (!access.ok) {
     return access;
+  }
+  const locked = await featureProblem(access.orgId, "quotes");
+  if (locked) {
+    return { ok: false, error: locked };
   }
   const start = checkToday(today);
   if (!start) {
@@ -562,11 +589,22 @@ export const approve = async (
   if (!access.ok) {
     return access;
   }
+  const locked = await featureProblem(access.orgId, "quotes");
+  if (locked) {
+    return { ok: false, error: locked };
+  }
   const { userId } = await auth();
   if (!userId) {
     return { ok: false, error: "Sign in again." };
   }
   const result = await approveRfq(access.orgId, userId, rfqId);
+  if (result.ok) {
+    track("quote_approved", {
+      orgId: access.orgId,
+      userId,
+      properties: { quotes: result.quoteNos.length },
+    });
+  }
   refresh(rfqId);
   revalidatePath("/quotes/history");
   return result;
@@ -586,6 +624,12 @@ export const recordLineOutcome = async (
     return { ok: false, error: WRONG_DATE };
   }
   const result = await recordOutcome(access.orgId, rfqId, outcome, start);
+  if (result.ok) {
+    track("quote_outcome", {
+      orgId: access.orgId,
+      properties: { status: outcome.status },
+    });
+  }
   refresh(rfqId);
   revalidatePath("/quotes/history");
   revalidatePath("/shop/orders");

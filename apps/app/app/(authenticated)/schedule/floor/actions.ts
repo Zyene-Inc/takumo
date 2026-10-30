@@ -5,6 +5,7 @@ import { database, forOrg } from "@repo/database";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { authorize } from "@/lib/access";
+import { track } from "@/lib/analytics";
 import { saveNote } from "@/lib/facts/notes";
 import { clearLog, logOperation } from "@/lib/floor/log";
 
@@ -63,6 +64,11 @@ export const logOp = async (
   if (!logged.ok) {
     return logged;
   }
+  track("job_logged", {
+    orgId: access.orgId,
+    userId,
+    properties: { order_done: logged.orderDone },
+  });
   let facts: string[] = [];
   if (v.note.length >= 3) {
     const job = await forOrg(database, access.orgId).job.findFirst({

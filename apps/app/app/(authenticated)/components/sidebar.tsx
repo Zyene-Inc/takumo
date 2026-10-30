@@ -180,24 +180,20 @@ const data = {
     },
     {
       title: "Settings",
-      url: "#",
+      url: "/settings/billing",
       icon: Settings2Icon,
       items: [
         {
-          title: "Organization",
-          url: "#",
-        },
-        {
           title: "Team",
-          url: "#",
+          url: "/settings/team",
         },
         {
           title: "Integrations",
-          url: "#",
+          url: "/settings/integrations",
         },
         {
           title: "Billing",
-          url: "#",
+          url: "/settings/billing",
         },
       ],
     },

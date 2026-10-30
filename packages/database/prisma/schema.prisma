@@ -50,12 +50,19 @@ enum FactStatus {
 // ---------------------------------------------------------------------------
 
 model Org {
-  id               String   @id // WorkOS organization ID (org_…)
-  name             String
-  plan             String   @default("trial")
-  stripeCustomerId String?  @unique
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                   String    @id // WorkOS organization ID (org_…)
+  name                 String
+  // trial | shop | pro | plant (see packages/payments/plans.ts)
+  plan                 String    @default("trial")
+  trialEndsAt          DateTime?
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  // Stripe's subscription status: trialing | active | past_due | canceled | unpaid | …
+  subscriptionStatus   String?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   members       Member[]
   workCenters   WorkCenter[]
@@ -75,6 +82,7 @@ model Org {
   docChunks     DocChunk[]
   facts         Fact[]
   notes         Note[]
+  connections   Connection[]
   conversations Conversation[]
   scheduleRuns  ScheduleRun[]
 }
@@ -554,4 +562,37 @@ model ScheduleRun {
   verdictBy    String?
 
   @@index([orgId, objective, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Connectors
+// ---------------------------------------------------------------------------
+
+// A shop's link to an outside system (QuickBooks, Gmail). Tokens are
+// encrypted with CONNECTOR_ENCRYPTION_KEY and never leave the server.
+model Connection {
+  id           String    @id @default(uuid())
+  orgId        String
+  org          Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  provider     String // "quickbooks" | "gmail"
+  // connected | error | disconnected
+  status       String    @default("connected")
+  // The company (QuickBooks realm) or mailbox it's connected to.
+  account      String
+  accountLabel String?
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  scope        String?
+  // Provider settings, e.g. Gmail's search for RFQs.
+  settings     Json?
+  lastSyncAt   DateTime?
+  // { created, updated, skipped, notes } from the last sync.
+  lastResult   Json?
+  lastError    String?
+  createdBy    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+
+  @@unique([orgId, provider])
 }

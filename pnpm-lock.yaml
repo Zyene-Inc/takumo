@@ -111,6 +111,9 @@ importers:
       concurrently:
         specifier: ^9.2.1
         version: 9.2.5
+      stripe:
+        specifier: ^20.4.1
+        version: 20.4.1(@types/node@25.3.5)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -150,6 +153,9 @@ importers:
       '@repo/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@repo/payments':
+        specifier: workspace:*
+        version: link:../../packages/payments
       '@repo/security':
         specifier: workspace:*
         version: link:../../packages/security
@@ -872,6 +878,9 @@ importers:
 
   packages/payments:
     dependencies:
+      '@repo/database':
+        specifier: workspace:*
+        version: link:../database
       '@t3-oss/env-nextjs':
         specifier: ^0.13.10
         version: 0.13.11(typescript@5.9.3)(valibot@1.4.2(typescript@5.9.3))(zod@4.6.7)
@@ -888,9 +897,15 @@ importers:
       '@repo/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.3.5)(jsdom@28.1.0)(vite@8.3.5(@types/node@25.3.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/rate-limit:
     dependencies:

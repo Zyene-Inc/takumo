@@ -15,6 +15,8 @@ import {
   titleFrom,
   toolParts,
 } from "@/lib/agent/conversations";
+import { track } from "@/lib/analytics";
+import { featureProblem } from "@/lib/billing";
 import { checkToday } from "@/lib/schedule/request";
 
 // Several tool calls (and a capacity check) per answer.
@@ -66,6 +68,10 @@ export const POST = async (request: Request) => {
       400,
       `Keep questions under ${MAX_MESSAGE_CHARS.toLocaleString()} characters.`
     );
+  }
+  const locked = await featureProblem(orgId, "ask");
+  if (locked) {
+    return problem(402, locked);
   }
   if ((await recentUserMessages(orgId, userId)) >= RATE_LIMIT) {
     return problem(
@@ -142,6 +148,11 @@ export const POST = async (request: Request) => {
       "Takumo hit a problem answering that. Try again in a moment.",
     onFinish: async ({ responseMessage }) => {
       const tools = toolParts(responseMessage);
+      track("question_answered", {
+        orgId,
+        userId,
+        properties: { tools: tools.map((t) => t.tool) },
+      });
       await database.message.create({
         data: {
           id: responseMessage.id,

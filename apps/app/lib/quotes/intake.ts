@@ -13,7 +13,8 @@ const createRfq = async (
   orgId: string,
   userId: string | null,
   text: RfqText,
-  fileName: string | null
+  fileName: string | null,
+  sourceId: string | null = null
 ) => {
   for (let attempt = 0; ; attempt += 1) {
     const last = await forOrg(database, orgId).rfq.findFirst({
@@ -26,6 +27,7 @@ const createRfq = async (
           orgId,
           number: (last?.number ?? 0) + 1,
           source: text.source,
+          sourceId,
           fileName,
           subject: text.subject,
           sender: text.sender,
@@ -135,14 +137,16 @@ export const readRfq = async (orgId: string, rfqId: string) => {
   }
 };
 
-/** A new RFQ from an upload or a paste, read straight away. */
+/** A new RFQ from an upload, a paste or the mailbox, read straight away. */
 export const intakeRfq = async (
   orgId: string,
   userId: string | null,
   text: RfqText,
-  fileName: string | null
+  fileName: string | null,
+  /** The message id, for RFQs from a connected mailbox (never read twice). */
+  sourceId: string | null = null
 ) => {
-  const rfq = await createRfq(orgId, userId, text, fileName);
+  const rfq = await createRfq(orgId, userId, text, fileName, sourceId);
   await readRfq(orgId, rfq.id);
   return rfq;
 };

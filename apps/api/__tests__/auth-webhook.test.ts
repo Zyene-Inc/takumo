@@ -95,9 +95,16 @@ describe("WorkOS webhook", () => {
     expect(response.status).toBe(200);
     expect(database.org.upsert).toHaveBeenCalledWith({
       where: { id: "org_123" },
-      create: { id: "org_123", name: "Acme Precision" },
+      create: {
+        id: "org_123",
+        name: "Acme Precision",
+        trialEndsAt: expect.any(Date),
+      },
       update: { name: "Acme Precision" },
     });
+    // A 30-day trial.
+    const created = database.org.upsert.mock.calls[0][0].create.trialEndsAt as Date;
+    expect(Math.round((created.getTime() - Date.now()) / 86_400_000)).toBe(30);
   });
 
   test("organization_membership.created adds the Member row", async () => {

@@ -4,6 +4,7 @@ import { auth } from "@repo/auth/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { authorize } from "@/lib/access";
+import { track } from "@/lib/analytics";
 import { SUBJECT_TYPES } from "@/lib/facts/attributes";
 import {
   approveFact,
@@ -46,6 +47,13 @@ export const approve = async (
     note,
   });
   refresh();
+  if (result.ok) {
+    track("fact_reviewed", {
+      orgId: r.orgId,
+      userId: r.userId,
+      properties: { decision: "approved" },
+    });
+  }
   return result;
 };
 
@@ -59,6 +67,13 @@ export const reject = async (
   }
   const result = await rejectFact(r.orgId, factId, r.userId, note);
   refresh();
+  if (result.ok) {
+    track("fact_reviewed", {
+      orgId: r.orgId,
+      userId: r.userId,
+      properties: { decision: "rejected" },
+    });
+  }
   return result;
 };
 

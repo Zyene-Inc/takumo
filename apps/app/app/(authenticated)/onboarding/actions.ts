@@ -15,6 +15,7 @@ import { saveRecords } from "@repo/ingest/save";
 import { log } from "@repo/observability/log";
 import { revalidatePath } from "next/cache";
 import { authorize, permissionFor } from "@/lib/access";
+import { track } from "@/lib/analytics";
 
 // Enough for real shops; bigger files should be split by year or status.
 const MAX_ROWS = 20_000;
@@ -114,6 +115,14 @@ export const importSheet = async (input: {
   try {
     const result = await saveRecords(database, orgId, mapping.entity, records, {
       sourceId: source.id,
+    });
+    track("data_imported", {
+      orgId,
+      properties: {
+        entity: mapping.entity,
+        created: result.created,
+        updated: result.updated,
+      },
     });
     const label = ENTITIES[mapping.entity].label.toLowerCase();
     await db.source.updateMany({

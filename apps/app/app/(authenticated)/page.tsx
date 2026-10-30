@@ -4,7 +4,9 @@ import { Button } from "@repo/design-system/components/ui/button";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { setupSteps } from "@/lib/onboarding";
 import { Header } from "./components/header";
+import { SetupChecklist } from "./components/setup-checklist";
 
 const title = "Takumo";
 const description = "Your shop's operations brain.";
@@ -30,6 +32,10 @@ const App = async () => {
     db.quote.count({ where: { status: "open" } }),
   ]);
 
+  const steps = await setupSteps(orgId);
+  const done = steps.filter((s) => s.done).length;
+  const empty = workCenters === 0 && parts === 0;
+
   const stats = [
     { label: "Work centers", value: workCenters },
     { label: "Parts", value: parts },
@@ -41,6 +47,9 @@ const App = async () => {
     <>
       <Header page="Overview" pages={["Shop"]} />
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        {done < steps.length && (
+          <SetupChecklist done={done} empty={empty} steps={steps} />
+        )}
         <div className="grid auto-rows-min gap-4 md:grid-cols-4">
           {stats.map((stat) => (
             <div className="rounded-xl bg-muted/50 p-6" key={stat.label}>
