@@ -71,7 +71,8 @@ In the WorkOS dashboard (staging environment for a test URL):
 
 ## 4. Scheduling engine
 
-The engine runs CP-SAT for the schedule board and "Can we take this order?". It's a plain
+The engine runs CP-SAT for the schedule board, "Can we take this order?" and quote lead times
+(`/quote`). It's a plain
 Docker web service; Render is the simplest host (Fly.io or Cloud Run work the same way).
 
 1. Render → New → Web Service → `Zyene-Inc/takumo` → Runtime: **Docker**.
@@ -91,3 +92,5 @@ Check: `curl https://<engine-url>/health` returns `{"status":"ok"}`.
 - Schedule → Board → **Build the plan**; then Schedule → Can we take this order? returns an answer.
 - Knowledge → upload a PDF; Ask Takumo answers a question about it and about your orders, with
   numbered sources.
+- Quotes → New RFQ → paste an RFQ email → **Draft quote** shows prices, lead times and
+  comparable quotes; **Approve quote**, then **Quote PDF** opens the quote.

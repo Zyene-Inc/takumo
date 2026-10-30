@@ -1,0 +1,8 @@
+From: Dana Ruiz <dana.ruiz@northwind.example>
+Subject: Gripper bracket - new revision
+
+Dana here from Northwind Robotics. We've revised the gripper bracket: P-1001 is now rev C (added two M4 tapped holes on the back face, otherwise the same as rev B).
+
+Please quote 200 pcs of P-1001 rev C in 6061-T6 aluminum, 2" bar, clear anodize.
+Tolerances ±0.005 unless noted.
+Delivery requested by Dec 11, 2026.

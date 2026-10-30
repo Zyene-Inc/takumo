@@ -269,8 +269,8 @@ def test_small_order_can_be_taken():
     assert result.new_order and result.new_order.days_late == 0
     assert result.slipped == []
     assert result.explanation.startswith("Yes.")
-    # 45 min setup + 50 × 6 min on a $95 mill, 10 + 50 × 1.5 min on a $45 deburr.
-    assert result.cost and result.cost.machine == pytest.approx(345 / 60 * 95 + 85 / 60 * 45, abs=0.01)
+    # 45 min setup + 50 × 6 min on a $95 mill at 90% efficiency, 10 + 50 × 1.5 min on a $45 deburr.
+    assert result.cost and result.cost.machine == pytest.approx(345 / 0.9 / 60 * 95 + 85 / 60 * 45, abs=0.01)
     assert "material cost for P-1001" in result.cost.missing
 
 

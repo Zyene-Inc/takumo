@@ -64,6 +64,9 @@ class Order(BaseModel):
     due_date: date
     priority: int = Field(default=0, ge=0, le=10)
     price: float | None = Field(default=None, ge=0)
+    release_date: date | None = Field(
+        default=None, description="No operation starts before this day (e.g. material arrives)"
+    )
 
 
 class Pin(BaseModel):
@@ -170,3 +173,132 @@ class CapacityResponse(BaseModel):
     levers: list[Lever] = []
     cost: CostBreakdown | None = None
     explanation: str
+
+
+# --- Quoting ---------------------------------------------------------------
+
+
+class QuoteOperation(Operation):
+    # Where the times come from: "routing" (the shop's routing), "actuals"
+    # (average of jobs actually run), "comparable" (scaled from a similar
+    # part's routing) or "estimator" (typed in by a person).
+    source: str = "routing"
+    note: str | None = None
+
+
+class QuoteMaterial(BaseModel):
+    name: str
+    unit: str = "ea"
+    unit_cost: float | None = Field(default=None, ge=0)
+    lead_time_days: int | None = Field(default=None, ge=0)
+    # Stock used per finished part, in `unit` (e.g. 0.4 ft of bar). Stated by
+    # the estimator or the RFQ; overrides the cost calibrated from history.
+    usage_per_part: float | None = Field(default=None, gt=0)
+
+
+class OutsideProcess(BaseModel):
+    """Work sent out (anodize, heat treat, plating). No cost = still to be priced."""
+
+    description: str
+    cost_per_lot: float | None = Field(default=None, ge=0)
+    cost_per_unit: float | None = Field(default=None, ge=0)
+
+
+class PastQuote(BaseModel):
+    quote_no: str
+    customer: str | None = None
+    part_no: str | None = None
+    qty: int = Field(gt=0)
+    price: float | None = Field(default=None, ge=0)
+    est_cost: float | None = Field(default=None, ge=0)
+    actual_cost: float | None = Field(default=None, ge=0)
+    status: str  # open | won | lost
+    quoted_at: date
+    lead_time_days: int | None = None
+
+
+class HistoryPart(BaseModel):
+    """A part from past quotes: its material and current routing."""
+
+    part_no: str
+    material: str | None = None
+    routing: list[Operation] = []
+
+
+class QuoteSpec(BaseModel):
+    part_no: str
+    customer: str | None = None
+    material: QuoteMaterial | None = None
+    routing: list[QuoteOperation] = Field(min_length=1)
+    qty_breaks: list[int] = Field(min_length=1, max_length=6)
+    outside: list[OutsideProcess] = []
+    target_margin: float | None = Field(default=None, ge=0, lt=0.9)
+    requested_date: date | None = None
+
+
+class QuoteRequest(ScheduleRequest):
+    """The shop as it is (for lead times) plus the part to quote and the quote history."""
+
+    quote: QuoteSpec
+    history: list[PastQuote] = []
+    history_parts: list[HistoryPart] = []
+    # False: price only (no lead times), e.g. while an estimator edits.
+    lead_times: bool = True
+
+
+class CostLine(BaseModel):
+    kind: str  # machine | material | outside
+    label: str
+    amount: float | None
+    basis: str
+    sources: list[str] = []  # citable ids, e.g. "routing P-1001 op 10", "quote Q-9001"
+
+
+class QuoteBreak(BaseModel):
+    qty: int
+    lines: list[CostLine]
+    cost: float | None
+    unit_cost: float | None
+    unit_price: float | None
+    price: float | None
+    price_low: float | None
+    price_high: float | None
+    margin_pct: float | None
+    completion_date: date | None = None
+    lead_time_days: int | None = None
+    meets_requested: bool | None = None
+
+
+class Comparable(BaseModel):
+    quote_no: str
+    part_no: str | None
+    customer: str | None
+    qty: int
+    price: float | None
+    unit_price: float | None
+    status: str
+    quoted_at: date
+    lead_time_days: int | None
+    margin_pct: float | None
+    margin_basis: str | None  # "actual" | "estimated"
+    score: float
+    reasons: list[str]
+
+
+class MarginPolicy(BaseModel):
+    target: float | None
+    low: float | None
+    high: float | None
+    basis: str
+    sources: list[str] = []
+
+
+class QuoteResponse(BaseModel):
+    status: str  # schedule status for lead times, or "PRICE_ONLY"
+    breaks: list[QuoteBreak]
+    comparables: list[Comparable]
+    margin: MarginPolicy
+    checks: list[str] = []  # price sanity checks against past quotes
+    missing: list[str] = []  # what blocks a price (e.g. no hourly rate)
+    warnings: list[str] = []  # priced, but someone should look (e.g. outside process unpriced)
+    lead_time_note: str | None = None

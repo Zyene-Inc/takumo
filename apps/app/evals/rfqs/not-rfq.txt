@@ -1,0 +1,9 @@
+From: shipping@bluefinmarine.example
+Subject: Received: PO 44812
+
+Hello,
+
+This confirms we received shipment for PO 44812 (SO-4990) on October 28. All 60 pieces passed incoming inspection.
+
+Regards,
+Bluefin Marine Receiving

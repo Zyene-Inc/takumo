@@ -122,6 +122,7 @@ export const POST = async (request: Request) => {
     {
       queries: prior.filter((t) => t.tool === "query_data").length,
       scenarios: prior.filter((t) => t.tool === "run_scenario").length,
+      estimates: prior.filter((t) => t.tool === "estimate_quote").length,
     }
   );
   const messages = [...history, userMessage];

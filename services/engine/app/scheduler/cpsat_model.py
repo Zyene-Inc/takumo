@@ -34,7 +34,7 @@ from app.models import (
     ScheduleResponse,
 )
 from app.scheduler.calendar import DAY, Timeline, day_index, to_datetime
-from app.scheduler.dispatch import Placement, candidates, dispatch
+from app.scheduler.dispatch import Placement, candidates, dispatch, release_minute
 
 LATENESS_WEIGHT = 1000
 ALT_MACHINE_PENALTY = 1
@@ -374,6 +374,8 @@ def solve_schedule(
             model.add_exactly_one(c.presence for c in options)
             if previous_end_abs is not None:
                 model.add(op_start_abs >= previous_end_abs)
+            else:
+                model.add(op_start_abs >= release_minute(order, request.start_date))
             previous_end_abs = op_end_abs
             end_day_var = op_end_day
             chosen[key] = options

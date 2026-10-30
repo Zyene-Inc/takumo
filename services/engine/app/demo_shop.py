@@ -4,7 +4,15 @@ import csv
 from datetime import date
 from pathlib import Path
 
-from app.models import Operation, Order, Part, ScheduleRequest, WorkCenter
+from app.models import (
+    HistoryPart,
+    Operation,
+    Order,
+    Part,
+    PastQuote,
+    ScheduleRequest,
+    WorkCenter,
+)
 
 SEED_DIR = Path(__file__).resolve().parents[3] / "seed" / "acme-precision"
 
@@ -12,6 +20,36 @@ SEED_DIR = Path(__file__).resolve().parents[3] / "seed" / "acme-precision"
 def _rows(name: str) -> list[dict[str, str]]:
     with (SEED_DIR / name).open(newline="") as file:
         return list(csv.DictReader(file))
+
+
+def _number(value: str) -> float | None:
+    return float(value) if value else None
+
+
+def load_demo_quotes() -> tuple[list[PastQuote], list[HistoryPart]]:
+    """Past quotes, and each quoted part's material and routing."""
+    history = [
+        PastQuote(
+            quote_no=row["quote_no"],
+            customer=row["customer"],
+            part_no=row["part_no"],
+            qty=int(row["qty"]),
+            price=_number(row["price"]),
+            est_cost=_number(row["est_cost"]),
+            actual_cost=_number(row["actual_cost"]),
+            status=row["status"],
+            quoted_at=date.fromisoformat(row["quoted_at"]),
+            lead_time_days=int(row["lead_time_days"]),
+        )
+        for row in _rows("quotes.csv")
+    ]
+    materials = {row["part_no"]: row["material"] for row in _rows("parts.csv")}
+    routings = {p.part_no: p.routing for p in load_demo_shop(date.today()).parts}
+    parts = [
+        HistoryPart(part_no=part_no, material=material, routing=routings.get(part_no, []))
+        for part_no, material in materials.items()
+    ]
+    return history, parts
 
 
 def load_demo_shop(start_date: date) -> ScheduleRequest:

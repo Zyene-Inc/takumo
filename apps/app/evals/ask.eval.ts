@@ -6,8 +6,9 @@ import type { ScheduleResponse } from "@repo/engine-client/types";
 import { afterAll, beforeAll, describe, test } from "vitest";
 import { agentSettings } from "@/lib/agent/agent";
 import { saveDocument } from "@/lib/knowledge/documents";
+import { estimateForPart } from "@/lib/quotes/estimate";
 import { CAPACITY_CHECK, PLAN, replan } from "@/lib/schedule/plan";
-import { EVAL_TODAY, type EvalContext, GOLDEN } from "./golden";
+import { EVAL_TODAY, type EvalContext, GOLDEN, QUOTE_CASES } from "./golden";
 import { grade } from "./grade";
 
 // The demo shop (seed/acme-precision). Needs the database, the scheduling
@@ -59,6 +60,23 @@ beforeAll(async () => {
     );
   }
   ctx.plan = planned.plan.output as ScheduleResponse;
+  ctx.estimates = {};
+  for (const [key, c] of Object.entries(QUOTE_CASES)) {
+    const part = await db.part.findFirst({ where: { partNo: c.partNo } });
+    const estimate = part
+      ? await estimateForPart(ORG_ID, part.id, {
+          qtys: [...c.qtys],
+          customer: c.customer,
+          requestedDate: null,
+          targetMargin: null,
+          today: EVAL_TODAY,
+        })
+      : null;
+    if (!estimate?.ok) {
+      throw new Error(`Couldn't estimate ${c.partNo} for the quoting questions.`);
+    }
+    ctx.estimates[key] = estimate.response;
+  }
 }, 300_000);
 
 afterAll(async () => {

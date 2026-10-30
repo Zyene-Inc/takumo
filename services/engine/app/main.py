@@ -5,11 +5,19 @@ import os
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 
-from app.models import CapacityRequest, CapacityResponse, ScheduleRequest, ScheduleResponse
+from app.models import (
+    CapacityRequest,
+    CapacityResponse,
+    QuoteRequest,
+    QuoteResponse,
+    ScheduleRequest,
+    ScheduleResponse,
+)
+from app.quote.estimate import estimate_quote
 from app.scheduler.capacity import check_capacity
 from app.scheduler.cpsat_model import solve_schedule
 
-app = FastAPI(title="Takumo Engine", version="0.2.0")
+app = FastAPI(title="Takumo Engine", version="0.3.0")
 
 
 def require_secret(x_engine_secret: str | None = Header(default=None)) -> None:
@@ -35,5 +43,13 @@ def schedule(request: ScheduleRequest) -> ScheduleResponse:
 def capacity(request: CapacityRequest) -> CapacityResponse:
     try:
         return check_capacity(request)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.post("/quote", dependencies=[Depends(require_secret)])
+def quote(request: QuoteRequest) -> QuoteResponse:
+    try:
+        return estimate_quote(request)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

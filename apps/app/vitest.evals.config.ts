@@ -12,6 +12,8 @@ export default defineConfig({
     hookTimeout: 180_000,
     // The model is rate-limited; a few questions at a time.
     maxConcurrency: 4,
+    // Each eval file changes the demo shop for a while (a plan, a won quote).
+    fileParallelism: false,
   },
   resolve: {
     alias: {
