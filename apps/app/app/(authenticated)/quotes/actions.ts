@@ -124,10 +124,13 @@ export const rereadRfq = async (rfqId: string): Promise<Result> => {
   if (!(rfq && EDITABLE.includes(rfq.status))) {
     return { ok: false, error: "This RFQ can't be read again." };
   }
-  await forOrg(database, access.orgId).rfq.updateMany({
-    where: { id: rfqId },
+  const claimed = await forOrg(database, access.orgId).rfq.updateMany({
+    where: { id: rfqId, status: { in: EDITABLE } },
     data: { status: "reading", error: null },
   });
+  if (claimed.count === 0) {
+    return { ok: false, error: "This RFQ can't be read again." };
+  }
   await readRfq(access.orgId, rfqId);
   refresh(rfqId);
   return { ok: true };
@@ -421,8 +424,9 @@ export const draftQuote = async (
   const drafted = await forOrg(database, access.orgId).rfqLine.count({
     where: { rfqId, draft: { not: Prisma.DbNull } },
   });
+  // Only while it's still being drafted: someone may have approved it meanwhile.
   await forOrg(database, access.orgId).rfq.updateMany({
-    where: { id: rfqId },
+    where: { id: rfqId, status: { in: ["review", "drafted"] } },
     data: { status: drafted === rfq.lines.length ? "drafted" : "review" },
   });
   refresh(rfqId);
@@ -658,10 +662,13 @@ export const setDeclined = async (
   }
   const reopened =
     rfq.lines.length && rfq.lines.every((l) => l.draft) ? "drafted" : "review";
-  await db.rfq.updateMany({
-    where: { id: rfqId },
+  const changed = await db.rfq.updateMany({
+    where: { id: rfqId, status: declined ? { in: EDITABLE } : "declined" },
     data: { status: declined ? "declined" : reopened },
   });
+  if (changed.count === 0) {
+    return { ok: false, error: "This RFQ has already been quoted." };
+  }
   refresh(rfqId);
   return { ok: true };
 };

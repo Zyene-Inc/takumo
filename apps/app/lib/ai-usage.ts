@@ -1,11 +1,17 @@
 import "server-only";
 
+import { NoObjectGeneratedError } from "@repo/ai";
 import { billedTokens, costUsd, type TokenUsage } from "@repo/ai/lib/pricing";
 import { database } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { env } from "@/env";
 
-export type AiFeature = "ask" | "rfq_read" | "routing_proposal" | "note_read";
+export type AiFeature =
+  | "ask"
+  | "import_mapping"
+  | "rfq_read"
+  | "routing_proposal"
+  | "note_read";
 
 /** Record what a Claude call used. Never throws: spend tracking can't break a request. */
 export const recordUsage = async (
@@ -40,6 +46,25 @@ export const recordUsage = async (
       feature,
       error: String(error),
     });
+  }
+};
+
+/**
+ * Record what a call used when its answer couldn't be read (the tokens are
+ * still billed). Other errors carry no usage.
+ */
+export const recordFailedUsage = async (
+  orgId: string,
+  feature: AiFeature,
+  error: unknown
+) => {
+  if (NoObjectGeneratedError.isInstance(error) && error.usage) {
+    await recordUsage(
+      orgId,
+      feature,
+      error.response?.modelId ?? "unknown",
+      error.usage
+    );
   }
 };
 

@@ -50,6 +50,12 @@ const subscription = (overrides: object = {}) => ({
   ...overrides,
 });
 
+// Subscription events are re-read from Stripe; this is what Stripe returns.
+const retrieves = (sub: object) =>
+  vi
+    .spyOn(stripe.subscriptions, "retrieve")
+    .mockResolvedValue(sub as unknown as Awaited<ReturnType<typeof stripe.subscriptions.retrieve>>);
+
 const event = (type: string, object: object) => ({
   id: "evt_1",
   object: "event",
@@ -70,6 +76,7 @@ describe("Stripe webhook", () => {
   });
 
   test("a new subscription puts the shop on its plan", async () => {
+    retrieves(subscription());
     const response = await send(event("customer.subscription.created", subscription()));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, type: "customer.subscription.created" });
@@ -82,6 +89,7 @@ describe("Stripe webhook", () => {
         subscriptionStatus: "active",
         currentPeriodEnd: new Date(PERIOD_END * 1000),
         cancelAtPeriodEnd: false,
+        pastDueSince: null,
       },
     });
   });
@@ -119,11 +127,30 @@ describe("Stripe webhook", () => {
       })
     );
     expect(database.org.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ subscriptionStatus: "past_due" }) })
+      expect.objectContaining({
+        data: expect.objectContaining({ subscriptionStatus: "past_due", pastDueSince: expect.any(Date) }),
+      })
+    );
+  });
+
+  test("an event for another subscription doesn't change the shop's", async () => {
+    database.org.findUnique.mockResolvedValue({ id: "org_1", stripeSubscriptionId: "sub_live" });
+    retrieves(subscription({ id: "sub_stray", status: "canceled" }));
+    const response = await send(event("customer.subscription.deleted", subscription({ id: "sub_stray" })));
+    expect(response.status).toBe(200);
+    expect(database.org.update).not.toHaveBeenCalled();
+  });
+
+  test("a late event is applied as the subscription is now", async () => {
+    retrieves(subscription({ status: "active" }));
+    await send(event("customer.subscription.created", subscription({ status: "incomplete" })));
+    expect(database.org.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ subscriptionStatus: "active" }) })
     );
   });
 
   test("a cancelled subscription ends paid access but keeps the plan name", async () => {
+    retrieves(subscription({ status: "canceled" }));
     await send(event("customer.subscription.deleted", subscription({ status: "canceled" })));
     expect(database.org.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -134,6 +161,7 @@ describe("Stripe webhook", () => {
 
   test("a subscription for a shop Takumo doesn't know is ignored", async () => {
     database.org.findUnique.mockResolvedValue(null);
+    retrieves(subscription());
     const response = await send(event("customer.subscription.updated", subscription()));
     expect(response.status).toBe(200);
     expect(database.org.update).not.toHaveBeenCalled();

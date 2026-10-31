@@ -95,13 +95,17 @@ export const transcribe = async (
 };
 
 export const retryNote = async (noteId: string): Promise<Result> => {
-  const { orgId, userId } = await auth();
+  const { orgId } = await auth();
   if (!orgId) {
     return { ok: false, error: "Choose a shop first." };
   }
-  const result = await rereadNote(orgId, noteId, userId);
+  const locked = await featureProblem(orgId, "knowledge");
+  if (locked) {
+    return { ok: false, error: locked };
+  }
+  const result = await rereadNote(orgId, noteId);
   refresh();
   return result
     ? { ok: true }
-    : { ok: false, error: "That note no longer exists." };
+    : { ok: false, error: "That note was already read." };
 };

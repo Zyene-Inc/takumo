@@ -37,5 +37,9 @@ export const checkLog = (
   if (log.finishedAt && log.finishedAt.getTime() > now.getTime() + 3_600_000) {
     return "The finish time is in the future.";
   }
+  const finished = log.finishedAt ?? now;
+  if (log.startedAt && log.startedAt.getTime() > finished.getTime()) {
+    return "The start time is after the finish.";
+  }
   return null;
 };

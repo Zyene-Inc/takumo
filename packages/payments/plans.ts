@@ -95,6 +95,8 @@ export const FEATURE_LABEL: Record<Feature, string> = {
 export interface OrgBilling {
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: Date | null;
+  /** When the subscription went past due. */
+  pastDueSince: Date | null;
   plan: string;
   subscriptionStatus: string | null;
   trialEndsAt: Date | null;
@@ -133,9 +135,10 @@ export const entitlements = (
   const plan = planOf(org.plan);
   const none = new Set<Feature>();
   if (plan.key === "trial") {
+    // Every shop gets its trial end when it's created; none means no trial.
     const left = org.trialEndsAt
       ? Math.ceil((org.trialEndsAt.getTime() - now.getTime()) / DAY_MS)
-      : TRIAL_DAYS;
+      : 0;
     return left > 0
       ? {
           plan,
@@ -172,8 +175,10 @@ export const entitlements = (
     };
   }
   if (status === "past_due") {
-    const graceEnds = org.currentPeriodEnd
-      ? org.currentPeriodEnd.getTime() + PAST_DUE_GRACE_DAYS * DAY_MS
+    // From the failed payment, not the period end: Stripe has already moved
+    // that to the end of the unpaid period.
+    const graceEnds = org.pastDueSince
+      ? org.pastDueSince.getTime() + PAST_DUE_GRACE_DAYS * DAY_MS
       : 0;
     return now.getTime() < graceEnds
       ? {

@@ -10,7 +10,7 @@ import {
   type QuoteOperation,
   type QuoteResponse,
 } from "@repo/engine-client";
-import { recordUsage } from "../ai-usage";
+import { recordFailedUsage, recordUsage } from "../ai-usage";
 import { CHECK_TIME_LIMIT_S, engineProblem, loadShop } from "../schedule/plan";
 import { isoDay } from "../schedule/request";
 import { proposeRouting } from "./propose";
@@ -340,6 +340,7 @@ const operationsFor = async (
     });
     return { ok: true, routing: proposal.ops, routingNotes: proposal.notes };
   } catch (error) {
+    await recordFailedUsage(orgId, "routing_proposal", error);
     return {
       ok: false,
       error:
@@ -451,8 +452,9 @@ export const estimateLine = async (
     routingNotes,
     response: result.response,
   };
-  await db.rfqLine.updateMany({
-    where: { id: line.id },
+  // A line that's been quoted keeps the numbers that were sent.
+  const saved = await db.rfqLine.updateMany({
+    where: { id: line.id, quoteId: null },
     data: {
       draft: draft as object,
       ...(material && !line.materialId ? { materialId: material.id } : {}),
@@ -460,6 +462,9 @@ export const estimateLine = async (
       final: Prisma.DbNull,
     },
   });
+  if (saved.count === 0) {
+    return { ok: false, error: `Line ${line.lineNo} has already been quoted.` };
+  }
   return { ok: true, draft };
 };
 

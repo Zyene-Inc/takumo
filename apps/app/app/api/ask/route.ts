@@ -138,9 +138,10 @@ export const POST = async (request: Request) => {
     messages: await convertToModelMessages(messages, { tools: settings.tools }),
     onError: ({ error }) =>
       log.error("Ask Takumo failed", { error: String(error) }),
-    // Every step of the answer, cache reads and writes included.
-    onFinish: ({ totalUsage, response }) =>
-      recordUsage(orgId, "ask", response.modelId, totalUsage, userId),
+    // Each step as it finishes (cache reads and writes included), so the
+    // steps before an error are still counted.
+    onStepFinish: ({ usage, response }) =>
+      recordUsage(orgId, "ask", response.modelId, usage, userId),
   });
   // Finish (and save) the answer even if the browser goes away.
   result.consumeStream();

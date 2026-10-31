@@ -102,7 +102,7 @@ Docker web service; Render is the simplest host (Fly.io or Cloud Run work the sa
 2. Instance: at least 2 CPUs and 2 GB (the solver uses several threads). Health check path `/health`.
 3. Environment: `ENGINE_SECRET` = a new value (`openssl rand -hex 32`). Render sets `PORT`.
 4. Put the service URL in `ENGINE_URL` and the same secret in `ENGINE_SECRET` on `takumo-app`,
-   then redeploy it. Without `ENGINE_SECRET` the engine accepts any caller, so always set it.
+   then redeploy it. On Render the engine refuses every call until `ENGINE_SECRET` is set.
 
 Check: `curl https://<engine-url>/health` returns `{"status":"ok"}`.
 

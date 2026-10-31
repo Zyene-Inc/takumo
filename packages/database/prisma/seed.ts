@@ -18,7 +18,12 @@ const prisma = new PrismaClient({
 const main = async () => {
   await prisma.org.upsert({
     where: { id: orgId },
-    create: { id: orgId, name: "Acme Precision" },
+    // A 30-day trial, like a shop made in the app.
+    create: {
+      id: orgId,
+      name: "Acme Precision",
+      trialEndsAt: new Date(Date.now() + 30 * 86_400_000),
+    },
     update: {},
   });
   await seedDemoShop(prisma, orgId);

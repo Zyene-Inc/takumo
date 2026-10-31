@@ -15,6 +15,7 @@ import {
   ATTRIBUTES,
   attributeDef,
   formatValue,
+  parsedValue,
   SUBJECT_TYPES,
 } from "@/lib/facts/attributes";
 import { findSubject, proposeFact } from "@/lib/facts/facts";
@@ -581,7 +582,8 @@ Times in minutes (2 hours → 120). Use attribute "note" for anything that isn't
           already_waiting: made.existing,
           about: found.subject.label,
           what: def?.label ?? input.attribute,
-          proposed: formatValue(def, input.value),
+          // As stored: "92" for an efficiency reads back as 92%, not 9200%.
+          proposed: formatValue(def, parsedValue(def, input.value)),
           note: "Not applied yet: a supervisor approves it under Knowledge → Facts to review.",
           cite_as: fact.id,
           sources: [fact],

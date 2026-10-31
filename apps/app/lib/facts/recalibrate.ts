@@ -66,7 +66,8 @@ export const loadFinishedJobs = async (
   const [jobs, routings] = await Promise.all([
     db.job.findMany({
       where: { actualEnd: { gte: since } },
-      orderBy: { actualEnd: "asc" },
+      // The newest jobs, when there are more than the cap.
+      orderBy: { actualEnd: "desc" },
       take: 20_000,
       select: {
         routingSeq: true,

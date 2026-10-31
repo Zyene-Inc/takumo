@@ -138,6 +138,22 @@ describe("parseRows", () => {
     "Status",
   ]);
 
+  test("a quantity of zero or less is a row error", () => {
+    const result = parseRows(
+      [
+        { SO: "SO-1", "Part Number": "P-1", Qty: 0, "Due Date": "2026-11-20" },
+        { SO: "SO-2", "Part Number": "P-1", Qty: "0.4", "Due Date": "2026-11-20" },
+        { SO: "SO-3", "Part Number": "P-1", Qty: 2, "Due Date": "2026-11-20" },
+      ],
+      mapping
+    );
+    expect(result.records.map((r) => r.row)).toEqual([4]);
+    expect(result.errors.map((e) => e.message)).toEqual([
+      '"0" must be at least 1',
+      '"0.4" must be at least 1',
+    ]);
+  });
+
   test("converts values, skips bad rows and keeps row numbers", () => {
     const result = parseRows(
       [

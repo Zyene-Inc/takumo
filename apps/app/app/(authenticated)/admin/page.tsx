@@ -39,6 +39,7 @@ const AdminPage = async () => {
         trialEndsAt: true,
         subscriptionStatus: true,
         currentPeriodEnd: true,
+        pastDueSince: true,
         cancelAtPeriodEnd: true,
         createdAt: true,
         _count: { select: { connections: true } },

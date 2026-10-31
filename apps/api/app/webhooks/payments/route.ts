@@ -24,14 +24,21 @@ const track = (
   });
 
 const subscriptionChanged = async (sub: Stripe.Subscription, event: string) => {
-  const orgId = await syncSubscription(sub);
-  if (!orgId) {
+  const synced = await syncSubscription(sub);
+  if (!synced) {
     log.warn("Stripe subscription for an unknown shop", {
       subscription: sub.id,
     });
     return;
   }
-  track(orgId, event, {
+  if (!synced.applied) {
+    log.warn("Stripe event for a subscription that isn't the shop's", {
+      subscription: sub.id,
+      orgId: synced.orgId,
+    });
+    return;
+  }
+  track(synced.orgId, event, {
     status: sub.status,
     plan: sub.items.data[0]?.price.lookup_key ?? null,
     cancel_at_period_end: sub.cancel_at_period_end,
@@ -102,12 +109,20 @@ export const POST = async (request: Request): Promise<Response> => {
       case "checkout.session.completed":
         await checkoutCompleted(event.data.object);
         break;
+      // Events can arrive late or out of order: use the subscription as it
+      // is now, not as the event saw it.
       case "customer.subscription.created":
       case "customer.subscription.updated":
-        await subscriptionChanged(event.data.object, "subscription_updated");
+        await subscriptionChanged(
+          await stripe.subscriptions.retrieve(event.data.object.id),
+          "subscription_updated"
+        );
         break;
       case "customer.subscription.deleted":
-        await subscriptionChanged(event.data.object, "subscription_canceled");
+        await subscriptionChanged(
+          await stripe.subscriptions.retrieve(event.data.object.id),
+          "subscription_canceled"
+        );
         break;
       case "invoice.payment_failed":
         await paymentFailed(event.data.object);

@@ -2,7 +2,7 @@ import "server-only";
 
 import { database, forOrg, Prisma } from "@repo/database";
 import { log } from "@repo/observability/log";
-import { recordUsage } from "../ai-usage";
+import { recordFailedUsage, recordUsage } from "../ai-usage";
 import { extractRfq } from "./extract";
 import { partsMentioned } from "./match";
 import type { RfqText } from "./read";
@@ -128,6 +128,7 @@ export const readRfq = async (orgId: string, rfqId: string) => {
     ]);
   } catch (error) {
     log.warn("Reading an RFQ failed", { rfqId, error: String(error) });
+    await recordFailedUsage(orgId, "rfq_read", error);
     await db.rfq.updateMany({
       where: { id: rfqId },
       data: {

@@ -88,6 +88,16 @@ export const createCheckout = async ({
     };
   }
   const customer = await customerFor(orgId, email);
+  // One checkout at a time: close pages opened earlier (another tab, a
+  // colleague), so the shop can't end up paying for two subscriptions.
+  const open = await stripe.checkout.sessions.list({
+    customer,
+    status: "open",
+    limit: 10,
+  });
+  for (const earlier of open.data) {
+    await stripe.checkout.sessions.expire(earlier.id);
+  }
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer,
@@ -142,23 +152,40 @@ export const syncSubscription = async (
 ) => {
   const customerId =
     typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+  const select = {
+    id: true,
+    stripeSubscriptionId: true,
+    subscriptionStatus: true,
+    pastDueSince: true,
+  } as const;
   const org =
     (await database.org.findUnique({
       where: { stripeCustomerId: customerId },
-      select: { id: true },
+      select,
     })) ??
     (sub.metadata?.orgId
       ? await database.org.findUnique({
           where: { id: sub.metadata.orgId },
-          select: { id: true },
+          select,
         })
       : null);
   if (!org) {
     return null;
   }
+  // Another subscription is the shop's live one (a stray second checkout, an
+  // old one's late event): this one mustn't change the shop's plan.
+  if (org.stripeSubscriptionId && org.stripeSubscriptionId !== sub.id) {
+    return { orgId: org.id, applied: false };
+  }
+  const billing = billingFromSubscription(sub);
+  const pastDueSince =
+    billing.subscriptionStatus === "past_due"
+      ? ((org.subscriptionStatus === "past_due" ? org.pastDueSince : null) ??
+        new Date())
+      : null;
   await database.org.update({
     where: { id: org.id },
-    data: { stripeCustomerId: customerId, ...billingFromSubscription(sub) },
+    data: { stripeCustomerId: customerId, ...billing, pastDueSince },
   });
-  return org.id;
+  return { orgId: org.id, applied: true };
 };

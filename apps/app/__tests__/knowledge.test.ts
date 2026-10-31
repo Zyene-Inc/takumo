@@ -321,5 +321,15 @@ describe("shop-floor logs", () => {
     expect(
       checkLog({ ...log, finishedAt: new Date("2026-11-02T11:00:00Z") }, now)
     ).toBeNull();
+    expect(
+      checkLog(
+        {
+          ...log,
+          startedAt: new Date("2026-11-02T11:30:00Z"),
+          finishedAt: new Date("2026-11-02T11:00:00Z"),
+        },
+        now
+      )
+    ).toMatch(/start time is after/);
   });
 });

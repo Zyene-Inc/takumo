@@ -15,6 +15,8 @@ export interface FieldDef {
   readonly key: string;
   readonly kind: FieldKind;
   readonly label: string;
+  // For numbers: zero or less is a row error (quantities).
+  readonly positive?: boolean;
   readonly required?: boolean;
   readonly synonyms: readonly string[];
   readonly valueAliases?: Readonly<Record<string, string>>;
@@ -355,9 +357,17 @@ const orders: EntityDef = {
       synonyms: ["part no", "part number", "part", "pn", "p/n", "item"],
     },
     {
+      key: "rev",
+      label: "Revision",
+      kind: "text",
+      synonyms: ["rev", "revision", "part rev"],
+      hint: "Leave blank to use the part's latest revision",
+    },
+    {
       key: "qty",
       label: "Quantity",
       kind: "integer",
+      positive: true,
       required: true,
       synonyms: ["qty", "quantity", "order qty", "qty ordered", "pcs"],
     },
@@ -437,6 +447,7 @@ const quotes: EntityDef = {
       key: "qty",
       label: "Quantity",
       kind: "integer",
+      positive: true,
       required: true,
       synonyms: ["qty", "quantity", "pcs"],
     },
@@ -451,6 +462,13 @@ const quotes: EntityDef = {
       label: "Part number",
       kind: "text",
       synonyms: ["part no", "part number", "part", "pn", "p/n", "item"],
+    },
+    {
+      key: "rev",
+      label: "Revision",
+      kind: "text",
+      synonyms: ["rev", "revision", "part rev"],
+      hint: "Leave blank to use the part's latest revision",
     },
     {
       key: "price",
@@ -532,6 +550,13 @@ const jobs: EntityDef = {
       kind: "text",
       required: true,
       synonyms: ["part no", "part number", "part", "pn", "p/n", "item"],
+    },
+    {
+      key: "rev",
+      label: "Revision",
+      kind: "text",
+      synonyms: ["rev", "revision", "part rev"],
+      hint: "Leave blank to use the part's latest revision",
     },
     {
       key: "seq",

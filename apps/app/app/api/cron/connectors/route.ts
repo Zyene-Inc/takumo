@@ -33,6 +33,7 @@ export const GET = async (request: Request) => {
           trialEndsAt: true,
           subscriptionStatus: true,
           currentPeriodEnd: true,
+          pastDueSince: true,
           cancelAtPeriodEnd: true,
         },
       },

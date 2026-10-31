@@ -158,8 +158,11 @@ const parseCell = (
     }
     case "integer": {
       const n = parseNumber(cell);
-      return n === null
-        ? { error: `"${cell}" is not a number` }
+      if (n === null) {
+        return { error: `"${cell}" is not a number` };
+      }
+      return field.positive && Math.round(n) <= 0
+        ? { error: `"${cell}" must be at least 1` }
         : { value: Math.round(n) };
     }
     case "minutes": {

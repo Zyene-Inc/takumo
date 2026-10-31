@@ -39,15 +39,23 @@ const handleEvent = async (event: WebhookEvent) => {
     case "organization.created":
     case "organization.updated": {
       const organization = event.data;
-      await database.org.upsert({
-        where: { id: organization.id },
-        create: {
-          id: organization.id,
-          name: organization.name,
-          trialEndsAt: trialEndsAt(),
-        },
-        update: { name: organization.name },
-      });
+      if (event.event === "organization.created") {
+        await database.org.upsert({
+          where: { id: organization.id },
+          create: {
+            id: organization.id,
+            name: organization.name,
+            trialEndsAt: trialEndsAt(),
+          },
+          update: { name: organization.name },
+        });
+      } else {
+        // Only rename: a late update for a deleted shop mustn't bring it back.
+        await database.org.updateMany({
+          where: { id: organization.id },
+          data: { name: organization.name },
+        });
+      }
       analytics?.groupIdentify({
         groupKey: organization.id,
         groupType: "company",

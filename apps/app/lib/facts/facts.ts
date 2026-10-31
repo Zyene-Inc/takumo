@@ -377,6 +377,15 @@ export const proposeFact = async (
 
 type Tx = Prisma.TransactionClient;
 
+const MISSING_RECORD = "The record this fact is about no longer exists.";
+
+/** Stop the approval when the record wasn't there to update. */
+const expectOne = ({ count }: { count: number }) => {
+  if (count === 0) {
+    throw new Error(MISSING_RECORD);
+  }
+};
+
 /** Write an approved value to the record it's about. */
 const applyValue = async (
   tx: Tx,
@@ -395,16 +404,28 @@ const applyValue = async (
       if (!machine) {
         throw new Error(`No machine "${value}".`);
       }
-      await tx.routing.updateMany({
-        where,
-        data: { workCenterId: machine.id, provenance: "stated", confidence: 1 },
-      });
+      expectOne(
+        await tx.routing.updateMany({
+          where,
+          data: {
+            workCenterId: machine.id,
+            provenance: "stated",
+            confidence: 1,
+          },
+        })
+      );
       return;
     }
-    await tx.routing.updateMany({
-      where,
-      data: { [attribute]: Number(value), provenance: "stated", confidence: 1 },
-    });
+    expectOne(
+      await tx.routing.updateMany({
+        where,
+        data: {
+          [attribute]: Number(value),
+          provenance: "stated",
+          confidence: 1,
+        },
+      })
+    );
     return;
   }
   if (type === "work_center") {
@@ -414,33 +435,41 @@ const applyValue = async (
         select: { shifts: true },
       });
       const shifts = (wc?.shifts as Record<string, unknown> | null) ?? {};
-      await tx.workCenter.updateMany({
-        where,
-        data: {
-          shifts: { ...shifts, hoursPerDay: Number(value) },
-          provenance: "stated",
-        },
-      });
+      expectOne(
+        await tx.workCenter.updateMany({
+          where,
+          data: {
+            shifts: { ...shifts, hoursPerDay: Number(value) },
+            provenance: "stated",
+          },
+        })
+      );
       return;
     }
-    await tx.workCenter.updateMany({
-      where,
-      data: { [attribute]: Number(value), provenance: "stated" },
-    });
+    expectOne(
+      await tx.workCenter.updateMany({
+        where,
+        data: { [attribute]: Number(value), provenance: "stated" },
+      })
+    );
     return;
   }
   if (type === "material") {
-    await tx.material.updateMany({
-      where,
-      data: { [attribute]: Number(value), provenance: "stated" },
-    });
+    expectOne(
+      await tx.material.updateMany({
+        where,
+        data: { [attribute]: Number(value), provenance: "stated" },
+      })
+    );
     return;
   }
   if (type === "customer" && attribute === "paymentTermDays") {
-    await tx.customer.updateMany({
-      where,
-      data: { paymentTermDays: Number(value) },
-    });
+    expectOne(
+      await tx.customer.updateMany({
+        where,
+        data: { paymentTermDays: Number(value) },
+      })
+    );
   }
 };
 
@@ -487,6 +516,14 @@ export const approveFact = async (
   const now = new Date();
   try {
     await database.$transaction(async (tx) => {
+      // Claim it first: two reviewers can't both approve (or approve and reject).
+      const claimed = await tx.fact.updateMany({
+        where: { id: fact.id, orgId, status: "pending" },
+        data: { status: "approved" },
+      });
+      if (claimed.count === 0) {
+        throw new Error(`${factLabel(fact.number)} has already been reviewed.`);
+      }
       const replaced = await tx.fact.findMany({
         where: {
           orgId,
@@ -552,8 +589,8 @@ export const rejectFact = async (
       error: `${factLabel(fact.number)} is already ${fact.status}.`,
     };
   }
-  await db.fact.updateMany({
-    where: { id: fact.id },
+  const rejected = await db.fact.updateMany({
+    where: { id: fact.id, status: "pending" },
     data: {
       status: "rejected",
       reviewedBy: reviewer,
@@ -561,6 +598,12 @@ export const rejectFact = async (
       reviewNote: note?.trim() || null,
     },
   });
+  if (rejected.count === 0) {
+    return {
+      ok: false,
+      error: `${factLabel(fact.number)} has already been reviewed.`,
+    };
+  }
   return { ok: true, label: factLabel(fact.number) };
 };
 
