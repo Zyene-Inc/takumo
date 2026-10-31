@@ -11,6 +11,7 @@ import {
 
 const VERSION = "v1";
 const IV_BYTES = 12;
+const AUTH_TAG_BYTES = 16;
 
 /** CONNECTOR_ENCRYPTION_KEY: 32 random bytes, base64 (`openssl rand -base64 32`). */
 export const parseKey = (base64: string | undefined) => {
@@ -40,15 +41,22 @@ export const encrypt = (key: Buffer, plaintext: string) => {
 
 export const decrypt = (key: Buffer, sealed: string) => {
   const [version, iv, tag, data] = sealed.split(":");
-  if (version !== VERSION || !(iv && tag && data)) {
+  const authTag = Buffer.from(tag ?? "", "base64url");
+  if (
+    version !== VERSION ||
+    !(iv && data) ||
+    authTag.length !== AUTH_TAG_BYTES
+  ) {
     throw new Error("Not an encrypted connector secret.");
   }
+  // A full-length tag only: a shortened one would be far easier to forge.
   const decipher = createDecipheriv(
     "aes-256-gcm",
     key,
-    Buffer.from(iv, "base64url")
+    Buffer.from(iv, "base64url"),
+    { authTagLength: AUTH_TAG_BYTES }
   );
-  decipher.setAuthTag(Buffer.from(tag, "base64url"));
+  decipher.setAuthTag(authTag);
   return Buffer.concat([
     decipher.update(Buffer.from(data, "base64url")),
     decipher.final(),

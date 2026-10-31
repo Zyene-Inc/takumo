@@ -56,6 +56,7 @@ describe("launch settings check", () => {
     STRIPE_SECRET_KEY: "sk_live_x",
     STRIPE_WEBHOOK_SECRET: "whsec_x",
     NEXT_PUBLIC_APP_URL: "https://app.takumo.ai",
+    NEXT_PUBLIC_WEB_URL: "https://takumo.ai",
   };
 
   test("a complete production API environment passes; optional ones are only noted", () => {

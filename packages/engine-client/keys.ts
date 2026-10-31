@@ -6,7 +6,11 @@ export const keys = () =>
     skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
     emptyStringAsUndefined: true,
     server: {
-      ENGINE_URL: z.url().default("http://localhost:8000"),
+      // The local engine in development; a deployed app must say where it is.
+      ENGINE_URL:
+        process.env.VERCEL_ENV === "production"
+          ? z.url()
+          : z.url().default("http://localhost:8000"),
       ENGINE_SECRET: z.string().optional(),
     },
     runtimeEnv: {

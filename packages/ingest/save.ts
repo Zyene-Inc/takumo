@@ -36,6 +36,9 @@ const defined = <T extends Record<string, unknown>>(data: T) =>
 
 const BATCH = 25;
 
+// The highest efficiency written as a fraction (the engine allows up to 1.5).
+const MAX_EFFICIENCY = 1.5;
+
 const inBatches = async <T>(
   items: readonly T[],
   fn: (item: T) => Promise<void>
@@ -178,23 +181,31 @@ const saveWorkCenters = async (
   c: Counter
 ) => {
   const { db, orgId } = ctx;
-  const existing = new Set(
+  const shiftsByName = new Map(
     (
-      await db.workCenter.findMany({ where: { orgId }, select: { name: true } })
-    ).map((r) => r.name)
+      await db.workCenter.findMany({
+        where: { orgId },
+        select: { name: true, shifts: true },
+      })
+    ).map((r) => [r.name, (r.shifts as Record<string, unknown> | null) ?? {}])
   );
   await inBatches(records, async ({ values: v }) => {
     const name = str(v.name) as string;
     let efficiency = num(v.efficiency);
-    if (efficiency !== null && efficiency > 1) {
-      efficiency /= 100; // "90" means 90%
+    // "90" means 90%; 1.2 is already a fraction (120%, a fast machine).
+    if (efficiency !== null && efficiency > MAX_EFFICIENCY) {
+      efficiency /= 100;
     }
     const hoursPerDay = num(v.hoursPerDay);
     const data = defined({
       type: str(v.type),
       hourlyRate: num(v.hourlyRate),
       efficiency,
-      shifts: hoursPerDay === null ? null : { hoursPerDay },
+      // Keep the working days already set; only the hours come from the file.
+      shifts:
+        hoursPerDay === null
+          ? null
+          : { ...shiftsByName.get(name), hoursPerDay },
     });
     await db.workCenter.upsert({
       where: { orgId_name: { orgId, name } },
@@ -207,7 +218,7 @@ const saveWorkCenters = async (
       },
       update: { ...data, provenance: ctx.provenance },
     });
-    count(c, existing.has(name));
+    count(c, shiftsByName.has(name));
   });
 };
 
@@ -330,7 +341,7 @@ const saveRoutings = async (
       workCenterId: string;
       setupMin: number;
       runMinPerUnit: number;
-      altWorkCenterIds: string[];
+      altWorkCenterIds?: string[];
       provenance: "data" | "stated";
       confidence: number;
     };
@@ -339,6 +350,7 @@ const saveRoutings = async (
     const partId = await parts.get(str(v.partNo) as string, str(v.rev));
     const workCenterId = (await machines.get(str(v.workCenter))) as string;
     const altWorkCenterIds: string[] = [];
+    const altsGiven = list(v.altWorkCenters).length > 0;
     for (const name of list(v.altWorkCenters)) {
       const id = await machines.get(name);
       if (id && id !== workCenterId) {
@@ -352,7 +364,8 @@ const saveRoutings = async (
         workCenterId,
         setupMin: num(v.setupMin) as number,
         runMinPerUnit: num(v.runMinPerUnit) as number,
-        altWorkCenterIds,
+        // A file without alternates keeps the ones already set.
+        ...(altsGiven ? { altWorkCenterIds } : {}),
         provenance: ctx.provenance,
         confidence: 1,
       },
@@ -400,7 +413,7 @@ const saveOrders = async (
     rows.push({
       orderNo: str(v.orderNo) as string,
       data: {
-        partId: await parts.get(str(v.partNo) as string),
+        partId: await parts.get(str(v.partNo) as string, str(v.rev)),
         qty: num(v.qty) as number,
         dueDate: new Date(str(v.dueDate) as string),
         ...defined({
@@ -456,7 +469,7 @@ const saveQuotes = async (
         qty: num(v.qty) as number,
         ...defined({
           customerId: await customers.get(str(v.customer)),
-          partId: partNo ? await parts.get(partNo) : null,
+          partId: partNo ? await parts.get(partNo, str(v.rev)) : null,
           price: num(v.price),
           leadTimeDays: num(v.leadTimeDays),
           estCost: num(v.estCost),
@@ -523,19 +536,21 @@ const saveJobs = async (ctx: Context, records: ParsedRecord[], c: Counter) => {
     orderId: string;
     seq: number;
     data: Record<string, unknown>;
+    created: Record<string, unknown>;
   }[] = [];
   // Orders one at a time (two rows may add the same closed order), then the
   // jobs in batches.
   for (const { values: v } of records) {
     const orderNo = str(v.orderNo) as string;
     const good = num(v.qtyGood) as number;
-    const scrap = num(v.qtyScrap) ?? 0;
+    const scrapGiven = num(v.qtyScrap);
+    const scrap = scrapGiven ?? 0;
     const finishedAt = new Date(str(v.finishedAt) as string);
     const setupMin = num(v.setupMin) as number;
     const runMin = num(v.runMin) as number;
     let order = orders.get(orderNo);
     if (!order) {
-      const partId = await parts.get(str(v.partNo) as string);
+      const partId = await parts.get(str(v.partNo) as string, str(v.rev));
       order = await db.order.upsert({
         where: { orgId_orderNo: { orgId, orderNo } },
         create: {
@@ -554,28 +569,38 @@ const saveJobs = async (ctx: Context, records: ParsedRecord[], c: Counter) => {
     }
     const seq = num(v.seq) as number;
     const routing = routings.get(`${order.partId}|${seq}`);
+    const data = {
+      actualStart: new Date(
+        finishedAt.getTime() - (setupMin + runMin) * 60_000
+      ),
+      actualEnd: finishedAt,
+      actualSetupMin: setupMin,
+      actualRunMin: runMin,
+      qtyGood: good,
+      ...defined({
+        qtyScrap: scrapGiven,
+        plannedSetupMin: num(v.plannedSetupMin),
+        workCenterId: await machines.get(str(v.workCenter)),
+      }),
+    };
     rows.push({
       orderId: order.id,
       seq,
-      data: {
-        actualStart: new Date(
-          finishedAt.getTime() - (setupMin + runMin) * 60_000
-        ),
-        actualEnd: finishedAt,
-        actualSetupMin: setupMin,
-        actualRunMin: runMin,
-        qtyGood: good,
+      data,
+      // A new job's plan is the routing as it is now. A job already in
+      // Takumo keeps its plan (recalibration may have changed the routing
+      // since) and its scrap, unless the file gives them.
+      created: {
         qtyScrap: scrap,
-        plannedSetupMin: num(v.plannedSetupMin) ?? routing?.setupMin ?? null,
+        plannedSetupMin: routing?.setupMin ?? null,
         plannedRunMinPerUnit: routing?.runMinPerUnit ?? null,
-        ...defined({ workCenterId: await machines.get(str(v.workCenter)) }),
       },
     });
   }
-  await inBatches(rows, async ({ orderId, seq, data }) => {
+  await inBatches(rows, async ({ orderId, seq, data, created }) => {
     await db.job.upsert({
       where: { orderId_routingSeq: { orderId, routingSeq: seq } },
-      create: { orgId, orderId, routingSeq: seq, ...data },
+      create: { orgId, orderId, routingSeq: seq, ...created, ...data },
       update: data,
     });
     count(c, existing.has(`${orderId}|${seq}`));

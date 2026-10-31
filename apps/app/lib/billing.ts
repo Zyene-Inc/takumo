@@ -13,6 +13,7 @@ export const getBilling = async (orgId: string) => {
       trialEndsAt: true,
       subscriptionStatus: true,
       currentPeriodEnd: true,
+      pastDueSince: true,
       cancelAtPeriodEnd: true,
       stripeCustomerId: true,
     },
@@ -22,6 +23,7 @@ export const getBilling = async (orgId: string) => {
     trialEndsAt: null,
     subscriptionStatus: null,
     currentPeriodEnd: null,
+    pastDueSince: null,
     cancelAtPeriodEnd: false,
     stripeCustomerId: null,
   };

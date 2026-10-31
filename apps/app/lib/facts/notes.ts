@@ -5,7 +5,7 @@ import { models } from "@repo/ai/lib/models";
 import { database, forOrg } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { z } from "zod";
-import { recordUsage } from "../ai-usage";
+import { recordFailedUsage, recordUsage } from "../ai-usage";
 import { ATTRIBUTES, SUBJECT_TYPES } from "./attributes";
 import { type FactSource, findSubject, proposeFact } from "./facts";
 
@@ -95,19 +95,24 @@ Customers: ${customers.map((c) => c.name).join(", ")}`;
 };
 
 export const extractFacts = async (orgId: string, text: string) => {
-  const { output, usage, response } = await generateText({
-    model: models.agent,
-    output: Output.object({ schema }),
-    system: SYSTEM,
-    prompt: `${await shopContext(orgId)}
+  try {
+    const { output, usage, response } = await generateText({
+      model: models.agent,
+      output: Output.object({ schema }),
+      system: SYSTEM,
+      prompt: `${await shopContext(orgId)}
 
 Note:
 <note>
 ${text.slice(0, MAX_NOTE_CHARS)}
 </note>`,
-  });
-  await recordUsage(orgId, "note_read", response.modelId, usage);
-  return output?.facts ?? [];
+    });
+    await recordUsage(orgId, "note_read", response.modelId, usage);
+    return output?.facts ?? [];
+  } catch (error) {
+    await recordFailedUsage(orgId, "note_read", error);
+    throw error;
+  }
 };
 
 export interface NoteResult {
@@ -118,34 +123,19 @@ export interface NoteResult {
   skipped: string[];
 }
 
-/**
- * Save a note and propose the facts in it for review. The note is kept even
- * when nothing in it is a fact.
- */
-export const saveNote = async (
+/** Read a saved note and propose the facts in it for review. */
+const readNote = async (
   orgId: string,
-  userId: string | null,
+  noteId: string,
   note: {
-    kind: "voice" | "typed";
+    kind: string;
     text: string;
-    durationSec?: number | null;
-    jobId?: string | null;
+    statedBy: string | null;
     source?: FactSource;
   }
 ): Promise<NoteResult> => {
   const db = forOrg(database, orgId);
-  const saved = await db.note.create({
-    data: {
-      orgId,
-      kind: note.kind,
-      text: note.text.trim().slice(0, MAX_NOTE_CHARS),
-      durationSec: note.durationSec ?? null,
-      jobId: note.jobId ?? null,
-      createdBy: userId,
-    },
-    select: { id: true },
-  });
-  const result: NoteResult = { noteId: saved.id, proposed: [], skipped: [] };
+  const result: NoteResult = { noteId, proposed: [], skipped: [] };
   try {
     const facts = await extractFacts(orgId, note.text);
     for (const fact of facts) {
@@ -165,8 +155,8 @@ export const saveNote = async (
         value: fact.value,
         evidence: `"${fact.quote}"`,
         source: note.source ?? (note.kind === "voice" ? "voice" : "note"),
-        statedBy: userId,
-        noteId: saved.id,
+        statedBy: note.statedBy,
+        noteId,
       });
       if (made.ok) {
         result.proposed.push(made.fact.label);
@@ -175,13 +165,13 @@ export const saveNote = async (
       }
     }
     await db.note.updateMany({
-      where: { id: saved.id },
-      data: { status: "done" },
+      where: { id: noteId },
+      data: { status: "done", error: null },
     });
   } catch (error) {
     log.warn("Reading a note failed", { error: String(error) });
     await db.note.updateMany({
-      where: { id: saved.id },
+      where: { id: noteId },
       data: {
         status: "failed",
         error:
@@ -192,22 +182,62 @@ export const saveNote = async (
   return result;
 };
 
-/** Read a saved note again (after a failure). */
-export const rereadNote = async (
+/**
+ * Save a note and propose the facts in it for review. The note is kept even
+ * when nothing in it is a fact.
+ */
+export const saveNote = async (
   orgId: string,
-  noteId: string,
-  userId: string | null
-) => {
+  userId: string | null,
+  note: {
+    kind: "voice" | "typed";
+    text: string;
+    durationSec?: number | null;
+    jobId?: string | null;
+    source?: FactSource;
+    /** Why the note can't be read now (plan or AI budget): saved as failed. */
+    paused?: string | null;
+  }
+): Promise<NoteResult> => {
+  const saved = await forOrg(database, orgId).note.create({
+    data: {
+      orgId,
+      kind: note.kind,
+      text: note.text.trim().slice(0, MAX_NOTE_CHARS),
+      durationSec: note.durationSec ?? null,
+      jobId: note.jobId ?? null,
+      createdBy: userId,
+      ...(note.paused ? { status: "failed", error: note.paused } : {}),
+    },
+    select: { id: true },
+  });
+  if (note.paused) {
+    return { noteId: saved.id, proposed: [], skipped: [] };
+  }
+  return readNote(orgId, saved.id, { ...note, statedBy: userId });
+};
+
+/**
+ * Read a note again after a failure. The note itself (text, author, date)
+ * stays as it was; null when there's no failed note to retry.
+ */
+export const rereadNote = async (orgId: string, noteId: string) => {
   const db = forOrg(database, orgId);
   const note = await db.note.findFirst({ where: { id: noteId } });
   if (!note) {
     return null;
   }
-  await db.note.deleteMany({ where: { id: noteId } });
-  return saveNote(orgId, userId, {
-    kind: note.kind === "voice" ? "voice" : "typed",
+  // Claim it, so two clicks don't read it twice.
+  const claimed = await db.note.updateMany({
+    where: { id: noteId, status: "failed" },
+    data: { status: "reading", error: null },
+  });
+  if (claimed.count === 0) {
+    return null;
+  }
+  return readNote(orgId, noteId, {
+    kind: note.kind,
     text: note.text,
-    durationSec: note.durationSec,
-    jobId: note.jobId,
+    statedBy: note.createdBy,
   });
 };

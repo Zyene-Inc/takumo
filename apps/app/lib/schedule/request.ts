@@ -212,6 +212,38 @@ const toPins = (
   });
 };
 
+/** Why an order can't be planned, or null when it can. */
+const skipReason = (
+  qty: number,
+  part: { partNo: string; routings: unknown[] } | undefined,
+  remaining: unknown[]
+) => {
+  if (qty <= 0) {
+    return "its quantity is 0";
+  }
+  if (!part || part.routings.length === 0) {
+    return `${part?.partNo ?? "Its part"} has no routing`;
+  }
+  return remaining.length === 0
+    ? "every operation is finished; mark the order done"
+    : null;
+};
+
+/**
+ * The engine's name for what's left of a part's routing. Named by the steps
+ * left, so orders with different steps done never share one.
+ */
+const remainingKey = (
+  key: string,
+  done: Set<number>,
+  remaining: { seq: number }[]
+) => {
+  const last = Math.max(...done);
+  return remaining.every((r) => r.seq > last)
+    ? `${key} after op ${last}`
+    : `${key} ops ${remaining.map((r) => r.seq).join(", ")}`;
+};
+
 export const buildScheduleRequest = (
   rows: ShopRows,
   startDate: string,
@@ -240,27 +272,17 @@ export const buildScheduleRequest = (
     a.orderNo.localeCompare(b.orderNo)
   )) {
     const part = partsById.get(order.partId);
-    if (!part || part.routings.length === 0) {
-      skipped.push({
-        orderNo: order.orderNo,
-        reason: `${part?.partNo ?? "Its part"} has no routing`,
-      });
-      continue;
-    }
     const done = new Set(order.doneSeqs ?? []);
-    const remaining = part.routings.filter((r) => !done.has(r.seq));
-    if (remaining.length === 0) {
-      skipped.push({
-        orderNo: order.orderNo,
-        reason: "every operation is finished; mark the order done",
-      });
+    const remaining = (part?.routings ?? []).filter((r) => !done.has(r.seq));
+    const reason = skipReason(order.qty, part, remaining);
+    if (reason || !part) {
+      skipped.push({ orderNo: order.orderNo, reason: reason ?? "" });
       continue;
     }
     let partNo = partKeys[part.id];
     if (remaining.length < part.routings.length) {
       // The rest of the routing, as its own part for the engine.
-      const last = Math.max(...done);
-      partNo = `${partKeys[part.id]} after op ${last}`;
+      partNo = remainingKey(partKeys[part.id], done, remaining);
       if (!usedParts.has(partNo)) {
         usedParts.set(
           partNo,

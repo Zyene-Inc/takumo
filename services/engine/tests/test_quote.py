@@ -18,7 +18,7 @@ from app.models import (
     ScheduleRequest,
     WorkCenter,
 )
-from app.quote.cost_model import margin_policy, other_cost
+from app.quote.cost_model import margin_policy, other_cost, price_at
 from app.quote.estimate import estimate_quote
 from app.scheduler.cpsat_model import solve_schedule
 from tests.plan_checks import assert_valid_plan
@@ -140,6 +140,19 @@ def test_target_margin_is_the_customers_median_actual_margin():
     # A customer with one won quote gets the shop's margins.
     shop = margin_policy(spec.model_copy(update={"customer": "Bluefin Marine"}), history)
     assert len(shop.sources) == 5 and "the shop's" in shop.basis
+
+
+def test_a_zero_actual_cost_is_not_a_hundred_percent_margin():
+    day = date(2026, 10, 1)
+    history = [
+        PastQuote(quote_no="Q1", qty=1, price=100, actual_cost=0, status="won", quoted_at=day),
+        PastQuote(quote_no="Q2", qty=1, price=100, actual_cost=70, status="won", quoted_at=day),
+    ]
+    spec = QuoteSpec(part_no="P-1001", routing=routing_of("P-1001"), qty_breaks=[1])
+    policy = margin_policy(spec, history)
+    assert policy.sources == ["quote Q2"]
+    assert policy.high == pytest.approx(0.3)
+    assert price_at(100, 1.0, 1)[0] == 1000  # capped at 90%, never divides by zero
 
 
 def test_estimators_margin_overrides_history():

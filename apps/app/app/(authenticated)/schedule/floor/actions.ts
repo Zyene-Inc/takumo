@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { authorize } from "@/lib/access";
 import { track } from "@/lib/analytics";
+import { featureProblem } from "@/lib/billing";
 import { saveNote } from "@/lib/facts/notes";
 import { clearLog, logOperation } from "@/lib/floor/log";
 
@@ -70,6 +71,9 @@ export const logOp = async (
     properties: { order_done: logged.orderDone },
   });
   let facts: string[] = [];
+  // Reading the note uses Claude; without the plan or budget it waits for a retry.
+  const paused =
+    v.note.length >= 3 ? await featureProblem(access.orgId, "knowledge") : null;
   if (v.note.length >= 3) {
     const job = await forOrg(database, access.orgId).job.findFirst({
       where: { orderId: v.orderId, routingSeq: v.seq },
@@ -81,6 +85,7 @@ export const logOp = async (
         text: `${logged.orderNo} op ${v.seq}: ${v.note}`,
         jobId: job?.id ?? null,
         source: "floor",
+        paused,
       })
     ).proposed;
   }

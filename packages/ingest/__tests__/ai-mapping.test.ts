@@ -8,6 +8,7 @@ const apiKey = vi.hoisted(() => ({
 vi.mock("server-only", () => ({}));
 vi.mock("@repo/ai", () => ({
   generateText,
+  NoObjectGeneratedError: { isInstance: () => false },
   Output: { object: (options: unknown) => options },
 }));
 vi.mock("@repo/ai/keys", () => ({
@@ -68,6 +69,28 @@ describe("suggestMappingWithAi", () => {
       customer: null, // "Client" is not a header
     });
     expect(mapping.notes).toEqual(["Need By is the due date"]);
+  });
+
+  test("reports what the call used, and skips the model when AI is paused", async () => {
+    const usage = { inputTokens: 900, outputTokens: 120 };
+    generateText.mockResolvedValue({
+      output: { entity: "orders", columns: [], notes: [] },
+      usage,
+      response: { modelId: "haiku" },
+    });
+    const onUsage = vi.fn(async () => undefined);
+    await suggestMappingWithAi({ fileName: "a.csv", headers, rows, onUsage });
+    expect(onUsage).toHaveBeenCalledWith("haiku", usage);
+
+    generateText.mockClear();
+    const offline = await suggestMappingWithAi({
+      fileName: "a.csv",
+      headers,
+      rows,
+      useAi: false,
+    });
+    expect(generateText).not.toHaveBeenCalled();
+    expect(offline.source).toBe("heuristic");
   });
 
   test("keeps the sheet type the user chose", async () => {

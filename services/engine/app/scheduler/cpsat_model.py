@@ -75,6 +75,8 @@ def _validate(request: ScheduleRequest) -> None:
         op = next((o for o in parts[order.part_no].routing if o.seq == pin.seq), None)
         if op is None:
             raise ValueError(f"Pin for unknown operation {pin.order_no} op {pin.seq}")
+        if pin.work_center not in work_centers:
+            raise ValueError(f"Pin for {pin.order_no} op {pin.seq}: unknown work center {pin.work_center}")
         if pin.work_center not in [op.work_center, *op.alt_work_centers]:
             raise ValueError(
                 f"{pin.order_no} op {pin.seq} can't run on {pin.work_center} "

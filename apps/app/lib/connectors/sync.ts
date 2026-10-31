@@ -3,6 +3,7 @@ import "server-only";
 import { database, forOrg, Prisma } from "@repo/database";
 import { saveRecords } from "@repo/ingest/save";
 import { log } from "@repo/observability/log";
+import { budgetProblem } from "../ai-usage";
 import { track } from "../analytics";
 import { intakeRfq } from "../quotes/intake";
 import { readRfqFile } from "../quotes/read";
@@ -194,11 +195,18 @@ const syncGmail = async (
     ).map((r) => r.sourceId)
   );
   const result: SyncResult = { created: 0, updated: 0, skipped: 0, notes: [] };
+  let paused: string | null = null;
   // Oldest first, so RFQ numbers follow the order the mail arrived.
   for (const id of [...ids].reverse()) {
     if (seen.has(id)) {
       result.skipped += 1;
       continue;
+    }
+    // Reading an RFQ uses Claude: stop at the shop's monthly AI budget.
+    paused = await budgetProblem(orgId);
+    if (paused) {
+      result.notes.push(paused);
+      break;
     }
     try {
       const text = await readRfqFile(
@@ -217,6 +225,10 @@ const syncGmail = async (
         `Couldn't read message ${id}: ${error instanceof Error ? error.message : "error"}`
       );
     }
+  }
+  if (paused) {
+    // The rest are read on a later check, once there's budget again.
+    return result;
   }
   // Next time, only mail that arrived after this check started.
   await database.connection.update({

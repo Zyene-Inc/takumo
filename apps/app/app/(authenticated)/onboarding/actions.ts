@@ -15,6 +15,7 @@ import { saveRecords } from "@repo/ingest/save";
 import { log } from "@repo/observability/log";
 import { revalidatePath } from "next/cache";
 import { authorize, permissionFor } from "@/lib/access";
+import { budgetProblem, recordUsage } from "@/lib/ai-usage";
 import { track } from "@/lib/analytics";
 
 // Enough for real shops; bigger files should be split by year or status.
@@ -42,6 +43,10 @@ export const suggestColumns = async (input: {
     headers: input.headers,
     rows: input.sampleRows,
     entity: input.entity,
+    // Mapping still works offline once the shop's AI budget is spent.
+    useAi: !(await budgetProblem(access.orgId)),
+    onUsage: (modelId, usage) =>
+      recordUsage(access.orgId, "import_mapping", modelId, usage),
   });
 };
 

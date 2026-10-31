@@ -240,12 +240,25 @@ def _quantile(values: list[float], q: float) -> float:
     return ordered[low] + (ordered[high] - ordered[low]) * (position - low)
 
 
+# The highest margin a price is built on: cost / (1 - margin) runs away near 1.
+MAX_MARGIN = 0.9
+
+
 def margin_policy(spec: QuoteSpec, history: list[PastQuote]) -> MarginPolicy:
     won = [q for q in history if q.status == "won" and q.price]
-    actual = [(q, (q.price - q.actual_cost) / q.price) for q in won if q.actual_cost is not None]
+    # A recorded cost of zero is missing data, not a 100% margin.
+    actual = [
+        (q, min((q.price - q.actual_cost) / q.price, MAX_MARGIN))
+        for q in won
+        if q.actual_cost is not None and q.actual_cost > 0
+    ]
     pool, basis = actual, "actual"
     if not pool:
-        pool = [(q, m) for q in won if (m := margin_of(q)[0]) is not None]
+        pool = [
+            (q, min(m, MAX_MARGIN))
+            for q in won
+            if (m := margin_of(q)[0]) is not None and m < 1
+        ]
         basis = "quoted"
     for_customer = [(q, m) for q, m in pool if spec.customer and q.customer == spec.customer]
     if len(for_customer) >= 2:
@@ -299,5 +312,5 @@ def margin_policy(spec: QuoteSpec, history: list[PastQuote]) -> MarginPolicy:
 
 def price_at(cost: float, margin: float, qty: int) -> tuple[float, float]:
     """(unit price, total) at a margin; the unit price is rounded to the cent."""
-    unit = round(cost / (1 - margin) / qty, 2)
+    unit = round(cost / (1 - min(margin, MAX_MARGIN)) / qty, 2)
     return unit, round(unit * qty, 2)

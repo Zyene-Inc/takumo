@@ -16,6 +16,7 @@ const org = (overrides: Partial<OrgBilling>): OrgBilling => ({
   trialEndsAt: null,
   subscriptionStatus: null,
   currentPeriodEnd: null,
+  pastDueSince: null,
   cancelAtPeriodEnd: false,
   ...overrides,
 });
@@ -76,29 +77,35 @@ describe("entitlements", () => {
     expect(e.seats).toBeNull();
   });
 
-  test("a failed payment keeps features for a week past the period end", () => {
-    const end = new Date(NOW.getTime() - 3 * DAY);
+  test("a failed payment keeps features for a week from when it failed", () => {
+    // Stripe has already moved the period end a month ahead: it doesn't count.
+    const nextMonth = new Date(NOW.getTime() + 27 * DAY);
     expect(
       entitlements(
         org({
           plan: "pro",
           subscriptionStatus: "past_due",
-          currentPeriodEnd: end,
+          currentPeriodEnd: nextMonth,
+          pastDueSince: new Date(NOW.getTime() - 3 * DAY),
         }),
         NOW
       ).state
     ).toBe("past_due");
-    const longAgo = new Date(NOW.getTime() - 10 * DAY);
     const e = entitlements(
       org({
         plan: "pro",
         subscriptionStatus: "past_due",
-        currentPeriodEnd: longAgo,
+        currentPeriodEnd: nextMonth,
+        pastDueSince: new Date(NOW.getTime() - 8 * DAY),
       }),
       NOW
     );
     expect(e.state).toBe("canceled");
     expect(e.features.size).toBe(0);
+  });
+
+  test("a trial with no end date has ended", () => {
+    expect(entitlements(org({}), NOW).state).toBe("expired");
   });
 
   test("a cancelled subscription has no paid features", () => {

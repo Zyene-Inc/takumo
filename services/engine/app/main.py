@@ -22,6 +22,10 @@ app = FastAPI(title="Takumo Engine", version="0.3.0")
 
 def require_secret(x_engine_secret: str | None = Header(default=None)) -> None:
     expected = os.environ.get("ENGINE_SECRET")
+    # Hosted (Render sets RENDER), a missing secret is a mistake: refuse calls
+    # rather than accept anyone's. Locally and in tests it's optional.
+    if not expected and os.environ.get("RENDER"):
+        raise HTTPException(status_code=503, detail="ENGINE_SECRET isn't set")
     if expected and not hmac.compare_digest(x_engine_secret or "", expected):
         raise HTTPException(status_code=401, detail="Invalid engine secret")
 

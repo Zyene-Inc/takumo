@@ -171,8 +171,9 @@ const toNumber = (def: AttributeDef, raw: unknown) => {
     typeof raw === "number"
       ? raw
       : Number(String(raw).replace(NUMBER_NOISE, ""));
-  // "92" for an efficiency means 92%.
-  return def.percent && n > (def.max ?? 1.5) ? n / 100 : n;
+  // "92%" is always a percentage; a bare "92" is too, when it can't be a fraction.
+  const written = typeof raw === "string" && raw.includes("%");
+  return def.percent && (written || n > (def.max ?? 1.5)) ? n / 100 : n;
 };
 
 const inRange = (def: AttributeDef, n: number) =>
@@ -199,6 +200,15 @@ export const parseValue = (def: AttributeDef, raw: unknown): Parsed => {
   }
   const f = 10 ** ((def.digits ?? 2) + (def.percent ? 2 : 0));
   return { ok: true, value: Math.round(n * f) / f };
+};
+
+/** A value as it would be stored (for showing it back), or as given if it can't be. */
+export const parsedValue = (def: AttributeDef | null, raw: unknown) => {
+  if (!def) {
+    return raw;
+  }
+  const parsed = parseValue(def, raw);
+  return parsed.ok ? parsed.value : raw;
 };
 
 export const formatValue = (def: AttributeDef | null, value: unknown) => {

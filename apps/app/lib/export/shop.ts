@@ -57,14 +57,14 @@ export const exportShop = async (orgId: string) => {
     db.order.findMany({
       orderBy: { orderNo: "asc" },
       include: {
-        part: { select: { partNo: true } },
+        part: { select: { partNo: true, rev: true } },
         customer: { select: { name: true } },
       },
     }),
     db.quote.findMany({
       orderBy: { quoteNo: "asc" },
       include: {
-        part: { select: { partNo: true } },
+        part: { select: { partNo: true, rev: true } },
         customer: { select: { name: true } },
       },
     }),
@@ -73,7 +73,10 @@ export const exportShop = async (orgId: string) => {
       orderBy: { actualEnd: "asc" },
       include: {
         order: {
-          select: { orderNo: true, part: { select: { partNo: true } } },
+          select: {
+            orderNo: true,
+            part: { select: { partNo: true, rev: true } },
+          },
         },
       },
     }),
@@ -149,6 +152,7 @@ export const exportShop = async (orgId: string) => {
       orders.map((o) => ({
         orderNo: o.orderNo,
         partNo: o.part.partNo,
+        rev: o.part.rev,
         qty: o.qty,
         dueDate: day(o.dueDate),
         customer: o.customer?.name,
@@ -164,6 +168,7 @@ export const exportShop = async (orgId: string) => {
         qty: q.qty,
         customer: q.customer?.name,
         partNo: q.part?.partNo,
+        rev: q.part?.rev,
         price: num(q.price),
         leadTimeDays: q.leadTimeDays,
         estCost: num(q.estCost),
@@ -177,6 +182,7 @@ export const exportShop = async (orgId: string) => {
       jobs.map((j) => ({
         orderNo: j.order.orderNo,
         partNo: j.order.part.partNo,
+        rev: j.order.part.rev,
         seq: j.routingSeq,
         workCenter: j.workCenterId ? machineName.get(j.workCenterId) : null,
         setupMin: j.actualSetupMin,

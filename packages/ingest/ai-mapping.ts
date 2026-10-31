@@ -1,6 +1,11 @@
 import "server-only";
 
-import { generateText, Output } from "@repo/ai";
+import {
+  generateText,
+  type LanguageModelUsage,
+  NoObjectGeneratedError,
+  Output,
+} from "@repo/ai";
 import { keys } from "@repo/ai/keys";
 import { models } from "@repo/ai/lib/models";
 import { log } from "@repo/observability/log";
@@ -48,6 +53,15 @@ const schema = z.object({
   notes: z.array(z.string()),
 });
 
+type OnUsage = (modelId: string, usage: LanguageModelUsage) => Promise<void>;
+
+/** A call whose answer couldn't be read was still billed: report it. */
+const reportFailedUsage = async (error: unknown, onUsage?: OnUsage) => {
+  if (onUsage && NoObjectGeneratedError.isInstance(error) && error.usage) {
+    await onUsage(error.response?.modelId ?? "unknown", error.usage);
+  }
+};
+
 /**
  * Asks Claude what kind of sheet this is and which column feeds each field.
  * Falls back to the offline matcher when no API key is set or the call fails,
@@ -59,6 +73,8 @@ export const suggestMappingWithAi = async ({
   headers,
   rows,
   entity,
+  useAi = true,
+  onUsage,
 }: {
   fileName: string;
   sheetName?: string;
@@ -66,9 +82,13 @@ export const suggestMappingWithAi = async ({
   rows: readonly SheetRow[];
   // Set when the user already picked the sheet type.
   entity?: EntityKey;
+  /** False when the shop's AI is paused (plan or budget): offline matcher only. */
+  useAi?: boolean;
+  /** Called with what the call used, so the app can count the spend. */
+  onUsage?: OnUsage;
 }): Promise<ColumnMapping> => {
   const fallback = suggestMapping(entity ?? detectEntity(headers), headers);
-  if (!keys().ANTHROPIC_API_KEY || headers.length === 0) {
+  if (!(useAi && keys().ANTHROPIC_API_KEY) || headers.length === 0) {
     return fallback;
   }
 
@@ -78,7 +98,7 @@ export const suggestMappingWithAi = async ({
     .join("\n");
 
   try {
-    const { output } = await generateText({
+    const { output, usage, response } = await generateText({
       model: models.extract,
       output: Output.object({ schema }),
       system: `You map spreadsheet columns from a manufacturing job shop (ERP exports, Excel trackers) to Takumo's data model.
@@ -96,6 +116,7 @@ First rows:
 ${sample}`,
     });
 
+    await onUsage?.(response.modelId, usage);
     if (!output) {
       log.warn("AI column mapping returned no output", { fileName });
       return fallback;
@@ -131,6 +152,7 @@ ${sample}`,
       notes: output.notes.slice(0, 3),
     };
   } catch (error) {
+    await reportFailedUsage(error, onUsage);
     log.warn("AI column mapping failed; using the offline matcher", {
       fileName,
       error: error instanceof Error ? error.message : String(error),

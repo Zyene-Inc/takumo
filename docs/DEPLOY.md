@@ -31,13 +31,18 @@ Use a separate Supabase project for anything customers touch; the dev project is
 ## 2. Vercel projects
 
 For each row in the table: Vercel → Add New → Project → import `Zyene-Inc/takumo` → set the
-root directory → Framework: Next.js (detected). Vercel builds the monorepo with pnpm and Turborepo.
+root directory → Framework: Next.js (detected). Vercel builds the monorepo with pnpm and Turborepo;
+installing generates the Prisma client (`postinstall` in `packages/database`).
+
+**takumo-app needs Vercel Pro.** Its connector sync runs hourly (`apps/app/vercel.json`), and the
+Hobby plan only allows daily cron jobs, so the deploy fails there.
 
 Environment variables (Production and Preview). Values come from your local `.env.local` files
 or the service dashboards; never commit them.
 
 **takumo-app**
-- `DATABASE_URL` (pooler, port 6543, `?pgbouncer=true`), `DIRECT_URL` (port 5432)
+- `DATABASE_URL` (Supabase pooler, port 6543). `DIRECT_URL` (port 5432) is only for running
+  migrations from your machine (step 1); the app doesn't need it
 - `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_COOKIE_PASSWORD` (new value: `openssl rand -base64 32`)
 - `NEXT_PUBLIC_WORKOS_REDIRECT_URI` = `https://<app-url>/callback`
 - `NEXT_PUBLIC_APP_URL` = `https://<app-url>`, `NEXT_PUBLIC_WEB_URL` = `https://<web-url>`
@@ -50,34 +55,38 @@ or the service dashboards; never commit them.
   recalibration (`/api/cron/recalibrate`, 07:00 UTC, in `apps/app/vercel.json`); without it the
   route refuses every call and recalibration runs only from Knowledge → Calibration. The same
   secret protects the hourly connector sync (`/api/cron/connectors`).
-- `STRIPE_SECRET_KEY` (step 6): billing; without it the Billing page can't take payment
-- `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (step 7): product analytics
+- `STRIPE_SECRET_KEY` (step 5): billing; without it the Billing page can't take payment
+- `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (step 6): product analytics
 - `CONNECTOR_ENCRYPTION_KEY` = a new value (`openssl rand -base64 32`; keep it: losing it means
   every shop reconnects): encrypts QuickBooks and Gmail tokens
 - `QUICKBOOKS_CLIENT_ID`, `QUICKBOOKS_CLIENT_SECRET`, `QUICKBOOKS_ENVIRONMENT` (`sandbox` or
-  `production`) (step 8)
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (step 9)
+  `production`) (step 7)
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (step 8)
 - `ADMIN_USER_IDS`: WorkOS user ids (comma separated) of Takumo staff who can open `/admin`
 - `AI_MONTHLY_BUDGET_USD` (optional): Claude spend cap per shop per calendar month; when a shop
   reaches it, Ask Takumo, quote drafting and note reading pause until the 1st. `/admin` shows each
   shop's spend.
 
 Check a project's variables before going live (names only, never values):
-`vercel env pull .env.production` in the project, then
-`pnpm check:env app .env.production --production` (or `api`), then delete the file.
+from the repo root, `vercel link` to the project, `vercel env pull apps/app/.env.production`, then
+`pnpm check:env app apps/app/.env.production --production` (`api` or `web` for the other
+projects), then delete the file.
+
+`NEXT_PUBLIC_WORKOS_REDIRECT_URI` is built into the app, so preview deployments send sign-in back
+to the production URL. Test sign-in on the production (or staging) domain.
 
 **takumo-api**
 - `DATABASE_URL`, `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`
 - `WORKOS_WEBHOOK_SECRET` (step 3)
-- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (step 6)
-- `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (step 7)
+- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (step 5)
+- `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (step 6)
 - `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_WEB_URL`
 
 **takumo-web**
-- `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_WEB_URL`, `NEXT_PUBLIC_API_URL`
+- `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_WEB_URL`
 
-Everything else in the `.env.example` files (Stripe, Resend, BetterStack, Arcjet, PostHog,
-flags) is optional until Phase 6; leave it unset.
+Everything else in the `.env.example` files (Resend, BetterStack, Arcjet, flags) is optional;
+leave it unset.
 
 ## 3. WorkOS
 
@@ -102,11 +111,11 @@ Docker web service; Render is the simplest host (Fly.io or Cloud Run work the sa
 2. Instance: at least 2 CPUs and 2 GB (the solver uses several threads). Health check path `/health`.
 3. Environment: `ENGINE_SECRET` = a new value (`openssl rand -hex 32`). Render sets `PORT`.
 4. Put the service URL in `ENGINE_URL` and the same secret in `ENGINE_SECRET` on `takumo-app`,
-   then redeploy it. Without `ENGINE_SECRET` the engine accepts any caller, so always set it.
+   then redeploy it. On Render the engine refuses every call until `ENGINE_SECRET` is set.
 
 Check: `curl https://<engine-url>/health` returns `{"status":"ok"}`.
 
-## 6. Stripe (billing)
+## 5. Stripe (billing)
 
 Plans: Shop $499/month (5 users), Pro $1,499/month (Quote Copilot, connectors, unlimited users),
 Plant (custom, set by hand). New shops get a 30-day trial with everything in Pro. See
@@ -129,7 +138,7 @@ Plant (custom, set by hand). New shops get a 30-day trial with everything in Pro
 Design partners (free for 90 days): an admin opens `/admin` and clicks **+30 days** on the shop's
 trial as needed. A Plant customer: set `plan = 'plant'` on the shop's `Org` row.
 
-## 7. PostHog (analytics)
+## 6. PostHog (analytics)
 
 Create a PostHog project; put its key (`phc_…`) and host (`https://us.i.posthog.com`) in
 `NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` on `takumo-app` and `takumo-api`. People
@@ -141,7 +150,7 @@ are identified by WorkOS user id and grouped by shop (group type `company`). Ser
 from the Stripe webhook. The north star (docs/TAKUMO.md section 14) is `question_answered` +
 `quote_approved` per shop per week; `/admin` shows it from the database too.
 
-## 8. QuickBooks connector
+## 7. QuickBooks connector
 
 1. developer.intuit.com → create an app (QuickBooks Online and Payments) → scope
    **Accounting** → Redirect URI `https://<app-url>/api/connectors/quickbooks/callback`.
@@ -153,7 +162,7 @@ from the Stripe webhook. The north star (docs/TAKUMO.md section 14) is `question
 What it reads: customers (with payment terms) and estimates from the last three years, as past
 quotes. Read only. Synced on connect and hourly.
 
-## 9. Gmail connector (RFQ inbox)
+## 8. Gmail connector (RFQ inbox)
 
 1. Google Cloud console → a project → enable the **Gmail API** → OAuth consent screen (external)
    → scopes `gmail.readonly` and `email` → Credentials → OAuth client (web) with redirect URI
@@ -167,7 +176,7 @@ What it reads: new messages matching the shop's search (default: subjects like "
 for quote") since the last check; each becomes an RFQ in Quotes, attachments included. Read only.
 Checked on connect and hourly; a message is never read twice.
 
-## 10. Check
+## 9. Check
 
 See `docs/LAUNCH.md` for the full go-live runbook. Quick checks:
 
@@ -181,4 +190,5 @@ See `docs/LAUNCH.md` for the full go-live runbook. Quick checks:
   comparable quotes; **Approve quote**, then **Quote PDF** opens the quote.
 - Knowledge → Voice notes → record or type "setup on <machine> for <part> is really 2 hours" →
   a fact shows under Knowledge → Facts; approving it changes the routing.
-- Vercel → takumo-app → Settings → Cron Jobs lists `/api/cron/recalibrate`.
+- Vercel → takumo-app → Settings → Cron Jobs lists `/api/cron/recalibrate` and
+  `/api/cron/connectors`.
