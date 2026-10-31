@@ -16,7 +16,6 @@ export const SERVICES = {
     label: "takumo-app (apps/app)",
     required: {
       DATABASE_URL: { why: "database (pooled)" },
-      DIRECT_URL: { why: "migrations" },
       WORKOS_API_KEY: {
         why: "sign-in",
         prod: (v) => (v.startsWith("sk_test_") ? "is a WorkOS test key" : null),
@@ -101,11 +100,29 @@ export const SERVICES = {
           v.startsWith("whsec_") ? null : "doesn't look like a webhook secret",
       },
       NEXT_PUBLIC_APP_URL: { why: "links" },
+      NEXT_PUBLIC_WEB_URL: { why: "needed to build" },
     },
     recommended: {
       NEXT_PUBLIC_POSTHOG_KEY: { why: "subscription events" },
       NEXT_PUBLIC_POSTHOG_HOST: { why: "subscription events" },
       NEXT_PUBLIC_SENTRY_DSN: { why: "error reports" },
+    },
+  },
+  web: {
+    label: "takumo-web (apps/web)",
+    required: {
+      NEXT_PUBLIC_APP_URL: {
+        why: "sign-in and sign-up links",
+        prod: (v) => (https(v) ? null : "must be https"),
+      },
+      NEXT_PUBLIC_WEB_URL: {
+        why: "canonical links",
+        prod: (v) => (https(v) ? null : "must be https"),
+      },
+    },
+    recommended: {
+      NEXT_PUBLIC_POSTHOG_KEY: { why: "product analytics" },
+      NEXT_PUBLIC_POSTHOG_HOST: { why: "product analytics" },
     },
   },
 };
