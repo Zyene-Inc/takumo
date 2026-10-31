@@ -18,6 +18,7 @@
     "@repo/feature-flags": "workspace:*",
     "@repo/next-config": "workspace:*",
     "@repo/observability": "workspace:*",
+    "@repo/payments": "workspace:*",
     "@repo/rate-limit": "workspace:*",
     "@repo/security": "workspace:*",
     "@repo/seo": "workspace:*",

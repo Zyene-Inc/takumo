@@ -1,6 +1,8 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { generateText } from "@repo/ai";
+import { models } from "@repo/ai/lib/models";
+import { costUsd } from "@repo/ai/lib/pricing";
 import { database, forOrg } from "@repo/database";
 import type { ScheduleResponse } from "@repo/engine-client/types";
 import { afterAll, beforeAll, describe, test } from "vitest";
@@ -32,6 +34,10 @@ interface Outcome {
 }
 
 const outcomes: Outcome[] = [];
+// EVAL_MODEL=sonnet runs the questions on Sonnet (cheaper, for day-to-day
+// checks); the default is the agent's own model (Opus), as in production.
+const EVAL_MODEL = process.env.EVAL_MODEL === "sonnet" ? models.chat : null;
+let spentUsd = 0;
 const ctx = {} as EvalContext;
 let started = new Date();
 
@@ -115,7 +121,7 @@ afterAll(async () => {
         `${o.failures.length ? "✗" : "✓"} ${o.q}${o.failures.length ? `\n    ${o.failures.join("\n    ")}` : ""}`
     );
   process.stdout.write(
-    `\nAsk Takumo golden questions: ${passed}/${GOLDEN.length} passed\n${lines.join("\n")}\n` +
+    `\nAsk Takumo golden questions: ${passed}/${GOLDEN.length} passed (Claude cost about $${spentUsd.toFixed(2)})\n${lines.join("\n")}\n` +
       `Details: ${path.relative(process.cwd(), path.join(RESULTS, "latest.json"))}\n`
   );
 });
@@ -131,7 +137,12 @@ describe("Ask Takumo golden questions", () => {
       userId: null,
       today: EVAL_TODAY,
     });
-    const result = await generateText({ ...settings, prompt: golden.q });
+    const result = await generateText({
+      ...settings,
+      ...(EVAL_MODEL ? { model: EVAL_MODEL } : {}),
+      prompt: golden.q,
+    });
+    spentUsd += costUsd(result.response.modelId, result.totalUsage) ?? 0;
     const graded = grade(golden, result, ctx);
     outcomes.push({
       q: golden.q,

@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { LanguageModelUsage } from "@repo/ai";
 import { generateText, Output } from "@repo/ai";
 import { models } from "@repo/ai/lib/models";
 import { z } from "zod";
@@ -113,6 +114,8 @@ export interface ReadRfq {
   questions: string[];
   reading: RfqReading;
   requestedDate: string | null;
+  /** What the read cost (recorded by the caller, which knows the shop). */
+  usage: { modelId: string; tokens: LanguageModelUsage };
 }
 
 const SYSTEM = `You read requests for quote (RFQs) sent to a CNC machining and fabrication job shop, from emails, PDFs and Word files, and turn them into structured lines for the shop's estimator.
@@ -152,7 +155,7 @@ export const extractRfq = async (
   receivedOn: string,
   shop: ShopLists
 ): Promise<ReadRfq> => {
-  const { output } = await generateText({
+  const { output, usage, response } = await generateText({
     model: models.extract,
     output: Output.object({ schema }),
     system: SYSTEM,
@@ -232,5 +235,6 @@ ${text}
     questions: output.questions.slice(0, 4),
     lines,
     reading: output,
+    usage: { modelId: response.modelId, tokens: usage },
   };
 };

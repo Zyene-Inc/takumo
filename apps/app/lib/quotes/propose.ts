@@ -1,6 +1,6 @@
 import "server-only";
 
-import { generateText, Output } from "@repo/ai";
+import { generateText, type LanguageModelUsage, Output } from "@repo/ai";
 import { models } from "@repo/ai/lib/models";
 import type { QuoteOperation } from "@repo/engine-client/types";
 import { z } from "zod";
@@ -71,9 +71,13 @@ ${p.routing.map((r) => `  op ${r.seq} ${r.work_center}: ${r.setup_min} min setup
 /** Ask Claude for a routing; returns operations with their basis, and notes. */
 export const proposeRouting = async (
   input: ProposeInput
-): Promise<{ ops: QuoteOperation[]; notes: string[] }> => {
+): Promise<{
+  notes: string[];
+  ops: QuoteOperation[];
+  usage: { modelId: string; tokens: LanguageModelUsage };
+}> => {
   const { line } = input;
-  const { output } = await generateText({
+  const { output, usage, response } = await generateText({
     model: models.agent,
     output: Output.object({ schema }),
     system: SYSTEM,
@@ -100,5 +104,9 @@ Part to quote:
     input.candidates,
     input.machines.map((m) => m.name)
   );
-  return { ops, notes: [...output.notes.slice(0, 3), ...dropped] };
+  return {
+    ops,
+    notes: [...output.notes.slice(0, 3), ...dropped],
+    usage: { modelId: response.modelId, tokens: usage },
+  };
 };

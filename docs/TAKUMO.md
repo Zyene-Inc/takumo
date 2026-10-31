@@ -250,6 +250,7 @@ takumo/                               # next-forge Turborepo (pnpm)
 | **4. Quote Copilot** | 11–13 | RFQ parse (PDF/email), comparables, cost model, approve → PDF | Estimator accepts the draft with small edits 70%+ of the time |
 | **5. Tribal knowledge + calibration** | 14–16 | Facts, review queue, voice notes, nightly recalibration | Model error on setup time drops week over week |
 | **6. Paid launch** | 17–20 | Stripe, onboarding polish, QuickBooks + Gmail connectors, PostHog | 3 paying shops |
+| **7. Launch readiness** | 21 | Claude cost controls (prompt caching, spend per shop, monthly cap), launch checks (`pnpm check:env`, `/api/health`), data export, in-app help, pricing page, go-live runbook (`docs/LAUNCH.md`) | Design partners live on production, with backups, monitoring and a spend limit in place |
 
 ## 14. Design partners and metrics
 - Recruit **3–5 local job shops** (state manufacturing extension programs, NTMA chapters, LinkedIn). Free for 90 days in exchange for data, weekly feedback, and a case study.

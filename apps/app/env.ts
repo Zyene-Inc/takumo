@@ -36,6 +36,8 @@ export const env = createEnv({
     GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
     // Takumo staff (WorkOS user ids, comma separated) who can see /admin.
     ADMIN_USER_IDS: z.string().optional(),
+    // Claude spend cap per shop per month, in USD (unset = no cap).
+    AI_MONTHLY_BUDGET_USD: z.string().regex(/^\d+(\.\d+)?$/).optional(),
   },
   client: {},
   runtimeEnv: {
@@ -47,5 +49,6 @@ export const env = createEnv({
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
     ADMIN_USER_IDS: process.env.ADMIN_USER_IDS,
+    AI_MONTHLY_BUDGET_USD: process.env.AI_MONTHLY_BUDGET_USD,
   },
 });

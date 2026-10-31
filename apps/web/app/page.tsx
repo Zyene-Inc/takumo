@@ -60,6 +60,9 @@ const Home = () => (
           </Link>
         </Button>
         <Button asChild size="lg" variant="outline">
+          <Link href="/pricing">See pricing</Link>
+        </Button>
+        <Button asChild size="lg" variant="ghost">
           <Link href="mailto:hello@takumo.ai">Talk to us</Link>
         </Button>
       </div>
@@ -75,8 +78,11 @@ const Home = () => (
       ))}
     </section>
 
-    <footer className="border-t pt-6 text-muted-foreground text-sm">
-      © {new Date().getFullYear()} Zyene · takumo.ai
+    <footer className="flex flex-wrap gap-4 border-t pt-6 text-muted-foreground text-sm">
+      <span>© {new Date().getFullYear()} Zyene · takumo.ai</span>
+      <Link className="hover:underline" href="/pricing">
+        Pricing
+      </Link>
     </footer>
   </main>
 );

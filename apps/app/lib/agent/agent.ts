@@ -81,5 +81,12 @@ export const agentSettings = async (
     system: systemPrompt(org?.name ?? "this shop", ctx.today),
     tools: createTools(ctx, counters),
     stopWhen: stepCountIs(MAX_STEPS),
+    // Each step re-sends the tools, the instructions and the steps so far:
+    // automatic caching moves a breakpoint to the end of each request, so the
+    // next step reads that prefix from cache (5% of the input price on Opus)
+    // instead of paying for it again.
+    providerOptions: {
+      anthropic: { cacheControl: { type: "ephemeral" as const } },
+    },
   };
 };

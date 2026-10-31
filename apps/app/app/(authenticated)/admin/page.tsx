@@ -12,6 +12,7 @@ import { entitlements } from "@repo/payments/plans";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/admin";
+import { monthlyBudget } from "@/lib/ai-usage";
 import { Header } from "../components/header";
 import { ExtendTrial } from "./extend-trial";
 
@@ -26,7 +27,9 @@ const AdminPage = async () => {
     notFound();
   }
   const since = new Date(Date.now() - WEEK_MS);
-  const [orgs, questions, drafted, rfqs, members] = await Promise.all([
+  const now = new Date();
+  const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const [orgs, questions, drafted, rfqs, members, ai] = await Promise.all([
     database.org.findMany({
       orderBy: { createdAt: "desc" },
       select: {
@@ -57,7 +60,16 @@ const AdminPage = async () => {
       _count: true,
     }),
     database.member.groupBy({ by: ["orgId"], _count: true }),
+    database.aiUsage.groupBy({
+      by: ["orgId"],
+      where: { createdAt: { gte: month } },
+      _sum: { costUsd: true },
+    }),
   ]);
+  const aiSpend = (id: string) =>
+    Number(ai.find((r) => r.orgId === id)?._sum.costUsd ?? 0);
+  const aiTotal = ai.reduce((sum, r) => sum + Number(r._sum.costUsd ?? 0), 0);
+  const budget = monthlyBudget();
   const conversations = await database.conversation.findMany({
     where: { id: { in: questions.map((q) => q.conversationId) } },
     select: { id: true, orgId: true },
@@ -83,7 +95,7 @@ const AdminPage = async () => {
     <>
       <Header page="Admin" pages={["Takumo"]} />
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl border p-4">
             <p className="text-muted-foreground text-sm">Paying shops</p>
             <p className="mt-1 font-semibold text-2xl">
@@ -116,6 +128,17 @@ const AdminPage = async () => {
               Questions asked + quotes sent from drafts
             </p>
           </div>
+          <div className="rounded-xl border p-4">
+            <p className="text-muted-foreground text-sm">
+              Claude spend this month
+            </p>
+            <p className="mt-1 font-semibold text-2xl">${aiTotal.toFixed(2)}</p>
+            <p className="text-muted-foreground text-xs">
+              {budget === null
+                ? "No cap per shop (AI_MONTHLY_BUDGET_USD)"
+                : `Cap $${budget} per shop`}
+            </p>
+          </div>
         </div>
         <div className="rounded-xl border">
           <Table>
@@ -129,6 +152,7 @@ const AdminPage = async () => {
                 <TableHead className="text-right">RFQs (7d)</TableHead>
                 <TableHead className="text-right">Quotes sent (7d)</TableHead>
                 <TableHead className="text-right">Connectors</TableHead>
+                <TableHead className="text-right">Claude $ (month)</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -176,6 +200,12 @@ const AdminPage = async () => {
                   </TableCell>
                   <TableCell className="text-right">
                     {s._count.connections}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {aiSpend(s.id).toFixed(2)}
+                    {budget !== null && aiSpend(s.id) >= budget && (
+                      <span className="text-destructive text-xs"> capped</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {s.plan === "trial" && <ExtendTrial orgId={s.id} />}

@@ -15,6 +15,7 @@ import {
   titleFrom,
   toolParts,
 } from "@/lib/agent/conversations";
+import { recordUsage } from "@/lib/ai-usage";
 import { track } from "@/lib/analytics";
 import { featureProblem } from "@/lib/billing";
 import { checkToday } from "@/lib/schedule/request";
@@ -137,6 +138,9 @@ export const POST = async (request: Request) => {
     messages: await convertToModelMessages(messages, { tools: settings.tools }),
     onError: ({ error }) =>
       log.error("Ask Takumo failed", { error: String(error) }),
+    // Every step of the answer, cache reads and writes included.
+    onFinish: ({ totalUsage, response }) =>
+      recordUsage(orgId, "ask", response.modelId, totalUsage, userId),
   });
   // Finish (and save) the answer even if the browser goes away.
   result.consumeStream();
