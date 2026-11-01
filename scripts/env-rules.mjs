@@ -102,6 +102,13 @@ export const SERVICES = {
       },
       GOOGLE_CLIENT_ID: { why: "Gmail connector" },
       GOOGLE_CLIENT_SECRET: { why: "Gmail connector" },
+      MICROSOFT_CLIENT_ID: { why: "Outlook connector" },
+      MICROSOFT_CLIENT_SECRET: { why: "Outlook connector" },
+      INBOUND_EMAIL_SECRET: {
+        why: "ERP reports and RFQs by email (services/mail)",
+        check: (v) => (v.length < 32 ? "should be at least 32 characters" : null),
+      },
+      INBOUND_EMAIL_DOMAIN: { why: "ERP reports and RFQs by email" },
       OPENAI_API_KEY: {
         why: "document vector search, audio-file transcription",
         skip: usesVertex,

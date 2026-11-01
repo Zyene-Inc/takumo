@@ -34,6 +34,13 @@ export const env = createEnv({
     QUICKBOOKS_ENVIRONMENT: z.enum(["sandbox", "production"]).optional(),
     GOOGLE_CLIENT_ID: z.string().min(1).optional(),
     GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+    // Outlook / Microsoft 365 connector: a multi-tenant Entra app.
+    MICROSOFT_CLIENT_ID: z.string().min(1).optional(),
+    MICROSOFT_CLIENT_SECRET: z.string().min(1).optional(),
+    // Inbound email (services/mail → /api/inbound/email): the shared secret
+    // the mail receiver signs with, and the domain shops' addresses live on.
+    INBOUND_EMAIL_SECRET: z.string().min(32).optional(),
+    INBOUND_EMAIL_DOMAIN: z.string().min(3).optional(),
     // Takumo staff (WorkOS user ids, comma separated) who can see /admin.
     ADMIN_USER_IDS: z.string().optional(),
     // Claude spend cap per shop per month, in USD (unset = no cap).
@@ -48,6 +55,10 @@ export const env = createEnv({
     QUICKBOOKS_ENVIRONMENT: process.env.QUICKBOOKS_ENVIRONMENT,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
+    MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
+    INBOUND_EMAIL_SECRET: process.env.INBOUND_EMAIL_SECRET,
+    INBOUND_EMAIL_DOMAIN: process.env.INBOUND_EMAIL_DOMAIN,
     ADMIN_USER_IDS: process.env.ADMIN_USER_IDS,
     AI_MONTHLY_BUDGET_USD: process.env.AI_MONTHLY_BUDGET_USD,
   },
