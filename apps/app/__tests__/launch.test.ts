@@ -7,7 +7,7 @@ import { checkService, SERVICES } from "../../../scripts/env-rules.mjs";
 import { entityCsv, plainCsv, zipFiles } from "../lib/export/csv";
 import { ARTICLES } from "../lib/help/articles";
 
-describe("Claude cost", () => {
+describe("AI cost", () => {
   test("uncached, cache reads, cache writes and output are priced separately", () => {
     // 1M of each on Opus 5.5: $4 + $0.20 + $5 + $20.
     const usage = {
@@ -20,6 +20,13 @@ describe("Claude cost", () => {
 
   test("without a breakdown, all input is priced as uncached", () => {
     expect(costUsd("claude-haiku-5-5", { inputTokens: 2_000_000, outputTokens: 0 })).toBeCloseTo(0.2, 6);
+    expect(
+      costUsd("gemini-3.5-flash-lite", {
+        inputTokens: 1_000_000,
+        inputTokenDetails: { cacheReadTokens: 500_000 },
+        outputTokens: 1_000_000,
+      })
+    ).toBeCloseTo(0.15 + 0.015 + 2.5, 6);
   });
 
   test("caching makes a 10-step answer far cheaper", () => {
@@ -43,7 +50,14 @@ describe("Claude cost", () => {
   test("an unknown model isn't priced; dated ids match their model", () => {
     expect(costUsd("gpt-5", { inputTokens: 1 })).toBeNull();
     expect(costUsd("claude-sonnet-5-5-20261001", { inputTokens: 1_000_000 })).toBeCloseTo(2, 6);
-    expect(Object.keys(PRICES)).toEqual(["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
+    expect(Object.keys(PRICES)).toEqual([
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "gemini-4-argon",
+      "gemini-3.8-flash",
+      "gemini-3.5-flash-lite",
+    ]);
   });
 });
 
@@ -85,6 +99,19 @@ describe("launch settings check", () => {
     expect(local.some((p) => p.name === "STRIPE_SECRET_KEY")).toBe(false);
     const key = checkService(SERVICES.app, { CONNECTOR_ENCRYPTION_KEY: Buffer.alloc(16).toString("base64") });
     expect(key.find((p) => p.name === "CONNECTOR_ENCRYPTION_KEY")?.problem).toMatch(/32 bytes/);
+  });
+
+  test("Gemini on Vertex replaces the Anthropic and OpenAI keys", () => {
+    const names = (env: Record<string, string>) =>
+      checkService(SERVICES.app, env).map((p) => p.name);
+    expect(names({})).toContain("ANTHROPIC_API_KEY");
+    expect(names({})).not.toContain("GOOGLE_SERVICE_ACCOUNT_JSON");
+    const vertex = names({ GOOGLE_GENAI_USE_VERTEXAI: "true" });
+    expect(vertex).not.toContain("ANTHROPIC_API_KEY");
+    expect(vertex).not.toContain("OPENAI_API_KEY");
+    expect(vertex).toEqual(expect.arrayContaining(["GOOGLE_CLOUD_PROJECT", "GOOGLE_SERVICE_ACCOUNT_JSON"]));
+    const bad = checkService(SERVICES.app, { GOOGLE_GENAI_USE_VERTEXAI: "true", GOOGLE_SERVICE_ACCOUNT_JSON: "{}" });
+    expect(bad.find((p) => p.name === "GOOGLE_SERVICE_ACCOUNT_JSON")?.problem).toContain("client_email");
   });
 });
 

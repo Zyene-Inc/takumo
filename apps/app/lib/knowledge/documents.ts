@@ -1,8 +1,7 @@
 import "server-only";
 
 import { embed, embedMany } from "@repo/ai";
-import { keys as aiKeys } from "@repo/ai/keys";
-import { EMBEDDING_DIMENSIONS, models } from "@repo/ai/lib/models";
+import { canEmbed, embeddingOptions, models } from "@repo/ai/lib/models";
 import { database, forOrg } from "@repo/database";
 import { log } from "@repo/observability/log";
 import {
@@ -31,13 +30,7 @@ export const cleanName = (fileName: string) =>
     .trim()
     .slice(0, 160) || "Untitled";
 
-const canEmbed = () => Boolean(aiKeys().OPENAI_API_KEY);
-
 const vectorLiteral = (values: number[]) => `[${values.join(",")}]`;
-
-const embeddingOptions = {
-  providerOptions: { openai: { dimensions: EMBEDDING_DIMENSIONS } },
-};
 
 /** Store a document's chunks. Re-uploading a file with the same name replaces it. */
 export const saveDocument = async (
@@ -76,12 +69,12 @@ export const saveDocument = async (
   }));
   await db.docChunk.createMany({ data: rows });
 
-  if (canEmbed()) {
+  if (canEmbed) {
     try {
       const { embeddings } = await embedMany({
         model: models.embeddings,
         values: rows.map((r) => r.content),
-        ...embeddingOptions,
+        ...embeddingOptions("document"),
       });
       await database.$transaction(
         rows.map((row, i) =>
@@ -171,12 +164,12 @@ export const searchDocuments = async (
     : [];
 
   let vector: Row[] = [];
-  if (canEmbed()) {
+  if (canEmbed) {
     try {
       const { embedding } = await embed({
         model: models.embeddings,
         value: query,
-        ...embeddingOptions,
+        ...embeddingOptions("query"),
       });
       vector = await database.$queryRawUnsafe<Row[]>(
         VECTOR_SQL,

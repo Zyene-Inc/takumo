@@ -1,6 +1,7 @@
 export interface Rule {
   check?: (value: string) => string | null;
   prod?: (value: string) => string | null;
+  skip?: (env: Record<string, string | undefined>) => boolean;
   why: string;
 }
 export interface Service {

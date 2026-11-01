@@ -2,6 +2,18 @@
 // Pure data plus checks on a value's shape; values are never printed.
 
 const https = (v) => v.startsWith("https://");
+const usesVertex = (env) => env.GOOGLE_GENAI_USE_VERTEXAI?.trim() === "true";
+const serviceAccount = (v) => {
+  try {
+    const key = JSON.parse(v);
+    return typeof key.client_email === "string" &&
+      typeof key.private_key === "string"
+      ? null
+      : "needs client_email and private_key";
+  } catch {
+    return "isn't valid JSON";
+  }
+};
 const base64Key32 = (v) => {
   try {
     return Buffer.from(v, "base64").length === 32;
@@ -10,7 +22,10 @@ const base64Key32 = (v) => {
   }
 };
 
-/** Each variable: why it's needed, and an optional check (value → problem or null). */
+/**
+ * Each variable: why it's needed, an optional check (value → problem or
+ * null), and an optional skip (env → true when the setup doesn't use it).
+ */
 export const SERVICES = {
   app: {
     label: "takumo-app (apps/app)",
@@ -35,9 +50,19 @@ export const SERVICES = {
       },
       NEXT_PUBLIC_WEB_URL: { why: "marketing site links" },
       ANTHROPIC_API_KEY: {
-        why: "Ask Takumo, RFQ reading, notes",
+        why: "Ask Takumo, RFQ reading, notes (or Gemini on Vertex AI)",
         check: (v) =>
           v.startsWith("sk-ant-") ? null : "doesn't look like an Anthropic key",
+        skip: usesVertex,
+      },
+      GOOGLE_CLOUD_PROJECT: {
+        why: "Gemini on Vertex AI",
+        skip: (env) => !usesVertex(env),
+      },
+      GOOGLE_SERVICE_ACCOUNT_JSON: {
+        why: "Gemini on Vertex AI",
+        check: serviceAccount,
+        skip: (env) => !usesVertex(env),
       },
       ASK_DATABASE_URL: { why: "Ask Takumo's read-only queries" },
       ENGINE_URL: {
@@ -79,6 +104,7 @@ export const SERVICES = {
       GOOGLE_CLIENT_SECRET: { why: "Gmail connector" },
       OPENAI_API_KEY: {
         why: "document vector search, audio-file transcription",
+        skip: usesVertex,
       },
     },
   },
@@ -135,6 +161,9 @@ export const checkService = (service, env, { production = false } = {}) => {
     ["recommended", service.recommended],
   ]) {
     for (const [name, rule] of Object.entries(vars)) {
+      if (rule.skip?.(env)) {
+        continue;
+      }
       const value = (env[name] ?? "").trim();
       if (!value) {
         out.push({ name, level, problem: "not set", why: rule.why });

@@ -84,7 +84,8 @@ export const agentSettings = async (
     // Each step re-sends the tools, the instructions and the steps so far:
     // automatic caching moves a breakpoint to the end of each request, so the
     // next step reads that prefix from cache (5% of the input price on Opus)
-    // instead of paying for it again.
+    // instead of paying for it again. Gemini caches repeated prefixes on its
+    // own and ignores this option.
     providerOptions: {
       anthropic: { cacheControl: { type: "ephemeral" as const } },
     },
