@@ -16,6 +16,7 @@ import {
   titleFrom,
   toolParts,
 } from "@/lib/agent/conversations";
+import { compactHistory } from "@/lib/agent/history";
 import { chooseMode } from "@/lib/agent/mode";
 import { recordUsage } from "@/lib/ai-usage";
 import { track } from "@/lib/analytics";
@@ -149,7 +150,9 @@ export const POST = async (request: Request) => {
   const messages = [...history, userMessage];
   const result = streamText({
     ...settings,
-    messages: await convertToModelMessages(messages, { tools: settings.tools }),
+    messages: await convertToModelMessages(compactHistory(messages), {
+      tools: settings.tools,
+    }),
     onError: ({ error }) =>
       log.error("Ask Takumo failed", { error: String(error) }),
     // Each step as it finishes (cache reads and writes included), so the

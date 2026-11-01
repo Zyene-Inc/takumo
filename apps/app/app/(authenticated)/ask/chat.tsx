@@ -32,6 +32,7 @@ import {
   SquareIcon,
   ZapIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   type KeyboardEvent,
@@ -42,6 +43,7 @@ import {
 } from "react";
 import { type AnswerMode, type AskMode, splitAnswer } from "@/lib/agent/answer";
 import { collectSources, type Source } from "@/lib/agent/citations";
+import { LONG_CONVERSATION } from "@/lib/agent/history";
 import {
   STARTER_LABEL,
   STARTER_TOPICS,
@@ -393,6 +395,7 @@ export const Chat = ({
     });
 
   const busy = status === "submitted" || status === "streaming";
+  const questions = messages.filter((m) => m.role === "user").length;
   const starting = messages.length === 0 && !initialQuestion;
   const registry = useMemo(
     () => collectSources(outputsOf(messages)),
@@ -457,6 +460,15 @@ export const Chat = ({
         send(input);
       }}
     >
+      {questions >= LONG_CONVERSATION && (
+        <p className="px-3 pb-1.5 text-muted-foreground text-xs">
+          Long conversation: for a new topic,{" "}
+          <Link className="underline underline-offset-2" href="/ask">
+            start a new chat
+          </Link>{" "}
+          for faster, sharper answers.
+        </p>
+      )}
       <div className="grid gap-1 rounded-2xl border bg-muted/40 p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring/40">
         <Textarea
           aria-label="Ask Takumo"

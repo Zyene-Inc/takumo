@@ -3,6 +3,7 @@ import path from "node:path";
 import { checkSql, QueryError } from "@repo/database/sql-guard";
 import { describe, expect, test } from "vitest";
 import { hintedMode, splitAnswer } from "../lib/agent/answer";
+import { compactHistory } from "../lib/agent/history";
 import {
   cite,
   collectSources,
@@ -356,5 +357,49 @@ describe("start screen examples", () => {
       expect(s[t]).toHaveLength(4);
       expect(s[t].join(" ")).not.toMatch(/undefined|null/);
     }
+  });
+});
+
+describe("conversation history sent to the model", () => {
+  const user = (text: string) => ({
+    role: "user" as const,
+    parts: [{ type: "text" as const, text }],
+  });
+  const answer = (text: string) => ({
+    role: "assistant" as const,
+    parts: [
+      { type: "step-start" as const },
+      {
+        type: "tool-query_data" as const,
+        toolCallId: text,
+        state: "output-available" as const,
+        input: {},
+        output: { rows: [] },
+      },
+      { type: "text" as const, text },
+    ],
+  });
+
+  test("keeps the last questions in full and only the answers before them", () => {
+    const messages = [
+      user("q1"), answer("a1"),
+      user("q2"), answer("a2"),
+      user("q3"), answer("a3"),
+      user("q4"),
+    ];
+    const sent = compactHistory(messages, 2);
+    expect(sent).toHaveLength(messages.length);
+    expect(sent[1].parts.map((p) => p.type)).toEqual(["text"]);
+    expect(sent[3].parts.map((p) => p.type)).toEqual(["text"]);
+    expect(sent[5]).toBe(messages[5]);
+    expect(sent[6]).toBe(messages[6]);
+  });
+
+  test("a short conversation goes as it is; an answer with no text is dropped", () => {
+    const short = [user("q1"), answer("a1"), user("q2")];
+    expect(compactHistory(short)).toEqual(short);
+    const toolOnly = { role: "assistant" as const, parts: [{ type: "step-start" as const }] };
+    const sent = compactHistory([user("q1"), toolOnly, user("q2"), answer("a2"), user("q3")], 2);
+    expect(sent.map((m) => m.role)).toEqual(["user", "user", "assistant", "user"]);
   });
 });
