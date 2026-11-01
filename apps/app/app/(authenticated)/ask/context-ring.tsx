@@ -10,8 +10,8 @@ import { cn } from "@repo/design-system/lib/utils";
 import { useMemo, useRef } from "react";
 import { estimateContextTokens } from "@/lib/agent/history";
 
-const SIZE = 20;
-const STROKE = 3;
+const SIZE = 16;
+const STROKE = 2.5;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const NEARLY_FULL = 0.8;
@@ -53,7 +53,7 @@ export const ContextRing = ({
       <TooltipTrigger asChild>
         <button
           aria-label={`Context ${Math.round(share * 100)}% full`}
-          className="grid size-8 place-items-center rounded-full hover:bg-muted"
+          className="grid size-7 place-items-center rounded-full hover:bg-muted"
           type="button"
         >
           <svg
