@@ -50,6 +50,11 @@ or the service dashboards; never commit them.
 - `ASK_DATABASE_URL` (step 1.3): the reader's connection string; without it Ask Takumo can't query data
 - `OPENAI_API_KEY` (optional): vector search over documents, and transcribing uploaded voice-note
   recordings; keyword search and recording in the browser work without it
+- Or Gemini on Vertex AI for every AI feature instead of the two keys above:
+  `GOOGLE_GENAI_USE_VERTEXAI` = `true`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` = `global`,
+  `GOOGLE_SERVICE_ACCOUNT_JSON` = the contents of a service account key with the Vertex AI User
+  role (Google Cloud → IAM → Service accounts → Keys → Add key → JSON). Removing
+  `GOOGLE_GENAI_USE_VERTEXAI` switches back to Claude
 - `ENGINE_URL` = the engine's URL (step 4), `ENGINE_SECRET` = the same value as on the engine
 - `CRON_SECRET` = a new value (`openssl rand -hex 32`): Vercel sends it to the nightly
   recalibration (`/api/cron/recalibrate`, 07:00 UTC, in `apps/app/vercel.json`); without it the

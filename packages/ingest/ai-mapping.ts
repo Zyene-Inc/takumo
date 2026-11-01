@@ -6,8 +6,7 @@ import {
   NoObjectGeneratedError,
   Output,
 } from "@repo/ai";
-import { keys } from "@repo/ai/keys";
-import { models } from "@repo/ai/lib/models";
+import { canGenerate, models } from "@repo/ai/lib/models";
 import { log } from "@repo/observability/log";
 import { z } from "zod";
 import { ENTITIES, ENTITY_KEYS, type EntityKey } from "./entities";
@@ -88,7 +87,7 @@ export const suggestMappingWithAi = async ({
   onUsage?: OnUsage;
 }): Promise<ColumnMapping> => {
   const fallback = suggestMapping(entity ?? detectEntity(headers), headers);
-  if (!(useAi && keys().ANTHROPIC_API_KEY) || headers.length === 0) {
+  if (!(useAi && canGenerate) || headers.length === 0) {
     return fallback;
   }
 

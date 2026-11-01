@@ -55,7 +55,7 @@ export const submitNote = async (note: {
   return { ok: true, proposed: result.proposed, skipped: result.skipped };
 };
 
-/** Speech to text for a recording (needs OPENAI_API_KEY). */
+/** Speech to text for a recording (needs Vertex AI or OPENAI_API_KEY). */
 export const transcribe = async (
   form: FormData
 ): Promise<Result<{ durationSec: number | null; text: string }>> => {

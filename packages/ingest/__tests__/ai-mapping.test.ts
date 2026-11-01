@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const generateText = vi.hoisted(() => vi.fn());
-const apiKey = vi.hoisted(() => ({
-  value: "sk-ant-test" as string | undefined,
-}));
+const ai = vi.hoisted(() => ({ configured: true }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@repo/ai", () => ({
@@ -11,10 +9,12 @@ vi.mock("@repo/ai", () => ({
   NoObjectGeneratedError: { isInstance: () => false },
   Output: { object: (options: unknown) => options },
 }));
-vi.mock("@repo/ai/keys", () => ({
-  keys: () => ({ ANTHROPIC_API_KEY: apiKey.value }),
+vi.mock("@repo/ai/lib/models", () => ({
+  models: { extract: "haiku" },
+  get canGenerate() {
+    return ai.configured;
+  },
 }));
-vi.mock("@repo/ai/lib/models", () => ({ models: { extract: "haiku" } }));
 vi.mock("@repo/observability/log", () => ({ log: { warn: vi.fn() } }));
 
 const { suggestMappingWithAi } = await import("../ai-mapping");
@@ -27,7 +27,7 @@ const rows = [
 describe("suggestMappingWithAi", () => {
   beforeEach(() => {
     generateText.mockReset();
-    apiKey.value = "sk-ant-test";
+    ai.configured = true;
   });
 
   test("uses the model's mapping and drops columns that aren't in the file", async () => {
@@ -119,7 +119,7 @@ describe("suggestMappingWithAi", () => {
   });
 
   test("doesn't call the model without an API key", async () => {
-    apiKey.value = undefined;
+    ai.configured = false;
     const mapping = await suggestMappingWithAi({
       fileName: "x.csv",
       headers,

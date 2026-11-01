@@ -113,8 +113,8 @@ const AudioUpload = ({
   if (!canTranscribe) {
     return (
       <p className="text-muted-foreground text-sm">
-        Transcribing audio files needs an OpenAI key (OPENAI_API_KEY). Recording
-        here works without one.
+        Transcribing audio files isn't set up (it needs Gemini on Vertex AI or
+        an OpenAI key). Recording here works without it.
       </p>
     );
   }

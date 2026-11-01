@@ -1,6 +1,8 @@
-// What Claude calls cost, from Anthropic's list prices (USD per million
-// tokens, first-party API, October 2026). Cache writes are the 5-minute TTL
-// (1.25× input). Update when prices change. Pure, so tested.
+// What model calls cost (USD per million tokens). Claude: Anthropic's list
+// prices, first-party API, October 2026; cache writes are the 5-minute TTL
+// (1.25× input). Gemini: Vertex AI standard prices on the global endpoint,
+// November 2026, without promotional credits; implicit caching has no write
+// charge. Update when prices change. Pure, so tested.
 
 export interface ModelPrice {
   cacheRead: number;
@@ -22,6 +24,19 @@ export const PRICES: Record<string, ModelPrice> = {
     output: 0.5,
     cacheRead: 0.01,
     cacheWrite: 0.125,
+  },
+  "gemini-4-argon": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0 },
+  "gemini-3.8-flash": {
+    input: 1.5,
+    output: 7.5,
+    cacheRead: 0.15,
+    cacheWrite: 0,
+  },
+  "gemini-3.5-flash-lite": {
+    input: 0.3,
+    output: 2.5,
+    cacheRead: 0.03,
+    cacheWrite: 0,
   },
 };
 
