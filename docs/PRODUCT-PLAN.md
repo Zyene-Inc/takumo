@@ -140,7 +140,7 @@ Each feature has the same sections: problem, user story, requirements, data, edg
 
 **Requirements**
 - R1. Sign 3–5 shops covering at least two of: Epicor, NetSuite, JobBOSS², ProShop. Paper: a short pilot agreement (data use, confidentiality, free during pilot, feedback calls every 2 weeks).
-- R2. From each shop collect, under NDA, kept only in the shop's own Takumo organization:
+- R2. From each shop collect, under NDA, kept in an answer-key folder that git ignores (`apps/app/evals/partners/<shop>/`, on an encrypted disk) and in the shop's own Takumo organization:
   - ERP report exports: open jobs/work orders, parts with routings, customers, materials, stock on hand, open purchase orders, employees/operators.
   - **10 RFQs** with drawings and the **quote actually sent** (price per quantity, lead time). This is the quote answer key.
   - **5 "can we ship by X?" cases** with the answer given and what actually happened. This is the feasibility answer key.
@@ -149,15 +149,17 @@ Each feature has the same sections: problem, user story, requirements, data, edg
 
 **Acceptance.** Answer keys for at least 3 shops are loaded into Takumo; baselines recorded.
 
+**Kit.** Outreach email, agreement checklist, kickoff agenda, data request and answer-key guide: [design-partners/README.md](design-partners/README.md).
+
 #### F0.2 Evaluation harness
 **Problem.** Every change to drawing reading, pricing or scheduling can make results better or worse; we need to know which before shipping.
 
 **Requirements**
-- R1. `pnpm --filter app eval:quotes-real`: runs each answer-key RFQ through the full quote pipeline (F2.1–F2.4) and reports per line: draft price vs sent price (% diff), draft lead time vs sent (days), drawing fields read correctly (material, revision, finish, tolerances), and cost per RFQ.
-- R2. `pnpm --filter app eval:feasibility`: runs each answer-key case through F3.3 and reports agree/disagree with the planner's answer, with the reason.
-- R3. Results saved as JSON with date and git commit, so runs can be compared.
-- R4. Evals cost money: each run prints its AI cost first and needs `--yes` to proceed. Never run in CI automatically.
-- R5. Lives next to the existing suites in `apps/app/evals/`.
+- R1. `pnpm --filter app eval:partners` runs each answer-key RFQ through the real quote pipeline (intake, reading, pricing as of the day it arrived) and reports per line: lines found; revision, quantities, material and finish read; draft price vs sent price (% diff); draft lead time vs sent (days). Drawing fields are added when F2.2 ships.
+- R2. The same command runs each delivery question through the capacity check and reports agree/disagree with the planner, days off vs the planner's date and vs the actual ship date; cases older than 3 days are marked historical.
+- R3. Results saved as JSON with date and git commit (`apps/app/evals/results/partners-<shop>-<time>.json`), so runs can be compared.
+- R4. Evals cost money: without `EVAL_CONFIRM=yes` it only checks the answer keys (free) and prints what a run would cost. Never run in CI automatically.
+- R5. Answer keys are one Excel workbook per shop (`docs/design-partners/answer-key-template.xlsx`); every problem is reported with its sheet and row. The run removes the RFQs and checks it made from the shop's organization.
 
 **Acceptance.** One command produces the accuracy table for all design partners.
 

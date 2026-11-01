@@ -12,7 +12,8 @@
     "eval": "SKIP_ENV_VALIDATION=true VITE_CONFIG_NATIVE_IGNORE_WARNING=true vitest run --config vitest.evals.config.ts",
     "eval:ask": "SKIP_ENV_VALIDATION=true VITE_CONFIG_NATIVE_IGNORE_WARNING=true vitest run --config vitest.evals.config.ts evals/ask.eval.ts",
     "eval:quote": "SKIP_ENV_VALIDATION=true VITE_CONFIG_NATIVE_IGNORE_WARNING=true vitest run --config vitest.evals.config.ts evals/quote.eval.ts",
-    "eval:knowledge": "SKIP_ENV_VALIDATION=true VITE_CONFIG_NATIVE_IGNORE_WARNING=true vitest run --config vitest.evals.config.ts evals/knowledge.eval.ts"
+    "eval:knowledge": "SKIP_ENV_VALIDATION=true VITE_CONFIG_NATIVE_IGNORE_WARNING=true vitest run --config vitest.evals.config.ts evals/knowledge.eval.ts",
+    "eval:partners": "SKIP_ENV_VALIDATION=true VITE_CONFIG_NATIVE_IGNORE_WARNING=true vitest run --config vitest.evals.config.ts evals/partners.eval.ts --reporter=verbose"
   },
   "dependencies": {
     "@ai-sdk/react": "3.0.322",

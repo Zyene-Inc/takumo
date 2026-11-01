@@ -282,3 +282,5 @@ packages/database/generated
 
 # Ask Takumo eval output
 apps/app/evals/results/
+# Design partners' answer keys: their RFQs, drawings and prices (customer data)
+apps/app/evals/partners/*/
