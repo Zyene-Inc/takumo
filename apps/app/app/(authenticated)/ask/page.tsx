@@ -1,4 +1,5 @@
 import { auth } from "@repo/auth/server";
+import { database, forOrg } from "@repo/database";
 import { Button } from "@repo/design-system/components/ui/button";
 import { cn } from "@repo/design-system/lib/utils";
 import { HistoryIcon, PlusIcon } from "lucide-react";
@@ -10,10 +11,71 @@ import {
   listConversations,
   loadMessages,
 } from "@/lib/agent/conversations";
+import { buildStarters } from "@/lib/agent/starters";
 import { Header } from "../components/header";
 import { Chat } from "./chat";
 
 export const metadata: Metadata = { title: "Ask Takumo · Takumo" };
+
+// Example questions for the start screen, using the shop's own records.
+const loadStarters = async (orgId: string) => {
+  const db = forOrg(database, orgId);
+  const [parts, orders, machines, customers, quotes, documents] =
+    await Promise.all([
+      db.part.findMany({
+        orderBy: { orders: { _count: "desc" } },
+        take: 2,
+        select: { partNo: true },
+      }),
+      db.order.findMany({
+        where: { status: { in: ["open", "in_progress"] } },
+        orderBy: { dueDate: "asc" },
+        take: 2,
+        select: {
+          orderNo: true,
+          qty: true,
+          part: { select: { partNo: true } },
+        },
+      }),
+      db.workCenter.findMany({
+        orderBy: [
+          { hourlyRate: { sort: "desc", nulls: "last" } },
+          { routings: { _count: "desc" } },
+        ],
+        take: 2,
+        select: { name: true },
+      }),
+      db.customer.findMany({
+        orderBy: { orders: { _count: "desc" } },
+        take: 1,
+        select: { name: true },
+      }),
+      db.quote.findMany({
+        orderBy: { quotedAt: "desc" },
+        take: 1,
+        select: { quoteNo: true },
+      }),
+      db.source.findMany({
+        where: { profile: "document" },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        select: { name: true },
+      }),
+    ]);
+  return buildStarters({
+    today: new Date().toISOString().slice(0, 10),
+    parts: parts.map((p) => p.partNo),
+    orders: orders.map((o) => ({
+      orderNo: o.orderNo,
+      qty: o.qty,
+      partNo: o.part.partNo,
+    })),
+    machines: machines.map((m) => m.name),
+    customers: customers.map((c) => c.name),
+    quotes: quotes.map((q) => q.quoteNo),
+    documents: documents.map((d) => d.name),
+  });
+};
 
 const AskPage = async ({
   searchParams,
@@ -29,9 +91,10 @@ const AskPage = async ({
   if (c && !conversation) {
     notFound();
   }
-  const [messages, recent] = await Promise.all([
+  const [messages, recent, starters] = await Promise.all([
     conversation ? loadMessages(conversation.id) : Promise.resolve([]),
     listConversations(orgId, userId, 15),
+    conversation || q ? Promise.resolve(null) : loadStarters(orgId),
   ]);
   const id = conversation?.id ?? crypto.randomUUID();
 
@@ -84,6 +147,7 @@ const AskPage = async ({
           initialQuestion={conversation ? undefined : q?.slice(0, 4000)}
           isNew={!conversation}
           key={id}
+          starters={starters}
         />
       </div>
     </>
