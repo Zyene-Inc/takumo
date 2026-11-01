@@ -189,7 +189,7 @@ pnpm --filter app eval:partners
 It lists every problem with its sheet and row (`Quotes row 5: unit_price must be above 0`), and
 what a full run would cost.
 
-Run it (costs money; about $0.08 per RFQ):
+Run it (costs money; about $0.02 per RFQ):
 ```bash
 EVAL_CONFIRM=yes pnpm --filter app eval:partners
 EVAL_CONFIRM=yes PARTNER=acme pnpm --filter app eval:partners   # one shop

@@ -46,9 +46,10 @@ const DIR = path.resolve(import.meta.dirname, "partners");
 const RESULTS = path.resolve(import.meta.dirname, "results");
 const EVAL_USER = "eval:partners";
 const CONFIRMED = process.env.EVAL_CONFIRM === "yes";
-// Measured on the demo shop: reading an RFQ, proposing routings for new parts
-// and pricing. A planning figure for the confirmation prompt, not a bill.
-const USD_PER_QUOTE = 0.08;
+// A planning figure for the confirmation prompt, not a bill. Measured on the
+// demo shop: reading an RFQ for known parts costs about $0.001; a new part
+// adds a routing proposal on the agent model, so allow for that.
+const USD_PER_QUOTE = 0.02;
 const USD_PER_CHECK = 0;
 
 interface Partner {
@@ -295,7 +296,7 @@ const report = (
   writeFileSync(file, JSON.stringify(result, null, 2));
   const median = summary.quotes.medianAbsPriceDiff;
   console.log(
-    `\n${key.shopName}: ${result.commit ?? "uncommitted"}, $${run.costUsd.toFixed(2)} of AI`
+    `\n${key.shopName}: ${result.commit ?? "uncommitted"}, $${run.costUsd.toFixed(4)} of AI`
   );
   console.table({
     "Lines found": pct(summary.quotes.linesFound),

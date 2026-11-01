@@ -193,6 +193,11 @@ describe("comparing Takumo with what the shop sent", () => {
       true
     );
     expect(sameThing("304 stainless", "6061-T6")).toBe(false);
+    expect(sameThing("316 stainless", "SS316 bar 1.5in")).toBe(true);
+    expect(sameThing("316 stainless", "SS304 bar 1.5in")).toBe(false);
+    expect(sameThing("Aluminum 6061", "AL6061-T6 bar 2in")).toBe(true);
+    expect(sameThing("Passivate", "Passivate per ASTM A967")).toBe(true);
+    expect(sameThing("Clear anodize", "Anodized, clear")).toBe(true);
     expect(sameThing(null, "anything")).toBeNull();
   });
 

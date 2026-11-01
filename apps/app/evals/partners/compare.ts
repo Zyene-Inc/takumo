@@ -54,6 +54,23 @@ const norm = (s: string | null | undefined) =>
 
 const words = (s: string) => new Set(s.toLowerCase().match(WORDS) ?? []);
 
+// Shop shorthand, so "316 stainless" and "SS316 bar" read as the same thing.
+const SYNONYMS: [RegExp, string][] = [
+  [/\bstainless( steel)?\b|\bss(?=\d|\b)/g, " stainless "],
+  [/\balumin(i)?um\b|\bal(?=\d|\b)/g, " aluminum "],
+  [/\bcold[- ]rolled( steel)?\b|\bcrs\b/g, " crs "],
+  [/\banodi[sz](e|ed|ing)\b/g, " anodize "],
+  [/\bpassivat(e|ed|ion)\b/g, " passivate "],
+];
+// Alloy and spec numbers: 316, 6061, 4140, A967.
+const GRADE = /\b[a-z]?\d{3,4}\b/g;
+
+const canonical = (s: string) =>
+  SYNONYMS.reduce(
+    (t, [pattern, word]) => t.replace(pattern, word),
+    s.toLowerCase()
+  );
+
 /** Free text that names the same thing ("6061-T6" vs "AL6061-T6 bar 2in"). */
 export const sameThing = (expected: string | null, read: string | null) => {
   if (!expected) {
@@ -67,10 +84,20 @@ export const sameThing = (expected: string | null, read: string | null) => {
   if (a.includes(b) || b.includes(a)) {
     return true;
   }
-  const want = words(expected);
-  const got = words(read);
-  const shared = [...want].filter((w) => got.has(w)).length;
-  return shared / want.size >= 0.6;
+  const want = canonical(expected);
+  const got = canonical(read);
+  // Grades decide it when the shop wrote one: 316 is never 304.
+  const grades = want.match(GRADE) ?? [];
+  if (grades.length) {
+    const found = new Set(got.match(GRADE) ?? []);
+    if (!grades.every((g) => found.has(g))) {
+      return false;
+    }
+  }
+  const wantWords = words(want);
+  const gotWords = words(got);
+  const shared = [...wantWords].filter((w) => gotWords.has(w)).length;
+  return shared / wantWords.size >= 0.6;
 };
 
 export const compareLine = (
