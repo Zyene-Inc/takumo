@@ -44,7 +44,7 @@ import {
 } from "@/lib/agent/starters";
 import type { Artifact } from "@/lib/agent/tools";
 import { localToday } from "../schedule/gantt";
-import { TakumoEyes } from "./eyes";
+import { TakumoEyes, type TakumoMood } from "./eyes";
 import {
   AnswerText,
   ArtifactView,
@@ -98,6 +98,34 @@ const MODE_HINT: Record<AskMode, string> = {
   thorough: "The most capable model, for planning, pricing and what-ifs",
 };
 
+/** Text with a light sweeping across it, for work in progress. */
+const Shimmer = ({ children }: { children: string }) => {
+  const el = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+    const sweep = el.current?.animate(
+      [{ backgroundPosition: "100% 0" }, { backgroundPosition: "-100% 0" }],
+      { duration: 1800, iterations: Number.POSITIVE_INFINITY }
+    );
+    return () => sweep?.cancel();
+  }, []);
+  return (
+    <span
+      className="bg-clip-text font-medium text-transparent"
+      ref={el}
+      style={{
+        backgroundImage:
+          "linear-gradient(90deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%)",
+        backgroundSize: "200% 100%",
+      }}
+    >
+      {children}
+    </span>
+  );
+};
+
 const AssistantMessage = ({
   message,
   registry,
@@ -136,77 +164,100 @@ const AssistantMessage = ({
   const followUps = split.flatMap((p) => p?.followUps ?? []);
   const mode = (message.metadata as { mode?: AnswerMode } | undefined)?.mode;
   const done = !streaming;
+  // A smile for a moment when the answer lands.
+  const [smiling, setSmiling] = useState(false);
+  const wasStreaming = useRef(streaming);
+  useEffect(() => {
+    if (wasStreaming.current && !streaming) {
+      setSmiling(true);
+      const t = window.setTimeout(() => setSmiling(false), 2200);
+      wasStreaming.current = streaming;
+      return () => window.clearTimeout(t);
+    }
+    wasStreaming.current = streaming;
+  }, [streaming]);
+  let face: TakumoMood = "idle";
+  if (streaming) {
+    face = "thinking";
+  } else if (smiling) {
+    face = "happy";
+  }
 
   return (
-    <div className="grid gap-1">
-      {message.parts.map((part, i) => {
-        const key = `${message.id}-${i}`;
-        if (part.type === "text") {
-          return (
-            <AnswerText
-              key={key}
-              numbers={numbers}
-              registry={registry}
-              streaming={streaming && i === message.parts.length - 1}
-              text={split[i]?.body ?? part.text}
-            />
-          );
-        }
-        const tool = toolView(part);
-        if (!tool) {
-          return null;
-        }
-        if (tool.tool === "show_artifact") {
-          return tool.state === "output-available" &&
-            !(tool.output as { error?: string })?.error ? (
-            <ArtifactView artifact={tool.input as Artifact} key={key} />
-          ) : null;
-        }
-        return <ToolStep key={key} part={tool} />;
-      })}
-      {done && last && options.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {options.map((o) => (
-            <Button
-              key={o}
-              onClick={() => onAsk(o)}
-              size="sm"
-              variant="outline"
-            >
-              {o}
-            </Button>
-          ))}
-        </div>
-      )}
-      {done && <SourcesList numbers={numbers} sources={cited} />}
-      {done && last && followUps.length > 0 && (
-        <div className="mt-3 grid gap-1 border-t pt-3">
-          <p className="font-medium text-muted-foreground text-xs">Ask next</p>
-          {followUps.map((q) => (
+    <div className="flex gap-3">
+      <TakumoEyes className="mt-0.5 size-7" live={last} mood={face} />
+      <div className="grid min-w-0 flex-1 gap-1">
+        {message.parts.map((part, i) => {
+          const key = `${message.id}-${i}`;
+          if (part.type === "text") {
+            return (
+              <AnswerText
+                key={key}
+                numbers={numbers}
+                registry={registry}
+                streaming={streaming && i === message.parts.length - 1}
+                text={split[i]?.body ?? part.text}
+              />
+            );
+          }
+          const tool = toolView(part);
+          if (!tool) {
+            return null;
+          }
+          if (tool.tool === "show_artifact") {
+            return tool.state === "output-available" &&
+              !(tool.output as { error?: string })?.error ? (
+              <ArtifactView artifact={tool.input as Artifact} key={key} />
+            ) : null;
+          }
+          return <ToolStep key={key} part={tool} />;
+        })}
+        {done && last && options.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {options.map((o) => (
+              <Button
+                key={o}
+                onClick={() => onAsk(o)}
+                size="sm"
+                variant="outline"
+              >
+                {o}
+              </Button>
+            ))}
+          </div>
+        )}
+        {done && <SourcesList numbers={numbers} sources={cited} />}
+        {done && last && followUps.length > 0 && (
+          <div className="mt-3 grid gap-1 border-t pt-3">
+            <p className="font-medium text-muted-foreground text-xs">
+              Ask next
+            </p>
+            {followUps.map((q) => (
+              <button
+                className="group flex items-center gap-2 rounded-md px-1 py-1 text-left text-sm hover:bg-muted"
+                key={q}
+                onClick={() => onAsk(q)}
+                type="button"
+              >
+                <ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
+        {done && last && mode === "quick" && (
+          <p className="mt-2 flex items-center gap-1.5 text-muted-foreground text-xs">
+            <ZapIcon className="size-3" /> Quick answer.
             <button
-              className="group flex items-center gap-2 rounded-md px-1 py-1 text-left text-sm hover:bg-muted"
-              key={q}
-              onClick={() => onAsk(q)}
+              className="underline underline-offset-2 hover:text-foreground"
+              onClick={onThorough}
               type="button"
             >
-              <ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
-              {q}
+              Answer thoroughly
             </button>
-          ))}
-        </div>
-      )}
-      {done && last && mode === "quick" && (
-        <p className="mt-2 flex items-center gap-1.5 text-muted-foreground text-xs">
-          <ZapIcon className="size-3" /> Quick answer.
-          <button
-            className="underline underline-offset-2 hover:text-foreground"
-            onClick={onThorough}
-            type="button"
-          >
-            Answer thoroughly
-          </button>
-        </p>
-      )}
+          </p>
+        )}
+      </div>
     </div>
   );
 };
@@ -393,7 +444,11 @@ export const Chat = ({
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 pt-[14vh] pb-10">
           <div className="grid justify-items-center gap-3 text-center">
-            <TakumoEyes className="size-14" />
+            <TakumoEyes
+              className="size-16"
+              glow
+              mood={input.trim() ? "typing" : "idle"}
+            />
             <h1 className="font-semibold text-2xl tracking-tight">
               What do you want to know about your shop?
             </h1>
@@ -483,10 +538,10 @@ export const Chat = ({
           {status === "submitted" && (
             <p className="flex items-center gap-2 text-muted-foreground text-sm">
               <TakumoEyes
-                className="size-6 text-neutral-900 dark:text-neutral-600"
-                thinking
-              />{" "}
-              Thinking…
+                className="size-7 text-neutral-900 dark:text-neutral-600"
+                mood="thinking"
+              />
+              <Shimmer>Thinking…</Shimmer>
             </p>
           )}
 
