@@ -98,6 +98,9 @@ const MODE_HINT: Record<AskMode, string> = {
   thorough: "The most capable model, for planning, pricing and what-ifs",
 };
 
+/** The gear is black while Takumo works (dark grey in dark mode). */
+const THINKING_COLOR = "text-neutral-900 dark:text-neutral-600";
+
 /** Text with a light sweeping across it, for work in progress. */
 const Shimmer = ({ children }: { children: string }) => {
   const el = useRef<HTMLSpanElement>(null);
@@ -176,6 +179,12 @@ const AssistantMessage = ({
     }
     wasStreaming.current = streaming;
   }, [streaming]);
+  // Until the first words or tool step arrive, the avatar says it's thinking.
+  const started = message.parts.some(
+    (p, i) =>
+      (p.type === "text" && Boolean(split[i]?.body.trim())) ||
+      p.type.startsWith("tool-")
+  );
   let face: TakumoMood = "idle";
   if (streaming) {
     face = "thinking";
@@ -185,8 +194,17 @@ const AssistantMessage = ({
 
   return (
     <div className="flex gap-3">
-      <TakumoEyes className="mt-0.5 size-7" live={last} mood={face} />
+      <TakumoEyes
+        className={cn("mt-0.5 size-7", streaming && THINKING_COLOR)}
+        live={last}
+        mood={face}
+      />
       <div className="grid min-w-0 flex-1 gap-1">
+        {streaming && !started && (
+          <p className="flex h-7 items-center text-sm">
+            <Shimmer>Thinking…</Shimmer>
+          </p>
+        )}
         {message.parts.map((part, i) => {
           const key = `${message.id}-${i}`;
           if (part.type === "text") {
@@ -535,14 +553,15 @@ export const Chat = ({
             )
           )}
 
-          {status === "submitted" && (
-            <p className="flex items-center gap-2 text-muted-foreground text-sm">
+          {/* Before the answer's own bubble (and avatar) appears. */}
+          {busy && messages.at(-1)?.role === "user" && (
+            <div className="flex items-center gap-3 text-sm">
               <TakumoEyes
-                className="size-7 text-neutral-900 dark:text-neutral-600"
+                className={cn("size-7", THINKING_COLOR)}
                 mood="thinking"
               />
               <Shimmer>Thinking…</Shimmer>
-            </p>
+            </div>
           )}
 
           {errorText && (
