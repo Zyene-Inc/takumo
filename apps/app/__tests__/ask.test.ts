@@ -12,8 +12,10 @@ import {
 } from "../lib/agent/citations";
 import {
   compactHistory,
+  conversationContext,
   estimateContextTokens,
   isLongConversation,
+  modelInfo,
 } from "../lib/agent/history";
 import { buildStarters, STARTER_TOPICS } from "../lib/agent/starters";
 import {
@@ -435,9 +437,32 @@ describe("context size", () => {
     expect(estimateContextTokens(one)).toBeLessThan(3500 + 1100);
   });
 
-  test("a new chat is suggested after 20 questions or at 80% of the budget", () => {
-    expect(isLongConversation(19, 39_000)).toBe(false);
-    expect(isLongConversation(20, 0)).toBe(true);
-    expect(isLongConversation(3, 40_000)).toBe(true);
+  test("the latest answer's recorded context wins over the estimate", () => {
+    const q = {
+      role: "user" as const,
+      parts: [{ type: "text" as const, text: "q" }],
+    };
+    const a = (tokens?: number) => ({
+      role: "assistant" as const,
+      parts: [{ type: "text" as const, text: "a" }],
+      metadata: tokens
+        ? { context: { model: "gemini-3.8-flash", tokens } }
+        : undefined,
+    });
+    expect(conversationContext([q, a(9000), q, a(12_345)])).toEqual({
+      model: "gemini-3.8-flash",
+      tokens: 12_345,
+      estimated: false,
+    });
+    expect(conversationContext([q, a()])?.estimated).toBe(true);
+    expect(conversationContext([])).toBeNull();
+    expect(modelInfo("gemini-4-argon")?.window).toBe(1_048_576);
+    expect(modelInfo("claude-opus-5-5")).toBeNull();
+  });
+
+  test("a new chat is suggested after 20 questions or past 200K tokens", () => {
+    expect(isLongConversation(19, { tokens: 199_999 })).toBe(false);
+    expect(isLongConversation(20, null)).toBe(true);
+    expect(isLongConversation(3, { tokens: 200_000 })).toBe(true);
   });
 });

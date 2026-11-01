@@ -3,6 +3,7 @@ import "server-only";
 import type { UIMessage } from "@repo/ai";
 import { database, forOrg } from "@repo/database";
 import { collectSources, type Source } from "./citations";
+import { CONTEXT_PART, type ContextUse } from "./history";
 
 export const MAX_MESSAGE_CHARS = 4000;
 /** Messages per user per minute. */
@@ -73,13 +74,22 @@ export const loadMessages = async (
     orderBy: { createdAt: "asc" },
     select: { id: true, role: true, content: true, parts: true },
   });
-  return rows.map((row) => ({
-    id: row.id,
-    role: row.role === "assistant" ? "assistant" : "user",
-    parts: Array.isArray(row.parts)
+  return rows.map((row) => {
+    const parts = Array.isArray(row.parts)
       ? (row.parts as UIMessage["parts"])
-      : [{ type: "text", text: row.content }],
-  }));
+      : [{ type: "text" as const, text: row.content }];
+    // The context the answer used is stored as a hidden part: hand it back
+    // as metadata, the way the live stream delivers it.
+    const saved = parts.find((p) => p.type === CONTEXT_PART) as
+      | { data: ContextUse }
+      | undefined;
+    return {
+      id: row.id,
+      role: row.role === "assistant" ? "assistant" : "user",
+      parts: parts.filter((p) => p.type !== CONTEXT_PART),
+      ...(saved ? { metadata: { context: saved.data } } : {}),
+    };
+  });
 };
 
 export const listConversations = async (

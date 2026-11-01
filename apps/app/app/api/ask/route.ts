@@ -16,7 +16,11 @@ import {
   titleFrom,
   toolParts,
 } from "@/lib/agent/conversations";
-import { compactHistory } from "@/lib/agent/history";
+import {
+  CONTEXT_PART,
+  type ContextUse,
+  compactHistory,
+} from "@/lib/agent/history";
 import { chooseMode } from "@/lib/agent/mode";
 import { recordUsage } from "@/lib/ai-usage";
 import { track } from "@/lib/analytics";
@@ -148,6 +152,7 @@ export const POST = async (request: Request) => {
     mode
   );
   const messages = [...history, userMessage];
+  let context: ContextUse | null = null;
   const result = streamText({
     ...settings,
     messages: await convertToModelMessages(compactHistory(messages), {
@@ -157,8 +162,11 @@ export const POST = async (request: Request) => {
       log.error("Ask Takumo failed", { error: String(error) }),
     // Each step as it finishes (cache reads and writes included), so the
     // steps before an error are still counted.
-    onStepFinish: ({ usage, response }) =>
-      recordUsage(orgId, "ask", response.modelId, usage, userId),
+    onStepFinish: ({ usage, response }) => {
+      // The last step saw the most: everything the answer looked at.
+      context = { model: response.modelId, tokens: usage.inputTokens ?? 0 };
+      return recordUsage(orgId, "ask", response.modelId, usage, userId);
+    },
   });
   // Finish (and save) the answer even if the browser goes away.
   result.consumeStream();
@@ -167,8 +175,13 @@ export const POST = async (request: Request) => {
     originalMessages: messages,
     generateMessageId: () => crypto.randomUUID(),
     // The chat shows which model answered, and offers a thorough re-run.
-    messageMetadata: ({ part }) =>
-      part.type === "start" ? { mode } : undefined,
+    // and how much context the answer used (the composer's ring).
+    messageMetadata: ({ part }) => {
+      if (part.type === "start") {
+        return { mode };
+      }
+      return part.type === "finish" ? { mode, context } : undefined;
+    },
     onError: () =>
       "Takumo hit a problem answering that. Try again in a moment.",
     onFinish: async ({ responseMessage }) => {
@@ -184,7 +197,9 @@ export const POST = async (request: Request) => {
           conversationId: id,
           role: "assistant",
           content: splitAnswer(messageText(responseMessage)).body,
-          parts: responseMessage.parts as object,
+          parts: (context
+            ? [...responseMessage.parts, { type: CONTEXT_PART, data: context }]
+            : responseMessage.parts) as object,
           // Audit trail of what the agent looked at.
           toolCalls: tools.map((t) => ({
             tool: t.tool,

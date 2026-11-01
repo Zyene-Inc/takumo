@@ -8,51 +8,70 @@ import {
 } from "@repo/design-system/components/ui/tooltip";
 import { cn } from "@repo/design-system/lib/utils";
 import { useMemo, useRef } from "react";
-import { estimateContextTokens } from "@/lib/agent/history";
+import {
+  type ContextUse,
+  conversationContext,
+  LONG_CONTEXT,
+  modelInfo,
+  SETUP_TOKENS,
+} from "@/lib/agent/history";
 
 const SIZE = 16;
 const STROKE = 2.5;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-const NEARLY_FULL = 0.8;
+// The window Gemini models share when an old answer didn't record its model.
+const DEFAULT_WINDOW = 1_048_576;
+// A sliver stays visible even when a million-token window is barely used.
+const MIN_ARC = 0.04;
 
-const short = (tokens: number) =>
-  tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}K` : String(tokens);
+type Context = ContextUse & { estimated: boolean };
+
+const short = (tokens: number) => {
+  if (tokens >= 1_000_000) {
+    return `${Number((tokens / 1_048_576).toFixed(1))}M`;
+  }
+  return tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}K` : String(tokens);
+};
+
+const percent = (share: number) =>
+  share < 0.01 ? "<1%" : `${Math.round(share * 100)}%`;
 
 /**
- * The context the next question starts with. Recounted when an answer
- * finishes, not on every streamed token.
+ * The conversation's context as the model last saw it. Updated when an
+ * answer finishes, not on every streamed token.
  */
-export const useContextTokens = (messages: UIMessage[], busy: boolean) => {
+export const useConversationContext = (
+  messages: UIMessage[],
+  busy: boolean
+) => {
   const settled = useMemo(
-    () => (busy ? null : estimateContextTokens(messages)),
+    () => (busy ? undefined : conversationContext(messages)),
     [busy, messages]
   );
-  const last = useRef(0);
-  if (settled !== null) {
+  const last = useRef<Context | null>(null);
+  if (settled !== undefined) {
     last.current = settled;
   }
   return last.current;
 };
 
-/** How full the conversation's context is, as a ring that closes. */
-export const ContextRing = ({
-  budget,
-  tokens,
-}: {
-  budget: number;
-  tokens: number;
-}) => {
-  if (tokens === 0) {
+/** How much of the model's context window the conversation uses. */
+export const ContextRing = ({ context }: { context: Context | null }) => {
+  if (!context) {
     return null;
   }
-  const share = Math.min(1, tokens / budget);
-  const full = share >= NEARLY_FULL;
+  const model = modelInfo(context.model);
+  const window = model?.window ?? DEFAULT_WINDOW;
+  const share = Math.min(1, context.tokens / window);
+  const long = context.tokens >= LONG_CONTEXT;
+  const about = context.estimated ? "about " : "";
+  const conversation = Math.max(0, context.tokens - SETUP_TOKENS);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
-          aria-label={`Context ${Math.round(share * 100)}% full`}
+          aria-label={`Context: ${percent(share)} of the model's window`}
           className="grid size-7 place-items-center rounded-full hover:bg-muted"
           type="button"
         >
@@ -78,36 +97,40 @@ export const ContextRing = ({
               r={RADIUS}
               strokeWidth={STROKE}
             />
-            {share > 0 && (
-              <circle
-                className={cn(
-                  "transition-[stroke-dashoffset] duration-500 ease-out",
-                  full && "stroke-amber-500"
-                )}
-                cx={SIZE / 2}
-                cy={SIZE / 2}
-                fill="none"
-                r={RADIUS}
-                stroke={full ? undefined : "url(#context-ring)"}
-                strokeDasharray={CIRCUMFERENCE}
-                strokeDashoffset={CIRCUMFERENCE * (1 - share)}
-                strokeLinecap="round"
-                strokeWidth={STROKE}
-              />
-            )}
+            <circle
+              className={cn(
+                "transition-[stroke-dashoffset] duration-500 ease-out",
+                long && "stroke-amber-500"
+              )}
+              cx={SIZE / 2}
+              cy={SIZE / 2}
+              fill="none"
+              r={RADIUS}
+              stroke={long ? undefined : "url(#context-ring)"}
+              strokeDasharray={CIRCUMFERENCE}
+              strokeDashoffset={CIRCUMFERENCE * (1 - Math.max(MIN_ARC, share))}
+              strokeLinecap="round"
+              strokeWidth={STROKE}
+            />
           </svg>
         </button>
       </TooltipTrigger>
-      <TooltipContent className="max-w-60 text-center">
+      <TooltipContent className="grid max-w-64 gap-0.5 text-center">
         <p className="font-medium">
-          Context: {short(tokens)} of {short(budget)} tokens (
-          {Math.round(share * 100)}%)
+          {model ? `${model.label}: ` : ""}
+          {about}
+          {short(context.tokens)} of {short(window)} tokens ({percent(share)})
         </p>
         <p className="opacity-80">
-          {full
-            ? "Nearly full: start a new chat for a new topic."
-            : "Older answers are kept short automatically."}
+          Your conversation {about}
+          {short(conversation)} · Takumo's instructions and tools about{" "}
+          {short(SETUP_TOKENS)}
         </p>
+        {long && (
+          <p className="opacity-80">
+            Long conversation: a new chat answers faster and costs less.
+          </p>
+        )}
       </TooltipContent>
     </Tooltip>
   );
