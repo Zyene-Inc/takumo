@@ -7,22 +7,28 @@ import {
   AlertDescription,
 } from "@repo/design-system/components/ui/alert";
 import { Button } from "@repo/design-system/components/ui/button";
-import { Textarea } from "@repo/design-system/components/ui/textarea";
 import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@repo/design-system/components/ui/toggle-group";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@repo/design-system/components/ui/dropdown-menu";
+import { Textarea } from "@repo/design-system/components/ui/textarea";
 import { cn } from "@repo/design-system/lib/utils";
 import {
   ArrowRightIcon,
   ArrowUpIcon,
+  BrainIcon,
   CalculatorIcon,
   CalendarRangeIcon,
+  CheckIcon,
+  ChevronDownIcon,
   ClipboardCheckIcon,
   FactoryIcon,
   GaugeIcon,
   type LucideIcon,
   RotateCcwIcon,
+  SparklesIcon,
   SquareIcon,
   ZapIcon,
 } from "lucide-react";
@@ -93,10 +99,61 @@ const MODE_LABEL: Record<AskMode, string> = {
 };
 
 const MODE_HINT: Record<AskMode, string> = {
-  auto: "Takumo picks: quick look-ups on the faster model, planning and pricing on the thorough one",
-  quick: "Faster and cheaper, for look-ups, lists and simple counts",
-  thorough: "The most capable model, for planning, pricing and what-ifs",
+  auto: "Takumo picks the right one for each question",
+  quick: "Faster, for look-ups, lists and simple counts",
+  thorough: "Most capable, for planning, pricing and what-ifs",
 };
+
+const MODE_ICON: Record<AskMode, LucideIcon> = {
+  auto: SparklesIcon,
+  quick: ZapIcon,
+  thorough: BrainIcon,
+};
+
+/** The answer mode as a pill that opens a menu, next to Send. */
+const ModeMenu = ({
+  mode,
+  onChange,
+}: {
+  mode: AskMode;
+  onChange: (mode: AskMode) => void;
+}) => (
+  <DropdownMenu>
+    <DropdownMenuTrigger asChild>
+      <Button
+        aria-label={`Answer mode: ${MODE_LABEL[mode]}`}
+        className="h-8 gap-1 rounded-full px-3 font-normal text-muted-foreground"
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        {MODE_LABEL[mode]}
+        <ChevronDownIcon className="size-3.5 opacity-60" />
+      </Button>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent align="end" className="w-72 rounded-xl p-1.5">
+      {(Object.keys(MODE_LABEL) as AskMode[]).map((m) => {
+        const Icon = MODE_ICON[m];
+        return (
+          <DropdownMenuItem
+            className="items-start gap-3 rounded-lg px-2.5 py-2"
+            key={m}
+            onSelect={() => onChange(m)}
+          >
+            <Icon className="mt-0.5 size-4 text-muted-foreground" />
+            <div className="grid flex-1 gap-0.5">
+              <span className="font-medium">{MODE_LABEL[m]}</span>
+              <span className="text-muted-foreground text-xs">
+                {MODE_HINT[m]}
+              </span>
+            </div>
+            {m === mode && <CheckIcon className="mt-0.5 size-4" />}
+          </DropdownMenuItem>
+        );
+      })}
+    </DropdownMenuContent>
+  </DropdownMenu>
+);
 
 /** The gear is black while Takumo works (dark grey in dark mode). */
 const THINKING_COLOR = "text-neutral-900 dark:text-neutral-600";
@@ -409,26 +466,8 @@ export const Chat = ({
           rows={starting ? 2 : 1}
           value={input}
         />
-        <div className="flex items-center justify-between gap-2">
-          <ToggleGroup
-            aria-label="Answer mode"
-            onValueChange={(v) => v && setMode(v as AskMode)}
-            size="sm"
-            type="single"
-            value={mode}
-            variant="outline"
-          >
-            {(Object.keys(MODE_LABEL) as AskMode[]).map((m) => (
-              <ToggleGroupItem
-                className="h-7 bg-background px-2.5 text-xs"
-                key={m}
-                title={MODE_HINT[m]}
-                value={m}
-              >
-                {MODE_LABEL[m]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+        <div className="flex items-center justify-end gap-1">
+          <ModeMenu mode={mode} onChange={setMode} />
           {busy ? (
             <Button
               aria-label="Stop"
