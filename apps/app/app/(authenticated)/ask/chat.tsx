@@ -23,7 +23,6 @@ import {
   GaugeIcon,
   type LucideIcon,
   RotateCcwIcon,
-  SparklesIcon,
   SquareIcon,
   ZapIcon,
 } from "lucide-react";
@@ -45,6 +44,7 @@ import {
 } from "@/lib/agent/starters";
 import type { Artifact } from "@/lib/agent/tools";
 import { localToday } from "../schedule/gantt";
+import { TakumoEyes } from "./eyes";
 import {
   AnswerText,
   ArtifactView,
@@ -393,9 +393,7 @@ export const Chat = ({
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 pt-[14vh] pb-10">
           <div className="grid justify-items-center gap-3 text-center">
-            <span className="grid size-12 place-items-center rounded-full bg-foreground text-background">
-              <SparklesIcon className="size-5" />
-            </span>
+            <TakumoEyes className="size-14" />
             <h1 className="font-semibold text-2xl tracking-tight">
               What do you want to know about your shop?
             </h1>
@@ -484,8 +482,7 @@ export const Chat = ({
 
           {status === "submitted" && (
             <p className="flex items-center gap-2 text-muted-foreground text-sm">
-              <span className="size-2 animate-pulse rounded-full bg-primary" />{" "}
-              Thinking…
+              <TakumoEyes className="size-6" thinking /> Thinking…
             </p>
           )}
 
