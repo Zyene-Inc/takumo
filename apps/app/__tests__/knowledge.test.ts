@@ -16,6 +16,7 @@ import {
   weeklyError,
   weekOf,
 } from "../lib/facts/calibration";
+import { type BrainRows, buildBrain } from "../lib/knowledge/brain";
 import { buildScheduleRequest, type ShopRows } from "../lib/schedule/request";
 
 describe("fact values", () => {
@@ -331,5 +332,145 @@ describe("shop-floor logs", () => {
         now
       )
     ).toMatch(/start time is after/);
+  });
+});
+
+describe("shop brain", () => {
+  const rows: BrainRows = {
+    shopName: "Acme Machining",
+    customers: [{ id: "c1", name: "Boeing" }],
+    materials: [{ id: "m1", name: "6061-T6", spec: "AMS 4027" }],
+    workCenters: [{ id: "w1", name: "Haas VF-2", type: "cnc_mill" }],
+    parts: [
+      {
+        id: "p1",
+        partNo: "P-1001",
+        rev: "A",
+        description: "Bracket",
+        customerId: "c1",
+        materialId: "m1",
+      },
+      {
+        id: "p2",
+        partNo: "P-2001",
+        rev: "C",
+        description: null,
+        customerId: null,
+        materialId: null,
+      },
+    ],
+    routings: [
+      { id: "r1", partId: "p1", seq: 10, workCenterId: "w1" },
+      { id: "r2", partId: "p1", seq: 20, workCenterId: "w1" },
+    ],
+    bom: [{ parentPartId: "p2", childPartId: "p1" }],
+    orders: [
+      {
+        id: "o1",
+        orderNo: "SO-1",
+        customerId: "c1",
+        partId: "p1",
+        status: "in_progress",
+      },
+    ],
+    quotes: [
+      {
+        id: "q1",
+        quoteNo: "Q-1",
+        customerId: "c1",
+        partId: "p1",
+        rfqId: "f1",
+        status: "open",
+      },
+    ],
+    rfqs: [
+      {
+        id: "f1",
+        number: 7,
+        subject: "Brackets",
+        customerName: "Boeing",
+        customerId: "c1",
+      },
+    ],
+    facts: [
+      {
+        id: "x1",
+        number: 12,
+        subjectType: "routing",
+        subjectId: "r1",
+        subjectLabel: "P-1001 op 10",
+        attribute: "setupMin",
+        value: 120,
+      },
+      {
+        id: "x2",
+        number: 13,
+        subjectType: "shop",
+        subjectId: "org",
+        subjectLabel: "Shop",
+        attribute: "note",
+        value: "Deburr everything by hand.",
+      },
+    ],
+    documents: [
+      { id: "d1", name: "Setup sheet P-1001.pdf", summary: "Haas VF-2 setup" },
+    ],
+  };
+  const brain = buildBrain(rows);
+  const node = (id: string) => brain.nodes.find((n) => n.id === id);
+  const linked = (a: string, b: string) =>
+    brain.links.some(
+      (l) =>
+        (l.source === a && l.target === b) || (l.source === b && l.target === a)
+    );
+
+  test("records become nodes that link to their pages", () => {
+    expect(node("part:p1")?.href).toBe("/shop/parts/p1");
+    expect(node("part:p2")?.label).toBe("P-2001 rev C");
+    expect(node("rfq:f1")?.label).toBe("RFQ-0007");
+    expect(node("quote:q1")?.href).toBe("/quotes/f1");
+    expect(node("fact:x1")?.href).toBe("/knowledge/facts?f=F-12");
+  });
+
+  test("relationships become links, once each", () => {
+    expect(linked("part:p1", "customer:c1")).toBe(true);
+    expect(linked("part:p1", "material:m1")).toBe(true);
+    expect(linked("part:p2", "part:p1")).toBe(true);
+    expect(linked("order:o1", "part:p1")).toBe(true);
+    expect(linked("quote:q1", "rfq:f1")).toBe(true);
+    // Two operations on the same machine are one link, not two.
+    expect(
+      brain.links.filter(
+        (l) => l.source === "part:p1" && l.target === "work_center:w1"
+      )
+    ).toHaveLength(1);
+  });
+
+  test("facts hang off what they describe", () => {
+    expect(linked("fact:x1", "part:p1")).toBe(true);
+    expect(node("shop")?.label).toBe("Acme Machining");
+    expect(linked("fact:x2", "shop")).toBe(true);
+    expect(node("fact:x2")?.sub).toBe("Deburr everything by hand.");
+  });
+
+  test("documents link to what they mention", () => {
+    expect(linked("document:d1", "part:p1")).toBe(true);
+    expect(linked("document:d1", "work_center:w1")).toBe(true);
+    expect(linked("document:d1", "customer:c1")).toBe(false);
+  });
+
+  test("degree counts every link on a node", () => {
+    const links = brain.links.filter(
+      (l) => l.source === "part:p1" || l.target === "part:p1"
+    ).length;
+    expect(node("part:p1")?.degree).toBe(links);
+  });
+
+  test("links to missing records are dropped", () => {
+    const orphan = buildBrain({
+      ...rows,
+      orders: [{ ...rows.orders[0], partId: "gone", customerId: null }],
+    });
+    expect(orphan.links.some((l) => l.source === "order:o1")).toBe(false);
   });
 });
