@@ -3,8 +3,9 @@
 import { cn } from "@repo/design-system/lib/utils";
 import { useEffect, useRef } from "react";
 
-// Takumo's face: two eyes that follow the pointer and blink now and then.
-// While thinking they glance around instead. Still for reduced motion.
+// Takumo's face: a machine-shop gear with two eyes that follow the pointer
+// and blink now and then. While thinking, the gear turns and the eyes glance
+// around. Still for reduced motion.
 
 /** How far a pupil can travel inside its eye, in viewBox units. */
 const REACH = 2.6;
@@ -12,6 +13,28 @@ const EYES = [
   { cx: 24, cy: 31 },
   { cx: 40, cy: 31 },
 ] as const;
+
+/** An 8-tooth gear around the centre of the 64 × 64 view box. */
+const GEAR = (() => {
+  const teeth = 8;
+  const outer = 31;
+  const root = 25.5;
+  const step = (2 * Math.PI) / teeth;
+  const at = (r: number, a: number) =>
+    `${(32 + r * Math.cos(a)).toFixed(2)} ${(32 + r * Math.sin(a)).toFixed(2)}`;
+  const points: string[] = [];
+  for (let i = 0; i < teeth; i++) {
+    const a = i * step - Math.PI / 2;
+    // Root, then a slightly tapered tooth.
+    points.push(
+      at(root, a - step * 0.3),
+      at(outer, a - step * 0.2),
+      at(outer, a + step * 0.2),
+      at(root, a + step * 0.3)
+    );
+  }
+  return `M ${points.join(" L ")} Z`;
+})();
 
 const GLANCE: Keyframe[] = [
   { transform: "translate(0, 0)" },
@@ -32,6 +55,7 @@ export const TakumoEyes = ({
   const svg = useRef<SVGSVGElement>(null);
   const pupils = useRef<(SVGCircleElement | null)[]>([]);
   const lids = useRef<SVGGElement>(null);
+  const gear = useRef<SVGPathElement>(null);
 
   useEffect(() => {
     const el = svg.current;
@@ -60,6 +84,11 @@ export const TakumoEyes = ({
     cleanups.push(() => window.clearTimeout(blinkTimer));
 
     if (thinking) {
+      const turn = gear.current?.animate(
+        [{ transform: "rotate(0deg)" }, { transform: "rotate(360deg)" }],
+        { duration: 6000, iterations: Number.POSITIVE_INFINITY }
+      );
+      cleanups.push(() => turn?.cancel());
       for (const p of pupils.current) {
         const glance = p?.animate(GLANCE, {
           duration: 2400,
@@ -100,7 +129,15 @@ export const TakumoEyes = ({
       ref={svg}
       viewBox="0 0 64 64"
     >
-      <circle cx="32" cy="32" fill="currentColor" r="32" />
+      <path
+        d={GEAR}
+        fill="currentColor"
+        ref={gear}
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="2"
+        style={{ transformOrigin: "32px 32px" }}
+      />
       <g
         ref={lids}
         style={{ transformBox: "fill-box", transformOrigin: "center" }}
