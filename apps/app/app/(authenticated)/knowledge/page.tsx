@@ -6,11 +6,38 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { DOC_TYPE_LABEL } from "@/lib/knowledge/understand";
 import { Header } from "../components/header";
 import { EmptyState } from "../shop/components/format";
-import { DeleteDocument, UploadDocuments } from "./upload";
+import { DeleteDocument, ReadAgain, UploadDocuments } from "./upload";
 
 export const metadata: Metadata = { title: "Knowledge · Takumo" };
+
+interface CardMeta {
+  docType?: keyof typeof DOC_TYPE_LABEL;
+  links?: { label: string }[];
+  revision?: string | null;
+}
+
+const understood = (card: CardMeta | undefined) => {
+  if (!card?.docType) {
+    return null;
+  }
+  const type = DOC_TYPE_LABEL[card.docType] ?? "document";
+  const kind = type.charAt(0).toUpperCase() + type.slice(1);
+  const links = card.links ?? [];
+  return {
+    kind: card.revision ? `${kind}, rev ${card.revision}` : kind,
+    links: links.length
+      ? `About ${links
+          .slice(0, 5)
+          .map((l) => l.label)
+          .join(
+            ", "
+          )}${links.length > 5 ? ` and ${links.length - 5} more` : ""}`
+      : null,
+  };
+};
 
 const KnowledgePage = async () => {
   const { orgId, canEditKnowledge } = await getAccess();
@@ -28,6 +55,15 @@ const KnowledgePage = async () => {
       _count: { select: { chunks: true } },
     },
   });
+  // What Takumo understood about each document, when it has read it.
+  const cards = new Map(
+    (
+      await forOrg(database, orgId).docChunk.findMany({
+        where: { meta: { path: ["kind"], equals: "card" } },
+        select: { sourceId: true, meta: true },
+      })
+    ).map((c) => [c.sourceId, c.meta as CardMeta])
+  );
 
   return (
     <>
@@ -56,38 +92,57 @@ const KnowledgePage = async () => {
           <EmptyState>No documents yet.</EmptyState>
         ) : (
           <ul className="grid gap-3">
-            {sources.map((s) => (
-              <li
-                className="flex gap-3 rounded-xl border p-4"
-                id={`source-${s.id}`}
-                key={s.id}
-              >
-                <FileTextIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{s.name}</p>
-                    <Badge variant="secondary">
-                      {s._count.chunks} passage
-                      {s._count.chunks === 1 ? "" : "s"}
-                    </Badge>
-                    <span className="text-muted-foreground text-xs">
-                      added{" "}
-                      {s.createdAt.toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </span>
+            {sources.map((s) => {
+              const card = understood(cards.get(s.id));
+              return (
+                <li
+                  className="flex flex-wrap gap-3 rounded-xl border p-4"
+                  id={`source-${s.id}`}
+                  key={s.id}
+                >
+                  <FileTextIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">{s.name}</p>
+                      {card && <Badge>{card.kind}</Badge>}
+                      <Badge variant="secondary">
+                        {s._count.chunks} passage
+                        {s._count.chunks === 1 ? "" : "s"}
+                      </Badge>
+                      <span className="text-muted-foreground text-xs">
+                        added{" "}
+                        {s.createdAt.toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </span>
+                    </div>
+                    {s.summary && (
+                      <p className="mt-1 line-clamp-2 text-muted-foreground text-sm">
+                        {s.summary}
+                      </p>
+                    )}
+                    {card?.links && (
+                      <p className="mt-1 text-xs">{card.links}</p>
+                    )}
+                    {canEditKnowledge && !card && (
+                      <p className="mt-1 text-muted-foreground text-xs">
+                        Added before Takumo read documents in full: read it
+                        again to link it to your records and propose its facts.
+                      </p>
+                    )}
                   </div>
-                  {s.summary && (
-                    <p className="mt-1 line-clamp-2 text-muted-foreground text-sm">
-                      {s.summary}
-                    </p>
+                  {canEditKnowledge && (
+                    // The steps log wraps onto its own line under the row.
+                    <>
+                      <ReadAgain id={s.id} name={s.name} />
+                      <DeleteDocument id={s.id} name={s.name} />
+                    </>
                   )}
-                </div>
-                {canEditKnowledge && <DeleteDocument id={s.id} name={s.name} />}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

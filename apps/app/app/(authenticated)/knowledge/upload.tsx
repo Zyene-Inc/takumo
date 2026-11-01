@@ -3,7 +3,13 @@
 import { Button } from "@repo/design-system/components/ui/button";
 import { Spinner } from "@repo/design-system/components/ui/spinner";
 import { cn } from "@repo/design-system/lib/utils";
-import { CheckIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
+import {
+  CheckIcon,
+  RotateCwIcon,
+  Trash2Icon,
+  UploadIcon,
+  XIcon,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { DOCUMENT_TYPES } from "@/lib/knowledge/types";
@@ -21,28 +27,26 @@ const kilobytes = (bytes: number) =>
     ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
-/** Send one file and follow its steps as the server streams them. */
-const uploadOne = async (file: File, update: (log: FileLog) => void) => {
-  const log: FileLog = {
-    file: file.name,
-    steps: [`Uploading ${file.name} (${kilobytes(file.size)})`],
-    done: false,
-    error: null,
-  };
+type StepEvent =
+  | { type: "step"; text: string }
+  | { type: "done" }
+  | { type: "error"; error: string };
+
+/** Follow a document's steps as the server streams them. */
+const followSteps = async (
+  send: () => Promise<Response>,
+  log: FileLog,
+  update: (log: FileLog) => void
+) => {
   const show = () => update({ ...log, steps: [...log.steps] });
   show();
-  const form = new FormData();
-  form.set("file", file);
   try {
-    const response = await fetch("/api/knowledge/upload", {
-      method: "POST",
-      body: form,
-    });
+    const response = await send();
     if (!(response.ok && response.body)) {
       const body = (await response.json().catch(() => null)) as {
         error?: string;
       } | null;
-      log.error = body?.error ?? "Upload failed. Try again.";
+      log.error = body?.error ?? "That didn't work. Try again.";
       return show();
     }
     const reader = response.body
@@ -58,10 +62,7 @@ const uploadOne = async (file: File, update: (log: FileLog) => void) => {
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
       for (const line of lines.filter(Boolean)) {
-        const event = JSON.parse(line) as
-          | { type: "step"; text: string }
-          | { type: "done" }
-          | { type: "error"; error: string };
+        const event = JSON.parse(line) as StepEvent;
         if (event.type === "step") {
           log.steps.push(event.text);
         } else if (event.type === "done") {
@@ -73,15 +74,31 @@ const uploadOne = async (file: File, update: (log: FileLog) => void) => {
       }
     }
     if (!(log.done || log.error)) {
-      log.error = "The upload stopped before it finished. Try again.";
+      log.error = "It stopped before it finished. Try again.";
     }
   } catch {
-    log.error = "Upload failed. Check your connection and try again.";
+    log.error = "That didn't work. Check your connection and try again.";
   }
   show();
 };
 
-const StepLog = ({ log }: { log: FileLog }) => (
+/** Send one file and follow its steps. */
+const uploadOne = (file: File, update: (log: FileLog) => void) => {
+  const form = new FormData();
+  form.set("file", file);
+  return followSteps(
+    () => fetch("/api/knowledge/upload", { method: "POST", body: form }),
+    {
+      file: file.name,
+      steps: [`Uploading ${file.name} (${kilobytes(file.size)})`],
+      done: false,
+      error: null,
+    },
+    update
+  );
+};
+
+export const StepLog = ({ log }: { log: FileLog }) => (
   <ol className="grid gap-1 rounded-lg border bg-muted/30 p-3 font-mono text-xs">
     {log.steps.map((step, i) => {
       const current = i === log.steps.length - 1 && !log.done && !log.error;
@@ -195,6 +212,44 @@ export const UploadDocuments = () => {
         <StepLog key={log.file} log={log} />
       ))}
     </div>
+  );
+};
+
+/** Read a stored document again (understand, link, check), showing the steps. */
+export const ReadAgain = ({ id, name }: { id: string; name: string }) => {
+  const router = useRouter();
+  const [log, setLog] = useState<FileLog | null>(null);
+  const busy = Boolean(log && !log.done && !log.error);
+  return (
+    <>
+      <Button
+        aria-label={`Read ${name} again`}
+        disabled={busy}
+        onClick={async () => {
+          await followSteps(
+            () =>
+              fetch("/api/knowledge/reread", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sourceId: id }),
+              }),
+            { file: name, steps: [], done: false, error: null },
+            setLog
+          );
+          router.refresh();
+        }}
+        size="sm"
+        title="Read it again: find the records it's about and propose its facts"
+        variant="ghost"
+      >
+        {busy ? <Spinner /> : <RotateCwIcon />} Read again
+      </Button>
+      {log && (
+        <div className="basis-full">
+          <StepLog log={log} />
+        </div>
+      )}
+    </>
   );
 };
 
