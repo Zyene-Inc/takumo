@@ -161,6 +161,10 @@ const data = {
       icon: BrainIcon,
       items: [
         {
+          title: "Brain",
+          url: "/knowledge/brain",
+        },
+        {
           title: "Sources",
           url: "/knowledge",
         },
