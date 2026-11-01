@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { checkSql, QueryError } from "@repo/database/sql-guard";
 import { describe, expect, test } from "vitest";
+import { hintedMode, splitAnswer } from "../lib/agent/answer";
 import {
   cite,
   collectSources,
@@ -244,5 +245,69 @@ describe("document text extraction", () => {
     expect(plainSummary("# Setup notes\n\n## HAAS-VF2\n**Soft** jaws")).toBe(
       "Setup notes HAAS-VF2 Soft jaws"
     );
+  });
+});
+
+describe("answer blocks", () => {
+  test("follow-ups and options come out of the text", () => {
+    const answer = splitAnswer(
+      "SO-5003 is late [order SO-5003].\n\n<follow-ups>\n- Which jobs hold up SO-5003?\n- Can we pull it in with overtime?\n</follow-ups>"
+    );
+    expect(answer.body).toBe("SO-5003 is late [order SO-5003].");
+    expect(answer.followUps).toEqual([
+      "Which jobs hold up SO-5003?",
+      "Can we pull it in with overtime?",
+    ]);
+    expect(answer.options).toEqual([]);
+
+    const question = splitAnswer(
+      "Which rev?\n<options>\n- P-1001 rev A\n* P-1001 rev B\n</options>"
+    );
+    expect(question.body).toBe("Which rev?");
+    expect(question.options).toEqual(["P-1001 rev A", "P-1001 rev B"]);
+  });
+
+  test("a block still streaming in is hidden, not shown as text", () => {
+    expect(splitAnswer("Done [plan].\n<follow-ups>\n- Which ma").body).toBe(
+      "Done [plan]."
+    );
+    expect(splitAnswer("Done [plan].\n<follo").body).toBe("Done [plan].");
+    expect(splitAnswer("Done [plan].\n<").body).toBe("Done [plan].");
+  });
+
+  test("buttons are short and few", () => {
+    const many = splitAnswer(
+      `<follow-ups>\n${["a", "b", "c", "d", "e"].map((q) => `- ${q}`).join("\n")}\n- ${"x".repeat(200)}\n</follow-ups>`
+    );
+    expect(many.followUps).toEqual(["a", "b", "c", "d"]);
+  });
+
+  test("text without blocks is unchanged", () => {
+    expect(splitAnswer("Plain answer with a < sign: 3 < 5.").body).toBe(
+      "Plain answer with a < sign: 3 < 5."
+    );
+  });
+});
+
+describe("answer mode", () => {
+  test("planning, pricing and what-ifs skip the router and go thorough", () => {
+    for (const q of [
+      "Can we take 150 × P-1001 by next Friday?",
+      "What should we quote for 500 of P-2001?",
+      "What if HAAS-VF2 goes down for a week?",
+      "Which machine is the bottleneck?",
+    ]) {
+      expect(hintedMode(q)).toBe("thorough");
+    }
+  });
+
+  test("look-ups are left to the router", () => {
+    for (const q of [
+      "Show me SO-5003",
+      "Which orders are late?",
+      "List our customers",
+    ]) {
+      expect(hintedMode(q)).toBeNull();
+    }
   });
 });

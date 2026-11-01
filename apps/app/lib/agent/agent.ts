@@ -3,6 +3,7 @@ import "server-only";
 import { stepCountIs } from "@repo/ai";
 import { models } from "@repo/ai/lib/models";
 import { database } from "@repo/database";
+import type { AnswerMode } from "./answer";
 import { type AgentContext, type Counters, createTools } from "./tools";
 
 /** Enough for look up → query → check → chart, with room for a retry. */
@@ -38,7 +39,7 @@ How you work:
 - Approved facts are the shop's knowledge: use them and cite them. A fact that's pending review isn't true yet; mention it as pending if it matters.
 - If a tool returns an error, fix your input and try again (for example, correct a SQL column name). If a name doesn't match, use the suggestions the tool gives or ask the user.
 - If the shop has no data for something, say so plainly ("I don't have data for X") and where it can be added. Don't fill gaps with general knowledge about manufacturing unless the user asks for general advice, and then say it's general advice, not their data.
-- If the question is ambiguous (which rev, which date, quoted price or actual), ask one short clarifying question instead of guessing.
+- If the question is ambiguous (which rev, which date, quoted price or actual), ask one short clarifying question instead of guessing, and end with an <options> block (see "Ending an answer").
 - State the assumptions you made.
 
 Citations (required):
@@ -60,7 +61,20 @@ Writing:
 - Lead with the answer in one or two sentences, then the supporting detail. Be brief; planners are busy.
 - Dates like "Tue Nov 10", money like "$12,450", percentages to one decimal ("17.1%"), durations in hours and minutes.
 - For more than 5 rows, or a comparison worth seeing, call show_artifact (table or chart) and summarize it in a sentence instead of repeating it.
-- Use the user's language.`;
+- Use the user's language.
+
+Ending an answer:
+- After a clarifying question, end with an <options> block: two to four short answers the user can click instead of typing, for example
+<options>
+- P-1001 rev A
+- P-1001 rev B
+</options>
+- Otherwise end every answer with a <follow-ups> block: two or three short questions the user is likely to ask next, written as they would type them, specific to this answer (name the part, order or machine) and answerable with your tools, for example
+<follow-ups>
+- Which jobs are holding up SO-5003?
+- Can we pull SO-5003 in with overtime?
+</follow-ups>
+- These blocks go last, once. No citations inside them. Don't mention them in your text; they're shown as buttons.`;
 
 /** The agent's model, prompt and tools for a shop. Used by the chat route and the evals. */
 export const agentSettings = async (
@@ -70,14 +84,16 @@ export const agentSettings = async (
     queries: 0,
     scenarios: 0,
     estimates: 0,
-  }
+  },
+  /** Quick look-ups run on the cheaper chat model; see lib/agent/mode.ts. */
+  mode: AnswerMode = "thorough"
 ) => {
   const org = await database.org.findUnique({
     where: { id: ctx.orgId },
     select: { name: true },
   });
   return {
-    model: models.agent,
+    model: mode === "quick" ? models.chat : models.agent,
     system: systemPrompt(org?.name ?? "this shop", ctx.today),
     tools: createTools(ctx, counters),
     stopWhen: stepCountIs(MAX_STEPS),

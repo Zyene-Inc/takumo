@@ -8,12 +8,17 @@ import {
 } from "@repo/design-system/components/ui/alert";
 import { Button } from "@repo/design-system/components/ui/button";
 import { Textarea } from "@repo/design-system/components/ui/textarea";
-import { cn } from "@repo/design-system/lib/utils";
 import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@repo/design-system/components/ui/toggle-group";
+import {
+  ArrowRightIcon,
   ArrowUpIcon,
   RotateCcwIcon,
   SparklesIcon,
   SquareIcon,
+  ZapIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
@@ -23,6 +28,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { type AnswerMode, type AskMode, splitAnswer } from "@/lib/agent/answer";
 import { collectSources, type Source } from "@/lib/agent/citations";
 import type { Artifact } from "@/lib/agent/tools";
 import { localToday } from "../schedule/gantt";
@@ -66,20 +72,44 @@ const outputsOf = (messages: UIMessage[]) =>
     m.parts.map((p) => toolView(p)?.output).filter(Boolean)
   );
 
+const MODE_LABEL: Record<AskMode, string> = {
+  auto: "Auto",
+  quick: "Quick",
+  thorough: "Thorough",
+};
+
+const MODE_HINT: Record<AskMode, string> = {
+  auto: "Takumo picks: quick look-ups on the faster model, planning and pricing on the thorough one",
+  quick: "Faster and cheaper, for look-ups, lists and simple counts",
+  thorough: "The most capable model, for planning, pricing and what-ifs",
+};
+
 const AssistantMessage = ({
   message,
   registry,
   streaming,
+  last,
+  onAsk,
+  onThorough,
 }: {
+  last: boolean;
   message: UIMessage;
+  onAsk: (text: string) => void;
+  onThorough: () => void;
   registry: ReadonlyMap<string, Source>;
   streaming: boolean;
 }) => {
+  // The answer without its option and follow-up blocks, which become buttons.
+  const split = useMemo(
+    () =>
+      message.parts.map((p) =>
+        p.type === "text" ? splitAnswer(p.text) : null
+      ),
+    [message.parts]
+  );
   // One footnote numbering across the whole answer.
   const { numbers, cited } = useMemo(() => {
-    const texts = message.parts.flatMap((p) =>
-      p.type === "text" ? [p.text] : []
-    );
+    const texts = split.flatMap((p) => (p ? [p.body] : []));
     const n = citationNumbers(texts, registry);
     return {
       numbers: n,
@@ -87,7 +117,11 @@ const AssistantMessage = ({
         .map((id) => registry.get(id.toLowerCase()))
         .filter((s): s is Source => Boolean(s)),
     };
-  }, [message.parts, registry]);
+  }, [split, registry]);
+  const options = split.flatMap((p) => p?.options ?? []);
+  const followUps = split.flatMap((p) => p?.followUps ?? []);
+  const mode = (message.metadata as { mode?: AnswerMode } | undefined)?.mode;
+  const done = !streaming;
 
   return (
     <div className="grid gap-1">
@@ -100,7 +134,7 @@ const AssistantMessage = ({
               numbers={numbers}
               registry={registry}
               streaming={streaming && i === message.parts.length - 1}
-              text={part.text}
+              text={split[i]?.body ?? part.text}
             />
           );
         }
@@ -116,7 +150,49 @@ const AssistantMessage = ({
         }
         return <ToolStep key={key} part={tool} />;
       })}
-      {!streaming && <SourcesList numbers={numbers} sources={cited} />}
+      {done && last && options.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {options.map((o) => (
+            <Button
+              key={o}
+              onClick={() => onAsk(o)}
+              size="sm"
+              variant="outline"
+            >
+              {o}
+            </Button>
+          ))}
+        </div>
+      )}
+      {done && <SourcesList numbers={numbers} sources={cited} />}
+      {done && last && followUps.length > 0 && (
+        <div className="mt-3 grid gap-1 border-t pt-3">
+          <p className="font-medium text-muted-foreground text-xs">Ask next</p>
+          {followUps.map((q) => (
+            <button
+              className="group flex items-center gap-2 rounded-md px-1 py-1 text-left text-sm hover:bg-muted"
+              key={q}
+              onClick={() => onAsk(q)}
+              type="button"
+            >
+              <ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
+      {done && last && mode === "quick" && (
+        <p className="mt-2 flex items-center gap-1.5 text-muted-foreground text-xs">
+          <ZapIcon className="size-3" /> Quick answer.
+          <button
+            className="underline underline-offset-2 hover:text-foreground"
+            onClick={onThorough}
+            type="button"
+          >
+            Answer thoroughly
+          </button>
+        </p>
+      )}
     </div>
   );
 };
@@ -134,6 +210,10 @@ export const Chat = ({
 }) => {
   const router = useRouter();
   const [input, setInput] = useState("");
+  const [mode, setMode] = useState<AskMode>("auto");
+  // The transport reads the mode when it sends, so keep the latest in a ref.
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const bottom = useRef<HTMLDivElement>(null);
   const asked = useRef(false);
 
@@ -143,8 +223,14 @@ export const Chat = ({
       messages: initialMessages,
       transport: new DefaultChatTransport({
         api: "/api/ask",
-        prepareSendMessagesRequest: ({ id: chatId, messages: all }) => ({
-          body: { id: chatId, message: all.at(-1), today: localToday() },
+        prepareSendMessagesRequest: ({ id: chatId, messages: all, body }) => ({
+          body: {
+            id: chatId,
+            message: all.at(-1),
+            today: localToday(),
+            mode:
+              (body as { mode?: AskMode } | undefined)?.mode ?? modeRef.current,
+          },
         }),
       }),
       onFinish: () => {
@@ -253,7 +339,13 @@ export const Chat = ({
             ) : (
               <AssistantMessage
                 key={message.id}
+                last={index === messages.length - 1}
                 message={message}
+                onAsk={send}
+                onThorough={() => {
+                  clearError();
+                  regenerate({ body: { mode: "thorough" } });
+                }}
                 registry={registry}
                 streaming={busy && index === messages.length - 1}
               />
@@ -323,10 +415,31 @@ export const Chat = ({
             </Button>
           )}
         </div>
-        <p className={cn("mt-1.5 text-center text-muted-foreground text-xs")}>
-          Takumo answers from your shop's data and documents and cites every
-          number. Check anything important before acting on it.
-        </p>
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-muted-foreground text-xs">
+          <ToggleGroup
+            aria-label="Answer mode"
+            onValueChange={(v) => v && setMode(v as AskMode)}
+            size="sm"
+            type="single"
+            value={mode}
+            variant="outline"
+          >
+            {(Object.keys(MODE_LABEL) as AskMode[]).map((m) => (
+              <ToggleGroupItem
+                className="h-7 px-2.5 text-xs"
+                key={m}
+                title={MODE_HINT[m]}
+                value={m}
+              >
+                {MODE_LABEL[m]}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <p>
+            Takumo cites every number. Check anything important before acting on
+            it.
+          </p>
+        </div>
       </form>
     </div>
   );

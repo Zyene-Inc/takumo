@@ -4,6 +4,7 @@ import { database } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { z } from "zod";
 import { agentSettings } from "@/lib/agent/agent";
+import { type AnswerMode, ASK_MODES, splitAnswer } from "@/lib/agent/answer";
 import {
   findConversation,
   loadMessages,
@@ -15,6 +16,7 @@ import {
   titleFrom,
   toolParts,
 } from "@/lib/agent/conversations";
+import { chooseMode } from "@/lib/agent/mode";
 import { recordUsage } from "@/lib/ai-usage";
 import { track } from "@/lib/analytics";
 import { featureProblem } from "@/lib/billing";
@@ -33,6 +35,7 @@ const Body = z.object({
       .min(1),
   }),
   today: z.string(),
+  mode: z.enum(ASK_MODES).default("auto"),
 });
 
 const problem = (status: number, error: string) =>
@@ -52,7 +55,7 @@ export const POST = async (request: Request) => {
   if (!parsed.success) {
     return problem(400, "That message couldn't be read. Reload and try again.");
   }
-  const { id, message, today: localDay } = parsed.data;
+  const { id, message, today: localDay, mode: asked } = parsed.data;
   const today = checkToday(localDay);
   if (!today) {
     return problem(
@@ -124,13 +127,24 @@ export const POST = async (request: Request) => {
   });
 
   const prior = toolParts({ parts: history.flatMap((m) => m.parts) });
+  const lastAnswer = [...history].reverse().find((m) => m.role === "assistant");
+  const mode: AnswerMode =
+    asked === "auto"
+      ? await chooseMode(
+          orgId,
+          userId,
+          text,
+          lastAnswer && splitAnswer(messageText(lastAnswer)).body
+        )
+      : asked;
   const settings = await agentSettings(
     { orgId, userId, today },
     {
       queries: prior.filter((t) => t.tool === "query_data").length,
       scenarios: prior.filter((t) => t.tool === "run_scenario").length,
       estimates: prior.filter((t) => t.tool === "estimate_quote").length,
-    }
+    },
+    mode
   );
   const messages = [...history, userMessage];
   const result = streamText({
@@ -149,6 +163,9 @@ export const POST = async (request: Request) => {
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
     generateMessageId: () => crypto.randomUUID(),
+    // The chat shows which model answered, and offers a thorough re-run.
+    messageMetadata: ({ part }) =>
+      part.type === "start" ? { mode } : undefined,
     onError: () =>
       "Takumo hit a problem answering that. Try again in a moment.",
     onFinish: async ({ responseMessage }) => {
@@ -156,14 +173,14 @@ export const POST = async (request: Request) => {
       track("question_answered", {
         orgId,
         userId,
-        properties: { tools: tools.map((t) => t.tool) },
+        properties: { tools: tools.map((t) => t.tool), mode, asked },
       });
       await database.message.create({
         data: {
           id: responseMessage.id,
           conversationId: id,
           role: "assistant",
-          content: messageText(responseMessage),
+          content: splitAnswer(messageText(responseMessage)).body,
           parts: responseMessage.parts as object,
           // Audit trail of what the agent looked at.
           toolCalls: tools.map((t) => ({
