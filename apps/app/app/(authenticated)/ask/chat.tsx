@@ -482,7 +482,11 @@ export const Chat = ({
 
           {status === "submitted" && (
             <p className="flex items-center gap-2 text-muted-foreground text-sm">
-              <TakumoEyes className="size-6" thinking /> Thinking…
+              <TakumoEyes
+                className="size-6 text-neutral-900 dark:text-neutral-600"
+                thinking
+              />{" "}
+              Thinking…
             </p>
           )}
 
