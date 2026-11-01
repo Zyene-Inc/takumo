@@ -8,6 +8,7 @@ import { rereadNote, saveNote } from "@/lib/facts/notes";
 import {
   AUDIO_TYPES,
   MAX_AUDIO_BYTES,
+  shopVocabulary,
   transcribeAudio,
 } from "@/lib/facts/transcribe";
 
@@ -80,7 +81,8 @@ export const transcribe = async (
   }
   try {
     const result = await transcribeAudio(
-      new Uint8Array(await file.arrayBuffer())
+      new Uint8Array(await file.arrayBuffer()),
+      await shopVocabulary(orgId)
     );
     return result.text
       ? { ok: true, ...result }

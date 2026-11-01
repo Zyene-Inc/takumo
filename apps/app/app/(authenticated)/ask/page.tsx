@@ -12,6 +12,7 @@ import {
   loadMessages,
 } from "@/lib/agent/conversations";
 import { buildStarters } from "@/lib/agent/starters";
+import { canTranscribe } from "@/lib/facts/transcribe";
 import { Header } from "../components/header";
 import { Chat } from "./chat";
 
@@ -142,6 +143,7 @@ const AskPage = async ({
           </nav>
         )}
         <Chat
+          canDictate={canTranscribe()}
           id={id}
           initialMessages={messages}
           initialQuestion={conversation ? undefined : q?.slice(0, 4000)}

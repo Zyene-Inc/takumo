@@ -50,6 +50,7 @@ import {
 } from "@/lib/agent/starters";
 import type { Artifact } from "@/lib/agent/tools";
 import { localToday } from "../schedule/gantt";
+import { DictateButton } from "./dictate";
 import { TakumoEyes, type TakumoMood } from "./eyes";
 import {
   AnswerText,
@@ -338,12 +339,15 @@ const AssistantMessage = ({
 };
 
 export const Chat = ({
+  canDictate,
   id,
   initialMessages,
   initialQuestion,
   isNew,
   starters,
 }: {
+  /** Whether speech-to-text is set up (the Dictate button). */
+  canDictate: boolean;
   id: string;
   initialMessages: UIMessage[];
   initialQuestion?: string;
@@ -353,6 +357,8 @@ export const Chat = ({
 }) => {
   const router = useRouter();
   const [input, setInput] = useState("");
+  const [dictationError, setDictationError] = useState<string | null>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
   const [mode, setMode] = useState<AskMode>("auto");
   const [topic, setTopic] = useState<StarterTopic | null>(null);
   // The transport reads the mode when it sends, so keep the latest in a ref.
@@ -463,11 +469,25 @@ export const Chat = ({
               ? "Ask about an order, a part, a machine or a quote…"
               : "Ask a follow-up…"
           }
+          ref={textarea}
           rows={starting ? 2 : 1}
           value={input}
         />
         <div className="flex items-center justify-end gap-1">
           <ModeMenu mode={mode} onChange={setMode} />
+          {canDictate && (
+            <DictateButton
+              disabled={busy}
+              onError={setDictationError}
+              onText={(text) => {
+                setDictationError(null);
+                setInput((prev) =>
+                  prev.trim() ? `${prev.trimEnd()} ${text}` : text
+                );
+                textarea.current?.focus();
+              }}
+            />
+          )}
           {busy ? (
             <Button
               aria-label="Stop"
@@ -492,6 +512,11 @@ export const Chat = ({
           )}
         </div>
       </div>
+      {dictationError && (
+        <p className="px-3 pt-1.5 text-destructive text-xs" role="alert">
+          {dictationError}
+        </p>
+      )}
     </form>
   );
 
