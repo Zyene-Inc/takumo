@@ -1,3 +1,4 @@
+import { splitAnswer } from "@/lib/agent/answer";
 import {
   collectSources,
   linkCitations,
@@ -51,7 +52,10 @@ export const grade = (
     result.text,
     collectSources(outputs)
   );
-  const uncitedLines = golden.noCitations ? [] : uncitedNumbers(result.text);
+  // Follow-up questions are buttons, not claims: only the answer needs citing.
+  const uncitedLines = golden.noCitations
+    ? []
+    : uncitedNumbers(splitAnswer(result.text).body);
 
   const expected =
     typeof golden.expect === "function" ? golden.expect(ctx) : golden.expect;
