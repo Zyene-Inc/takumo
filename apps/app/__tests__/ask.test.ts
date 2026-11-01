@@ -10,6 +10,7 @@ import {
   sourcesFromRows,
   uncitedNumbers,
 } from "../lib/agent/citations";
+import { buildStarters, STARTER_TOPICS } from "../lib/agent/starters";
 import {
   CHUNK_CHARS,
   chunkPages,
@@ -308,6 +309,52 @@ describe("answer mode", () => {
       "List our customers",
     ]) {
       expect(hintedMode(q)).toBeNull();
+    }
+  });
+});
+
+describe("start screen examples", () => {
+  const rows = {
+    today: "2026-11-01",
+    parts: ["P-1001", "P-2001"],
+    orders: [
+      { orderNo: "SO-5003", partNo: "P-3001", qty: 120 },
+      { orderNo: "SO-5001", partNo: "P-1001", qty: 40 },
+    ],
+    machines: ["HAAS-VF2", "OKUMA-LB3000"],
+    customers: ["Bluefin Marine"],
+    quotes: ["Q-9008"],
+    documents: ["Setup notes"],
+  };
+
+  test("examples name the shop's own records", () => {
+    const s = buildStarters(rows);
+    expect(s.capacity[0]).toBe("Can we take another 120 × P-3001 by Nov 22?");
+    expect(s.capacity).toContain("Can we pull SO-5003 in by a week?");
+    expect(s.quotes[0]).toBe("What should we quote for 250 × P-1001?");
+    expect(s.schedule).toContain("When will SO-5003 finish?");
+    expect(s.machines[0]).toBe(
+      "How loaded is HAAS-VF2 over the next two weeks?"
+    );
+    expect(s.setup).toContain('What does "Setup notes" say?');
+    expect(
+      buildStarters({ ...rows, documents: ["02_20251204 - scan"] }).setup.join()
+    ).not.toContain("02_");
+  });
+
+  test("a new shop with no data still gets four questions per topic", () => {
+    const s = buildStarters({
+      today: "2026-11-01",
+      parts: [],
+      orders: [],
+      machines: [],
+      customers: [],
+      quotes: [],
+      documents: [],
+    });
+    for (const t of STARTER_TOPICS) {
+      expect(s[t]).toHaveLength(4);
+      expect(s[t].join(" ")).not.toMatch(/undefined|null/);
     }
   });
 });
