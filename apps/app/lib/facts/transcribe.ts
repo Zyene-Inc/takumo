@@ -45,7 +45,7 @@ export const transcribeAudio = async (
 ) => {
   if (!canTranscribe()) {
     throw new Error(
-      "Transcribing audio files needs Gemini on Vertex AI or OPENAI_API_KEY. Record in the browser instead, or type the note."
+      "Transcribing audio files isn't set up. Record in the browser instead, or type the note."
     );
   }
   const result = await transcribe({

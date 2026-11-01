@@ -1,6 +1,7 @@
 "use server";
 
 import { auth } from "@repo/auth/server";
+import { log } from "@repo/observability/log";
 import { revalidatePath } from "next/cache";
 import { track } from "@/lib/analytics";
 import { featureProblem } from "@/lib/billing";
@@ -88,11 +89,9 @@ export const transcribe = async (
       ? { ok: true, ...result }
       : { ok: false, error: "No speech found in that recording." };
   } catch (error) {
-    return {
-      ok: false,
-      error:
-        error instanceof Error ? error.message : "Couldn't transcribe that.",
-    };
+    // The provider's own message can name it; users get a plain one.
+    log.error("Voice note transcription failed", { error });
+    return { ok: false, error: "Couldn't transcribe that. Try again." };
   }
 };
 

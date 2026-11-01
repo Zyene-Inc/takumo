@@ -130,9 +130,7 @@ const AdminPage = async () => {
             </p>
           </div>
           <div className="rounded-xl border p-4">
-            <p className="text-muted-foreground text-sm">
-              Claude spend this month
-            </p>
+            <p className="text-muted-foreground text-sm">AI spend this month</p>
             <p className="mt-1 font-semibold text-2xl">${aiTotal.toFixed(2)}</p>
             <p className="text-muted-foreground text-xs">
               {budget === null
@@ -153,7 +151,7 @@ const AdminPage = async () => {
                 <TableHead className="text-right">RFQs (7d)</TableHead>
                 <TableHead className="text-right">Quotes sent (7d)</TableHead>
                 <TableHead className="text-right">Connectors</TableHead>
-                <TableHead className="text-right">Claude $ (month)</TableHead>
+                <TableHead className="text-right">AI $ (month)</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>

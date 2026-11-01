@@ -20,7 +20,7 @@ const SIZE = 16;
 const STROKE = 2.5;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-// The window Gemini models share when an old answer didn't record its model.
+// The window to assume when an old answer didn't record its model.
 const DEFAULT_WINDOW = 1_048_576;
 // A sliver stays visible even when a million-token window is barely used.
 const MIN_ARC = 0.04;
@@ -117,8 +117,7 @@ export const ContextRing = ({ context }: { context: Context | null }) => {
       </TooltipTrigger>
       <TooltipContent className="grid max-w-64 gap-0.5 text-center">
         <p className="font-medium">
-          {model ? `${model.label}: ` : ""}
-          {about}
+          Context: {about}
           {short(context.tokens)} of {short(window)} tokens ({percent(share)})
         </p>
         <p className="opacity-80">

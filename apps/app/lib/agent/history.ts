@@ -44,15 +44,14 @@ export const SETUP_TOKENS = 3500;
  */
 export const LONG_CONTEXT = 200_000;
 
-/** Context windows from Google's Vertex AI model pages (November 2026). */
-const MODELS: { label: string; prefix: string; window: number }[] = [
-  { prefix: "gemini-4-argon", label: "Gemini 4 Argon", window: 1_048_576 },
-  { prefix: "gemini-3.8-flash", label: "Gemini 3.8 Flash", window: 1_048_576 },
-  {
-    prefix: "gemini-3.5-flash-lite",
-    label: "Gemini 3.5 Flash-Lite",
-    window: 1_048_576,
-  },
+/**
+ * Context windows from Google's Vertex AI model pages (November 2026).
+ * Internal only: users never see which model answered.
+ */
+const MODELS: { prefix: string; window: number }[] = [
+  { prefix: "gemini-4-argon", window: 1_048_576 },
+  { prefix: "gemini-3.8-flash", window: 1_048_576 },
+  { prefix: "gemini-3.5-flash-lite", window: 1_048_576 },
 ];
 
 export const modelInfo = (modelId: string) =>

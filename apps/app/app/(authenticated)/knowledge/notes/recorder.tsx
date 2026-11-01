@@ -113,8 +113,8 @@ const AudioUpload = ({
   if (!canTranscribe) {
     return (
       <p className="text-muted-foreground text-sm">
-        Transcribing audio files isn't set up (it needs Gemini on Vertex AI or
-        an OpenAI key). Recording here works without it.
+        Transcribing audio files isn't set up for this shop yet. Recording here
+        works without it.
       </p>
     );
   }
