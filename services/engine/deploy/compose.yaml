@@ -1,0 +1,16 @@
+# The engine on a VM (Oracle Cloud ARM, or any Linux host with Docker):
+# Caddy terminates HTTPS and proxies to this container on localhost.
+# scripts/deploy-engine.sh copies the source and runs `docker compose up`.
+services:
+  engine:
+    build:
+      context: ../../..
+      dockerfile: services/engine/Dockerfile
+    image: takumo-engine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Required: compose refuses to start without it, so the engine never
+      # runs open to anyone. Set in /etc/takumo/engine.env on the host.
+      ENGINE_SECRET: ${ENGINE_SECRET:?Set ENGINE_SECRET in /etc/takumo/engine.env}

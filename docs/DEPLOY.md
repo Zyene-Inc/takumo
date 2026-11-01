@@ -104,7 +104,29 @@ In the WorkOS dashboard (staging environment for a test URL):
 
 The engine runs CP-SAT for the schedule board, "Can we take this order?" and quote lead times
 (`/quote`). It's a plain
-Docker web service; Render is the simplest host (Fly.io or Cloud Run work the same way).
+Docker web service. Production runs it on an Oracle Cloud Always Free ARM VM ($0); Render is the
+simplest paid host (Fly.io or Cloud Run work the same way).
+
+**Oracle Cloud VM (production)**
+
+1. Compute → Create instance: shape `VM.Standard.A1.Flex` (2 OCPU, 12 GB, Always Free), image
+   Ubuntu 24.04, a new VCN with a public subnet, and your SSH public key. If Oracle says "Out of
+   capacity", try the other availability domains; a Pay As You Go account (still $0 within the
+   free limits) gets capacity far more easily and isn't reclaimed when idle.
+2. Instance → Networking → VNIC → IP administration → Edit → **Ephemeral public IP**.
+3. VCN → Security → Default Security List → Add Ingress Rules: source `0.0.0.0/0`, TCP, ports
+   `80,443`.
+4. On the VM: install `docker.io`, `docker-compose-v2` and Caddy, and open 80/443 in iptables.
+   Oracle's Ubuntu image ends INPUT with a REJECT rule, so insert them above it, then save:
+   `sudo iptables -I INPUT 5 -m state --state NEW -p tcp --dport 443 -j ACCEPT`, the same for 80,
+   `sudo netfilter-persistent save`.
+5. On the VM, create the secret (it stays there; copy it for `takumo-app`):
+   `sudo mkdir -p /etc/takumo && echo "ENGINE_SECRET=$(openssl rand -hex 32)" | sudo tee /etc/takumo/engine.env >/dev/null && sudo chmod 600 /etc/takumo/engine.env`
+6. From your machine: `ENGINE_HOST=ubuntu@<ip> ENGINE_DOMAIN=<ip with dashes>.sslip.io scripts/deploy-engine.sh`.
+   It copies the engine, builds it, starts it behind Caddy (HTTPS from Let's Encrypt) and checks
+   `/health`. Run it again to deploy a new version. Without the secret the engine won't start.
+
+**Render (alternative)**
 
 1. Render → New → Web Service → `Zyene-Inc/takumo` → Runtime: **Docker**.
    Dockerfile path `services/engine/Dockerfile`, build context `.` (the repo root).
