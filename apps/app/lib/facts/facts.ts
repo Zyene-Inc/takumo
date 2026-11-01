@@ -26,6 +26,7 @@ export type FactSource =
   | "note"
   | "floor"
   | "recalibration"
+  | "document"
   | "manual";
 
 export interface Subject {

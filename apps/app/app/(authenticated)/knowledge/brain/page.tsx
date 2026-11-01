@@ -32,7 +32,8 @@ const BrainPage = async () => {
     quotes,
     rfqs,
     facts,
-    documents,
+    sources,
+    cards,
   ] = await Promise.all([
     database.org.findUnique({ where: { id: orgId }, select: { name: true } }),
     db.customer.findMany({ select: { id: true, name: true } }),
@@ -107,8 +108,22 @@ const BrainPage = async () => {
       where: { profile: "document" },
       select: { id: true, name: true, summary: true },
     }),
+    // Each read document's card lists the records it's about.
+    db.docChunk.findMany({
+      where: { meta: { path: ["kind"], equals: "card" } },
+      select: { sourceId: true, meta: true },
+    }),
   ]);
+  const links = new Map(
+    cards.map((c) => [
+      c.sourceId,
+      ((c.meta as { links?: { ref: string }[] } | null)?.links ?? []).map(
+        (l) => l.ref
+      ),
+    ])
+  );
 
+  const documents = sources.map((d) => ({ ...d, links: links.get(d.id) }));
   const brain = buildBrain({
     shopName: org?.name ?? "Your shop",
     customers,

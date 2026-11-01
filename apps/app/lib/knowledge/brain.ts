@@ -66,7 +66,13 @@ export interface Brain {
 export interface BrainRows {
   bom: { childPartId: string; parentPartId: string }[];
   customers: { id: string; name: string }[];
-  documents: { id: string; name: string; summary: string | null }[];
+  documents: {
+    id: string;
+    /** Records the document was linked to when it was read ("part:<id>"). */
+    links?: string[];
+    name: string;
+    summary: string | null;
+  }[];
   facts: {
     attribute: string;
     id: string;
@@ -307,6 +313,9 @@ const MENTIONABLE = new Set<BrainType>([
   "work_center",
 ]);
 
+// Documents call machines "machine:"; the Brain calls them work centers.
+const MACHINE_REF = /^machine:/;
+
 // A document mentions the parts, customers, materials and machines it names.
 const linkDocuments = (g: Graph, rows: BrainRows) => {
   const named = [...g.nodes.values()]
@@ -319,6 +328,16 @@ const linkDocuments = (g: Graph, rows: BrainRows) => {
       ).toLowerCase(),
     }));
   for (const d of rows.documents) {
+    // Read with evidence when it was uploaded: use those links.
+    if (d.links?.length) {
+      for (const ref of d.links) {
+        const id = ref.replace(MACHINE_REF, "work_center:");
+        if (g.nodes.has(id)) {
+          g.link(`document:${d.id}`, id, "mentions");
+        }
+      }
+      continue;
+    }
     const text = `${d.name} ${d.summary ?? ""}`.toLowerCase();
     for (const n of named) {
       if (text.includes(n.name)) {

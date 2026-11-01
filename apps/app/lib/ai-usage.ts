@@ -11,9 +11,10 @@ export type AiFeature =
   | "import_mapping"
   | "rfq_read"
   | "routing_proposal"
-  | "note_read";
+  | "note_read"
+  | "doc_read";
 
-/** Record what a Claude call used. Never throws: spend tracking can't break a request. */
+/** Record what an AI call used. Never throws: spend tracking can't break a request. */
 export const recordUsage = async (
   orgId: string,
   feature: AiFeature,

@@ -17,6 +17,16 @@ import {
   weekOf,
 } from "../lib/facts/calibration";
 import { type BrainRows, buildBrain } from "../lib/knowledge/brain";
+import {
+  chunkPages,
+  htmlTablesToMarkdown,
+  TABLE_CHARS,
+} from "../lib/knowledge/chunk";
+import {
+  type CatalogEntry,
+  normalize,
+  resolveMention,
+} from "../lib/knowledge/resolve";
 import { buildScheduleRequest, type ShopRows } from "../lib/schedule/request";
 
 describe("fact values", () => {
@@ -472,5 +482,106 @@ describe("shop brain", () => {
       orders: [{ ...rows.orders[0], partId: "gone", customerId: null }],
     });
     expect(orphan.links.some((l) => l.source === "order:o1")).toBe(false);
+  });
+});
+
+describe("document understanding", () => {
+  const catalog: CatalogEntry[] = [
+    {
+      id: "p1",
+      label: "P-2001 rev B",
+      rev: "B",
+      type: "part",
+      keys: [normalize("P-2001")],
+    },
+    {
+      id: "p2",
+      label: "P-2001 rev C",
+      rev: "C",
+      type: "part",
+      keys: [normalize("P-2001")],
+    },
+    {
+      id: "m1",
+      label: "HAAS-VF2",
+      type: "machine",
+      keys: [normalize("HAAS-VF2")],
+    },
+    {
+      id: "m2",
+      label: "HAAS-VF4",
+      type: "machine",
+      keys: [normalize("HAAS-VF4")],
+    },
+    {
+      id: "m3",
+      label: "OKUMA-LB3000",
+      type: "machine",
+      keys: [normalize("OKUMA-LB3000")],
+    },
+    {
+      id: "c1",
+      label: "Cobalt Medical",
+      type: "customer",
+      keys: [normalize("Cobalt Medical")],
+    },
+  ];
+  const find = (name: string, type: CatalogEntry["type"]) =>
+    resolveMention({ name, type }, catalog);
+
+  test("names written differently match the shop's records", () => {
+    expect(find("HAAS VF-2", "machine")).toMatchObject({
+      id: "m1",
+      how: "exact",
+    });
+    expect(find("P2001", "part")?.id).toBe("p1");
+    expect(find("P2001 rev C", "part")).toMatchObject({
+      id: "p2",
+      label: "P-2001 rev C",
+    });
+    expect(find("the Okuma", "machine")).toMatchObject({
+      id: "m3",
+      how: "partial",
+    });
+    expect(find("VF2", "machine")?.id).toBe("m1");
+    expect(find("COBALT MEDICAL INC.", "customer")?.id).toBe("c1");
+  });
+
+  test("ambiguous or unknown names stay unmatched instead of guessed", () => {
+    expect(find("the Haas", "machine")).toBeNull();
+    expect(find("Mazak", "machine")).toBeNull();
+    expect(find("P-9999", "part")).toBeNull();
+    expect(find("HAAS-VF2", "customer")).toBeNull();
+  });
+
+  test("scanned tables read as rows; long ones split between rows with the header repeated", () => {
+    const html =
+      "<table><tr><th>Op</th><th>Machine</th><th>Setup</th></tr><tr><td>20</td><td>HAAS <b>VF-2</b></td><td>45</td></tr></table>";
+    expect(htmlTablesToMarkdown(`Ops:\n${html}`)).toBe(
+      "Ops:\n| Op | Machine | Setup |\n| --- | --- | --- |\n| 20 | HAAS VF-2 | 45 |"
+    );
+
+    const small = chunkPages([
+      { page: 1, text: `Setup\n\n${html}\n\nAfter the table.` },
+    ]);
+    expect(small.map((c) => c.content).join("\n")).toContain(
+      "| 20 | HAAS VF-2 | 45 |"
+    );
+
+    const row = (i: number) =>
+      `<tr><td>Op ${i}</td><td>${"x".repeat(150)}</td></tr>`;
+    const big = `<table><tr><th>Op</th><th>Note</th></tr>${Array.from({ length: 40 }, (_, i) => row(i)).join("")}</table>`;
+    const pieces = chunkPages([{ page: 1, text: big }]).map((c) => c.content);
+    expect(pieces.length).toBeGreaterThan(1);
+    for (const piece of pieces) {
+      expect(piece.startsWith("| Op | Note |\n| --- | --- |\n")).toBe(true);
+      expect(piece.length).toBeLessThanOrEqual(TABLE_CHARS);
+      expect(
+        piece
+          .split("\n")
+          .every((line) => line.startsWith("| ") && line.endsWith(" |"))
+      ).toBe(true);
+    }
+    expect(pieces.join("\n")).toContain("| Op 39 |");
   });
 });

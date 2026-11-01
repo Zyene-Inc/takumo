@@ -52,21 +52,36 @@ const attributeList = () =>
     )
     .join("\n");
 
-const SYSTEM = `You turn notes from a machine shop's floor (operators' voice notes, supervisors' typed notes) into facts for the shop's model.
+const SOURCES = {
+  note: {
+    what: "notes from a machine shop's floor (operators' voice notes, supervisors' typed notes)",
+    noun: "note",
+  },
+  document: {
+    what: "a machine shop's documents (setup sheets, SOPs, quality manuals, customer specs, travelers, inspection reports)",
+    noun: "document",
+  },
+} as const;
+
+const system = (kind: keyof typeof SOURCES) => {
+  const { what, noun } = SOURCES[kind];
+  return `You turn ${what} into facts for the shop's model.
 
 Rules:
-- Only record what the note states as true about this shop. Skip greetings, guesses ("maybe", "I think it could"), questions and one-off events that aren't knowledge (a single late delivery).
+- Only record what the ${noun} states as true about this shop. Skip greetings, guesses ("maybe", "I think it could"), questions and one-off events that aren't knowledge (a single late delivery).
 - A corrected number is a fact about a model parameter: "setup on the HAAS for P-1001 is really 2 hours" → subjectType routing, the matching part and op, attribute setupMin, value 120. Convert to minutes, fractions or dollars as the attribute needs.
 - Knowledge in words is a note: "P-2001 chatters above 1,200 rpm, run it at 1,000" → subjectType part (or routing), attribute note, value: one clear sentence in the shop's terms.
-- Identify subjects only from the shop's lists below. If the note names a machine, pick the operation of that part that runs on it. If you can't tell which part, operation or machine, skip the fact.
-- quote: the exact words from the note, so a supervisor can check it.
+- A customer's requirement is a note on that customer (or on the part when it names one): "all Cobalt Medical parts need a first-article inspection report" → subjectType customer, attribute note.
+- Identify subjects only from the shop's lists below. If the ${noun} names a machine, pick the operation of that part that runs on it. If you can't tell which part, operation or machine, skip the fact.
+- quote: the exact words from the ${noun}, so a supervisor can check it.
 - An empty list is fine.
 
 Attributes by subject type:
 ${attributeList()}`;
+};
 
 /** The shop's records in a form the model can match words against. */
-const shopContext = async (orgId: string) => {
+export const shopContext = async (orgId: string) => {
   const db = forOrg(database, orgId);
   const [machines, routings, materials, customers] = await Promise.all([
     db.workCenter.findMany({
@@ -94,23 +109,37 @@ Materials: ${materials.map((m) => m.name).join(", ")}
 Customers: ${customers.map((c) => c.name).join(", ")}`;
 };
 
-export const extractFacts = async (orgId: string, text: string) => {
+export const extractFacts = async (
+  orgId: string,
+  text: string,
+  {
+    kind = "note",
+    context,
+  }: {
+    kind?: keyof typeof SOURCES;
+    /** The shop's lists, when the caller already loaded them. */
+    context?: string;
+  } = {}
+) => {
+  const feature = kind === "note" ? "note_read" : "doc_read";
   try {
     const { output, usage, response } = await generateText({
-      model: models.agent,
+      // Floor notes are short and every word counts; documents are long and
+      // read in pieces, so the faster model keeps them affordable.
+      model: kind === "note" ? models.agent : models.chat,
       output: Output.object({ schema }),
-      system: SYSTEM,
-      prompt: `${await shopContext(orgId)}
+      system: system(kind),
+      prompt: `${context ?? (await shopContext(orgId))}
 
-Note:
-<note>
+${SOURCES[kind].noun[0].toUpperCase()}${SOURCES[kind].noun.slice(1)}:
+<${SOURCES[kind].noun}>
 ${text.slice(0, MAX_NOTE_CHARS)}
-</note>`,
+</${SOURCES[kind].noun}>`,
     });
-    await recordUsage(orgId, "note_read", response.modelId, usage);
+    await recordUsage(orgId, feature, response.modelId, usage);
     return output?.facts ?? [];
   } catch (error) {
-    await recordFailedUsage(orgId, "note_read", error);
+    await recordFailedUsage(orgId, feature, error);
     throw error;
   }
 };

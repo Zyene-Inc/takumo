@@ -42,6 +42,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   note: "Typed note",
   floor: "Shop floor",
   recalibration: "Recalibration",
+  document: "Document",
   manual: "Added by hand",
 };
 

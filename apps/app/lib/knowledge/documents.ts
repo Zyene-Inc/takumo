@@ -5,7 +5,6 @@ import { canEmbed, embeddingOptions, models } from "@repo/ai/lib/models";
 import { database, forOrg } from "@repo/database";
 import { log } from "@repo/observability/log";
 import {
-  type Chunk,
   chunkPages,
   cleanSnippet,
   type PageText,
@@ -33,18 +32,26 @@ export const cleanName = (fileName: string) =>
 const vectorLiteral = (values: number[]) => `[${values.join(",")}]`;
 
 /** Store a document's chunks. Re-uploading a file with the same name replaces it. */
-export const saveDocument = async (
+export interface StoredChunk {
+  content: string;
+  /** One sentence placing the passage in its document, indexed with it. */
+  context?: string;
+  heading: string | null;
+  /** Extra fields kept with the passage (records it mentions, card data). */
+  meta?: Record<string, unknown>;
+  page: number | null;
+}
+
+/**
+ * Replace a document (same name) with these passages and make them
+ * searchable: keywords at once, meaning when an embedding model is set up.
+ */
+export const storeDocument = async (
   orgId: string,
-  rawName: string,
-  pages: PageText[]
+  name: string,
+  summary: string,
+  chunks: StoredChunk[]
 ) => {
-  const name = cleanName(rawName);
-  const chunks: Chunk[] = chunkPages(pages);
-  if (chunks.length === 0) {
-    throw new Error(
-      "No text found. If it's a scanned PDF, it needs text recognition (OCR) first."
-    );
-  }
   const db = forOrg(database, orgId);
   await db.source.deleteMany({
     where: { name, type: "upload", profile: "document" },
@@ -56,7 +63,7 @@ export const saveDocument = async (
       type: "upload",
       profile: "document",
       status: "ready",
-      summary: plainSummary(chunks[0].content),
+      summary,
     },
   });
   const rows = chunks.map((c) => ({
@@ -65,15 +72,23 @@ export const saveDocument = async (
     sourceId: source.id,
     content: c.content,
     page: c.page,
-    meta: c.heading ? { heading: c.heading } : {},
+    meta: {
+      ...(c.heading ? { heading: c.heading } : {}),
+      ...(c.context ? { context: c.context } : {}),
+      ...c.meta,
+    },
   }));
   await db.docChunk.createMany({ data: rows });
 
+  let embedded = false;
   if (canEmbed) {
     try {
       const { embeddings } = await embedMany({
         model: models.embeddings,
-        values: rows.map((r) => r.content),
+        // The context sentence goes into the vector too.
+        values: chunks.map((c) =>
+          c.context ? `${c.context}\n\n${c.content}` : c.content
+        ),
         ...embeddingOptions("document"),
       });
       await database.$transaction(
@@ -86,6 +101,7 @@ export const saveDocument = async (
           )
         )
       );
+      embedded = true;
     } catch (error) {
       // Keyword search still works without vectors.
       log.warn("Embedding failed; document is keyword-searchable only", {
@@ -93,7 +109,27 @@ export const saveDocument = async (
       });
     }
   }
-  return { sourceId: source.id, name, chunks: rows.length };
+  return { sourceId: source.id, name, chunks: rows.length, embedded };
+};
+
+/** Store plain text as a document, without reading it (evals, imports). */
+export const saveDocument = (
+  orgId: string,
+  rawName: string,
+  pages: PageText[]
+) => {
+  const chunks = chunkPages(pages);
+  if (chunks.length === 0) {
+    throw new Error(
+      "No text found. If it's a scanned PDF, it needs text recognition (OCR) first."
+    );
+  }
+  return storeDocument(
+    orgId,
+    cleanName(rawName),
+    plainSummary(chunks[0].content),
+    chunks
+  );
 };
 
 export interface DocHit {
@@ -116,21 +152,35 @@ interface Row {
   sourceId: string;
 }
 
+// What keyword search reads: the passage with its context sentence.
+const SEARCHED = `coalesce(c.meta ->> 'context', '') || ' ' || c.content`;
+
+// English stemming finds "deburring" for "deburr"; the 'simple' dictionary,
+// used only for words with a digit, keeps codes whole, so "P-2001" or
+// "AMS-2700" match exactly.
 const KEYWORD_SQL = `
   with q as (
-    select string_agg(t.q::text, ' | ')::tsquery as query
-    from (select plainto_tsquery('english', w) as q from unnest($2::text[]) w) t
-    where t.q::text <> ''
+    -- Stop words are empty in English but not in 'simple': skip empties
+    -- per dictionary, or the joined query wouldn't parse.
+    select (string_agg(t.q::text, ' | ') filter (where t.q::text <> ''))::tsquery as query,
+           (string_agg(t.s::text, ' | ') filter (where t.s::text <> ''))::tsquery as exact
+    from (
+      select plainto_tsquery('english', w) as q,
+             plainto_tsquery('simple', case when w ~ '[0-9]' then w else '' end) as s
+      from unnest($2::text[]) w
+    ) t
   )
   select c.id, c."sourceId", s.name, c.page, c.meta ->> 'heading' as heading,
-         ts_rank_cd(to_tsvector('english', c.content), q.query) as rank,
+         coalesce(ts_rank_cd(to_tsvector('english', ${SEARCHED}), q.query), 0)
+           + coalesce(ts_rank_cd(to_tsvector('simple', ${SEARCHED}), q.exact), 0) as rank,
          ts_headline('english', c.content, q.query,
            'StartSel=«, StopSel=», MaxWords=70, MinWords=30, MaxFragments=2, FragmentDelimiter=" … "') as snippet
   from "DocChunk" c
   join "Source" s on s.id = c."sourceId"
   cross join q
-  where c."orgId" = $1 and q.query is not null
-    and to_tsvector('english', c.content) @@ q.query
+  where c."orgId" = $1
+    and (to_tsvector('english', ${SEARCHED}) @@ q.query
+      or to_tsvector('simple', ${SEARCHED}) @@ q.exact)
   order by rank desc
   limit $3`;
 

@@ -234,7 +234,7 @@ describe("document text extraction", () => {
 
   test("refuses other files", async () => {
     await expect(
-      extractPages("photo.png", new Uint8Array([1]))
+      extractPages("drawing.dwg", new Uint8Array([1]))
     ).rejects.toThrow(READS);
   });
 

@@ -3,46 +3,148 @@
 import { Button } from "@repo/design-system/components/ui/button";
 import { Spinner } from "@repo/design-system/components/ui/spinner";
 import { cn } from "@repo/design-system/lib/utils";
-import { Trash2Icon, UploadIcon } from "lucide-react";
+import { CheckIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { DOCUMENT_TYPES } from "@/lib/knowledge/types";
-import { deleteDocument, uploadDocument } from "./actions";
+import { deleteDocument } from "./actions";
+
+interface FileLog {
+  done: boolean;
+  error: string | null;
+  file: string;
+  steps: string[];
+}
+
+const kilobytes = (bytes: number) =>
+  bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+/** Send one file and follow its steps as the server streams them. */
+const uploadOne = async (file: File, update: (log: FileLog) => void) => {
+  const log: FileLog = {
+    file: file.name,
+    steps: [`Uploading ${file.name} (${kilobytes(file.size)})`],
+    done: false,
+    error: null,
+  };
+  const show = () => update({ ...log, steps: [...log.steps] });
+  show();
+  const form = new FormData();
+  form.set("file", file);
+  try {
+    const response = await fetch("/api/knowledge/upload", {
+      method: "POST",
+      body: form,
+    });
+    if (!(response.ok && response.body)) {
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      log.error = body?.error ?? "Upload failed. Try again.";
+      return show();
+    }
+    const reader = response.body
+      .pipeThrough(new TextDecoderStream())
+      .getReader();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += value;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines.filter(Boolean)) {
+        const event = JSON.parse(line) as
+          | { type: "step"; text: string }
+          | { type: "done" }
+          | { type: "error"; error: string };
+        if (event.type === "step") {
+          log.steps.push(event.text);
+        } else if (event.type === "done") {
+          log.done = true;
+        } else {
+          log.error = event.error;
+        }
+        show();
+      }
+    }
+    if (!(log.done || log.error)) {
+      log.error = "The upload stopped before it finished. Try again.";
+    }
+  } catch {
+    log.error = "Upload failed. Check your connection and try again.";
+  }
+  show();
+};
+
+const StepLog = ({ log }: { log: FileLog }) => (
+  <ol className="grid gap-1 rounded-lg border bg-muted/30 p-3 font-mono text-xs">
+    {log.steps.map((step, i) => {
+      const current = i === log.steps.length - 1 && !log.done && !log.error;
+      return (
+        <li
+          className={cn(
+            "flex items-start gap-2",
+            current ? "text-foreground" : "text-muted-foreground"
+          )}
+          // biome-ignore lint/suspicious/noArrayIndexKey: steps only append
+          key={i}
+        >
+          {current ? (
+            <Spinner className="mt-px size-3 shrink-0" />
+          ) : (
+            <CheckIcon className="mt-px size-3 shrink-0 text-primary" />
+          )}
+          <span>{step}</span>
+        </li>
+      );
+    })}
+    {log.done && (
+      <li className="flex items-center gap-2 font-medium text-foreground">
+        <CheckIcon className="size-3 text-primary" /> Complete
+      </li>
+    )}
+    {log.error && (
+      <li className="flex items-start gap-2 text-destructive">
+        <XIcon className="mt-px size-3 shrink-0" /> {log.error}
+      </li>
+    )}
+  </ol>
+);
 
 export const UploadDocuments = () => {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
-  const [pending, start] = useTransition();
+  const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(false);
-  const [messages, setMessages] = useState<{ error: boolean; text: string }[]>(
-    []
-  );
+  const [logs, setLogs] = useState<FileLog[]>([]);
 
-  const upload = (files: FileList | null) => {
-    if (!files?.length) {
+  const upload = async (files: FileList | null) => {
+    if (!files?.length || busy) {
       return;
     }
-    start(async () => {
-      const results: { error: boolean; text: string }[] = [];
-      for (const file of Array.from(files)) {
-        const form = new FormData();
-        form.set("file", file);
-        const r = await uploadDocument(form);
-        results.push(
-          r.ok
-            ? {
-                error: false,
-                text: `${r.name}: ${r.chunks} passage${r.chunks === 1 ? "" : "s"} indexed.`,
-              }
-            : { error: true, text: `${file.name}: ${r.error}` }
-        );
-      }
-      setMessages(results);
-      if (input.current) {
-        input.current.value = "";
-      }
-      router.refresh();
-    });
+    const chosen = Array.from(files);
+    setBusy(true);
+    setLogs([]);
+    // One at a time, so each document's steps read in order.
+    for (const [index, file] of chosen.entries()) {
+      await uploadOne(file, (log) =>
+        setLogs((prev) => {
+          const next = [...prev];
+          next[index] = log;
+          return next;
+        })
+      );
+    }
+    if (input.current) {
+      input.current.value = "";
+    }
+    setBusy(false);
+    router.refresh();
   };
 
   return (
@@ -52,7 +154,7 @@ export const UploadDocuments = () => {
           "flex flex-col items-center gap-2 rounded-xl border border-dashed p-8 text-center transition-colors hover:bg-muted/50",
           over && "border-primary bg-primary/5"
         )}
-        disabled={pending}
+        disabled={busy}
         onClick={() => input.current?.click()}
         onDragLeave={() => setOver(false)}
         onDragOver={(e) => {
@@ -66,17 +168,19 @@ export const UploadDocuments = () => {
         }}
         type="button"
       >
-        {pending ? (
+        {busy ? (
           <Spinner className="size-5" />
         ) : (
           <UploadIcon className="size-5" />
         )}
         <span className="font-medium text-sm">
-          {pending ? "Reading…" : "Drop documents here, or click to choose"}
+          {busy ? "Reading…" : "Drop documents here, or click to choose"}
         </span>
         <span className="text-muted-foreground text-xs">
-          SOPs, setup sheets, quality manuals, customer specs, notes. PDF, Word
-          (.docx), text or Markdown, up to 20 MB each.
+          SOPs, setup sheets, quality manuals, customer specs, drawings. PDF
+          (scanned too), Word, text, or photos of paper (JPG, PNG), up to 20 MB
+          each. Takumo links them to your parts, machines and customers and
+          proposes what they say as facts for review.
         </span>
       </button>
       <input
@@ -87,13 +191,8 @@ export const UploadDocuments = () => {
         ref={input}
         type="file"
       />
-      {messages.map((m) => (
-        <p
-          className={cn("text-sm", m.error && "text-destructive")}
-          key={m.text}
-        >
-          {m.text}
-        </p>
+      {logs.filter(Boolean).map((log) => (
+        <StepLog key={log.file} log={log} />
       ))}
     </div>
   );
