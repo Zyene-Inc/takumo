@@ -3,7 +3,6 @@ import path from "node:path";
 import { checkSql, QueryError } from "@repo/database/sql-guard";
 import { describe, expect, test } from "vitest";
 import { hintedMode, splitAnswer } from "../lib/agent/answer";
-import { compactHistory } from "../lib/agent/history";
 import {
   cite,
   collectSources,
@@ -11,6 +10,11 @@ import {
   sourcesFromRows,
   uncitedNumbers,
 } from "../lib/agent/citations";
+import {
+  compactHistory,
+  estimateContextTokens,
+  isLongConversation,
+} from "../lib/agent/history";
 import { buildStarters, STARTER_TOPICS } from "../lib/agent/starters";
 import {
   CHUNK_CHARS,
@@ -382,9 +386,12 @@ describe("conversation history sent to the model", () => {
 
   test("keeps the last questions in full and only the answers before them", () => {
     const messages = [
-      user("q1"), answer("a1"),
-      user("q2"), answer("a2"),
-      user("q3"), answer("a3"),
+      user("q1"),
+      answer("a1"),
+      user("q2"),
+      answer("a2"),
+      user("q3"),
+      answer("a3"),
       user("q4"),
     ];
     const sent = compactHistory(messages, 2);
@@ -398,8 +405,39 @@ describe("conversation history sent to the model", () => {
   test("a short conversation goes as it is; an answer with no text is dropped", () => {
     const short = [user("q1"), answer("a1"), user("q2")];
     expect(compactHistory(short)).toEqual(short);
-    const toolOnly = { role: "assistant" as const, parts: [{ type: "step-start" as const }] };
-    const sent = compactHistory([user("q1"), toolOnly, user("q2"), answer("a2"), user("q3")], 2);
-    expect(sent.map((m) => m.role)).toEqual(["user", "user", "assistant", "user"]);
+    const toolOnly = {
+      role: "assistant" as const,
+      parts: [{ type: "step-start" as const }],
+    };
+    const sent = compactHistory(
+      [user("q1"), toolOnly, user("q2"), answer("a2"), user("q3")],
+      2
+    );
+    expect(sent.map((m) => m.role)).toEqual([
+      "user",
+      "user",
+      "assistant",
+      "user",
+    ]);
+  });
+});
+
+describe("context size", () => {
+  test("an empty chat is 0; a conversation counts instructions plus what's sent", () => {
+    expect(estimateContextTokens([])).toBe(0);
+    const one = [
+      {
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: "x".repeat(4000) }],
+      },
+    ];
+    expect(estimateContextTokens(one)).toBeGreaterThan(3500 + 1000);
+    expect(estimateContextTokens(one)).toBeLessThan(3500 + 1100);
+  });
+
+  test("a new chat is suggested after 20 questions or at 80% of the budget", () => {
+    expect(isLongConversation(19, 39_000)).toBe(false);
+    expect(isLongConversation(20, 0)).toBe(true);
+    expect(isLongConversation(3, 40_000)).toBe(true);
   });
 });

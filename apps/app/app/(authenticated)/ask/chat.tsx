@@ -43,7 +43,7 @@ import {
 } from "react";
 import { type AnswerMode, type AskMode, splitAnswer } from "@/lib/agent/answer";
 import { collectSources, type Source } from "@/lib/agent/citations";
-import { LONG_CONVERSATION } from "@/lib/agent/history";
+import { CONTEXT_BUDGET, isLongConversation } from "@/lib/agent/history";
 import {
   STARTER_LABEL,
   STARTER_TOPICS,
@@ -52,6 +52,7 @@ import {
 } from "@/lib/agent/starters";
 import type { Artifact } from "@/lib/agent/tools";
 import { localToday } from "../schedule/gantt";
+import { ContextRing, useContextTokens } from "./context-ring";
 import { DictateButton } from "./dictate";
 import { TakumoEyes, type TakumoMood } from "./eyes";
 import {
@@ -396,6 +397,8 @@ export const Chat = ({
 
   const busy = status === "submitted" || status === "streaming";
   const questions = messages.filter((m) => m.role === "user").length;
+  const contextTokens = useContextTokens(messages, busy);
+  const longConversation = isLongConversation(questions, contextTokens);
   const starting = messages.length === 0 && !initialQuestion;
   const registry = useMemo(
     () => collectSources(outputsOf(messages)),
@@ -460,7 +463,7 @@ export const Chat = ({
         send(input);
       }}
     >
-      {questions >= LONG_CONVERSATION && (
+      {longConversation && (
         <p className="px-3 pb-1.5 text-muted-foreground text-xs">
           Long conversation: for a new topic,{" "}
           <Link className="underline underline-offset-2" href="/ask">
@@ -486,6 +489,7 @@ export const Chat = ({
           value={input}
         />
         <div className="flex items-center justify-end gap-1">
+          <ContextRing budget={CONTEXT_BUDGET} tokens={contextTokens} />
           <ModeMenu mode={mode} onChange={setMode} />
           {canDictate && (
             <DictateButton
