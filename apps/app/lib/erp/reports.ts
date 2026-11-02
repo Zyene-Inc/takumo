@@ -13,6 +13,7 @@ import { saveRecords } from "@repo/ingest/save";
 import { log } from "@repo/observability/log";
 import type { Sheet } from "@/app/(authenticated)/onboarding/read-file";
 import { budgetProblem, recordUsage } from "../ai-usage";
+import { markEnteredFromErp } from "../orders/settle";
 import { settleFromErp } from "../quotes/settle";
 import { headerKey } from "./sheets";
 
@@ -147,6 +148,13 @@ export const importReportRows = async (
     if (settled.won || settled.lost) {
       result.notes.push(
         `${settled.won} quote${settled.won === 1 ? "" : "s"} marked won and ${settled.lost} lost from these orders`
+      );
+    }
+    // Customer POs someone entered in the ERP are now in these orders.
+    const entered = await markEnteredFromErp(orgId);
+    if (entered) {
+      result.notes.push(
+        `${entered} customer PO${entered === 1 ? "" : "s"} now in your ERP`
       );
     }
   }
