@@ -19,7 +19,13 @@ import {
   SMALL_LEAD_TIME_EDIT_DAYS,
   SMALL_PRICE_EDIT,
 } from "@/lib/quotes/numbers";
-import { type RfqStatus, rfqLabel, STATUS_LABEL } from "@/lib/quotes/types";
+import {
+  type RfqSource,
+  type RfqStatus,
+  rfqLabel,
+  SOURCE_LABEL,
+  STATUS_LABEL,
+} from "@/lib/quotes/types";
 import { Header } from "../components/header";
 import { EmptyState, isoDate, money } from "../shop/components/format";
 import { NewRfq } from "./new-rfq";
@@ -38,6 +44,9 @@ const TABS = [
   { key: "closed", label: "Closed", statuses: CLOSED },
   { key: "all", label: "All", statuses: null },
 ] as const;
+
+const channelLabel = (source: string) =>
+  SOURCE_LABEL[source as RfqSource] ?? source;
 
 const num = (value: { toString(): string } | null) =>
   value === null ? null : Number(value.toString());
@@ -64,7 +73,9 @@ const RfqInboxPage = async ({
         number: true,
         status: true,
         subject: true,
+        source: true,
         receivedAt: true,
+        _count: { select: { files: true } },
         requestedDate: true,
         customerName: true,
         customer: { select: { name: true } },
@@ -218,6 +229,11 @@ const RfqInboxPage = async ({
                             {rfq.subject}
                           </p>
                         )}
+                        <p className="font-normal text-muted-foreground text-xs">
+                          {channelLabel(rfq.source)}
+                          {rfq._count.files > 0 &&
+                            ` · ${rfq._count.files} file${rfq._count.files === 1 ? "" : "s"}`}
+                        </p>
                       </TableCell>
                       <TableCell>{isoDate(rfq.receivedAt)}</TableCell>
                       <TableCell>

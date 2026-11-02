@@ -8,6 +8,7 @@ import { budgetProblem } from "../ai-usage";
 import { track } from "../analytics";
 import { intakeRfq } from "../quotes/intake";
 import { readRfqFile } from "../quotes/read";
+import { rfqLabel } from "../quotes/types";
 import {
   credentials,
   encryptionKey,
@@ -249,7 +250,6 @@ const alreadyHave = async (orgId: string, mail: MailThread) => {
   }
   const found = await forOrg(database, orgId).rfq.findFirst({
     where: {
-      source: "email",
       AND: [
         { extracted: { path: ["mail", "threadId"], equals: mail.threadId } },
         {
@@ -264,6 +264,13 @@ const alreadyHave = async (orgId: string, mail: MailThread) => {
   });
   return found?.number ?? null;
 };
+
+/** The sync note for an RFQ that's already in Takumo (same sender and files). */
+const sameRfqNote = (
+  text: { sender: string | null; subject: string | null },
+  number: number
+) =>
+  `Skipped ${text.subject ?? "a message"} from ${text.sender ?? "an unknown sender"}: same sender and files as ${rfqLabel(number)}, received in the last week.`;
 
 /** Why a fetched message isn't read into an RFQ, or null to read it. */
 const skipReason = async (
@@ -302,7 +309,8 @@ const syncGmail = async (
   const seen = new Set(
     (
       await forOrg(database, orgId).rfq.findMany({
-        where: { source: "email", sourceId: { in: ids } },
+        // Any channel: a portal or form email is still read once.
+        where: { sourceId: { in: ids } },
         select: { sourceId: true },
       })
     ).map((r) => r.sourceId)
@@ -332,15 +340,19 @@ const syncGmail = async (
         continue;
       }
       const text = await readRfqFile("message.eml", bytes);
-      const rfq = await intakeRfq(
+      const rfq = await intakeRfq(orgId, connection.createdBy, text, {
+        sourceId: id,
+        mail,
+      });
+      if (rfq.duplicate) {
+        result.skipped += 1;
+        result.notes.push(sameRfqNote(text, rfq.number));
+        continue;
+      }
+      track("rfq_received", {
         orgId,
-        connection.createdBy,
-        text,
-        null,
-        id,
-        mail
-      );
-      track("rfq_received", { orgId, properties: { source: "gmail" } });
+        properties: { source: "gmail", channel: text.source },
+      });
       result.created += 1;
       result.notes.push(
         `RFQ from ${text.sender ?? "an email"}: ${text.subject ?? "(no subject)"} (#${rfq.number})`
@@ -543,15 +555,19 @@ const readOutlookRfqs = async (
         continue;
       }
       const text = await readRfqFile("message.eml", bytes);
-      const rfq = await intakeRfq(
+      const rfq = await intakeRfq(orgId, connection.createdBy, text, {
+        sourceId: message.id,
+        mail,
+      });
+      if (rfq.duplicate) {
+        result.skipped += 1;
+        result.notes.push(sameRfqNote(text, rfq.number));
+        continue;
+      }
+      track("rfq_received", {
         orgId,
-        connection.createdBy,
-        text,
-        null,
-        message.id,
-        mail
-      );
-      track("rfq_received", { orgId, properties: { source: "outlook" } });
+        properties: { source: "outlook", channel: text.source },
+      });
       result.created += 1;
       result.notes.push(
         `RFQ from ${text.sender ?? "an email"}: ${text.subject ?? "(no subject)"} (#${rfq.number})`
@@ -596,10 +612,7 @@ const syncOutlook = async (
   const seen = new Set(
     (
       await forOrg(database, orgId).rfq.findMany({
-        where: {
-          source: "email",
-          sourceId: { in: candidates.map((m) => m.id) },
-        },
+        where: { sourceId: { in: candidates.map((m) => m.id) } },
         select: { sourceId: true },
       })
     ).map((r) => r.sourceId)

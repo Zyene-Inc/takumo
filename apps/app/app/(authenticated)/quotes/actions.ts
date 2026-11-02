@@ -14,13 +14,13 @@ import { estimateLine, loadQuoteHistory } from "@/lib/quotes/estimate";
 import { intakeRfq, readRfq } from "@/lib/quotes/intake";
 import { matchCustomer, matchMaterial, matchPart } from "@/lib/quotes/match";
 import { parseQtys } from "@/lib/quotes/numbers";
-import { readPasted, readRfqFile } from "@/lib/quotes/read";
 import {
-  type LineFinal,
-  MAX_QTY_BREAKS,
-  MAX_RFQ_BYTES,
-  RFQ_TYPES,
-} from "@/lib/quotes/types";
+  type RfqText,
+  readCall,
+  readPasted,
+  readRfqUpload,
+} from "@/lib/quotes/read";
+import { type LineFinal, MAX_QTY_BREAKS, rfqLabel } from "@/lib/quotes/types";
 import { checkToday } from "@/lib/schedule/request";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -39,10 +39,62 @@ const refresh = (rfqId?: string) => {
 const firstIssue = (error: z.ZodError) =>
   error.issues[0]?.message ?? "Check the form.";
 
-/** A new RFQ from an uploaded file or pasted text. Read straight away. */
-export const submitRfq = async (
+/** Everything uploaded at once (the server action's body limit). */
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const OVERRIDES = ["portal", "form"] as const;
+
+const uploadedFiles = async (form: FormData) =>
+  Promise.all(
+    form
+      .getAll("file")
+      .filter((f): f is File => f instanceof File && f.size > 0)
+      .map(async (f) => ({
+        name: f.name,
+        bytes: new Uint8Array(await f.arrayBuffer()),
+      }))
+  );
+
+/** The RFQ's text and files from the form: an upload, a paste or a call. */
+const rfqFromForm = async (
   form: FormData
-): Promise<Result<{ id: string }>> => {
+): Promise<RfqText | { error: string }> => {
+  const mode = String(form.get("mode") ?? "paste");
+  const typed = String(form.get("text") ?? "").trim();
+  if (mode === "call") {
+    return typed.length >= 10
+      ? readCall(typed)
+      : { error: "Type or dictate what the customer asked for." };
+  }
+  if (mode !== "upload") {
+    return typed ? readPasted(typed) : { error: "Paste the RFQ email." };
+  }
+  const files = await uploadedFiles(form);
+  if (files.length === 0) {
+    return { error: "Choose the RFQ's files." };
+  }
+  const total = files.reduce((sum, f) => sum + f.bytes.length, 0);
+  if (total > MAX_UPLOAD_BYTES) {
+    return {
+      error:
+        "Upload up to 20 MB at once. Zip the drawings, or email the package to your RFQ address.",
+    };
+  }
+  const text = await readRfqUpload(files);
+  const override = String(form.get("channel") ?? "");
+  return (OVERRIDES as readonly string[]).includes(override)
+    ? { ...text, source: override as RfqText["source"] }
+    : text;
+};
+
+export type SubmitResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string; existing?: { id: string; label: string } };
+
+/**
+ * A new RFQ from an uploaded package, pasted text or a call. Read straight
+ * away; the same sender and files within a week link to the earlier RFQ.
+ */
+export const submitRfq = async (form: FormData): Promise<SubmitResult> => {
   const access = await authorize("quotes:write");
   if (!access.ok) {
     return access;
@@ -52,44 +104,33 @@ export const submitRfq = async (
     return { ok: false, error: locked };
   }
   const { userId } = await auth();
-  const file = form.get("file");
-  const pasted = String(form.get("text") ?? "").trim();
   try {
-    let text: ReturnType<typeof readPasted>;
-    let fileName: string | null = null;
-    if (file instanceof File && file.size > 0) {
-      if (file.size > MAX_RFQ_BYTES) {
-        return { ok: false, error: "RFQ files can be up to 10 MB." };
-      }
-      const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-      if (!(RFQ_TYPES as readonly string[]).includes(ext)) {
-        return {
-          ok: false,
-          error: `Takumo reads RFQs as ${RFQ_TYPES.join(", ")} files.`,
-        };
-      }
-      text = await readRfqFile(
-        file.name,
-        new Uint8Array(await file.arrayBuffer())
-      );
-      fileName = file.name;
-    } else if (pasted) {
-      text = readPasted(pasted);
-    } else {
-      return { ok: false, error: "Paste the RFQ email or choose a file." };
+    const text = await rfqFromForm(form);
+    if ("error" in text) {
+      return { ok: false, error: text.error };
     }
-    if (text.body.trim().length < 10) {
+    if (text.body.trim().length < 10 && text.files.length === 0) {
       return {
         ok: false,
         error:
           "Takumo couldn't find any text in that RFQ. If it's a scanned PDF, paste the text instead.",
       };
     }
-    const rfq = await intakeRfq(access.orgId, userId, text, fileName);
+    const uploads = form.getAll("file").filter((f) => f instanceof File);
+    const rfq = await intakeRfq(access.orgId, userId, text, {
+      fileName: uploads.length === 1 ? (uploads[0] as File).name : null,
+    });
+    if (rfq.duplicate) {
+      return {
+        ok: false,
+        error: `This is the same as ${rfqLabel(rfq.number)}: same sender and files, received in the last week.`,
+        existing: { id: rfq.id, label: rfqLabel(rfq.number) },
+      };
+    }
     track("rfq_received", {
       orgId: access.orgId,
       userId,
-      properties: { source: text.source },
+      properties: { source: text.source, files: text.files.length },
     });
     refresh(rfq.id);
     return { ok: true, id: rfq.id };

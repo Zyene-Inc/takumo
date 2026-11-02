@@ -3,9 +3,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { quotedLines, quoteReference } from "@/lib/quotes/document";
+import { rfqFilesOf } from "@/lib/quotes/files";
+import { intakeNoteOf } from "@/lib/quotes/intake";
 import { replyEmail } from "@/lib/quotes/reply";
 import { loadRfqView } from "@/lib/quotes/view";
 import { Header } from "../../components/header";
+import { RfqFiles } from "./rfq-files";
 import { Workspace } from "./workspace";
 
 export const metadata: Metadata = { title: "RFQ · Takumo" };
@@ -19,16 +22,25 @@ const RfqPage = async ({ params }: { params: Promise<{ id: string }> }) => {
   }
   const { id } = await params;
   const db = forOrg(database, orgId);
-  const [rfq, machines, materials, customers, org] = await Promise.all([
-    loadRfqView(orgId, id),
-    db.workCenter.findMany({
-      orderBy: { name: "asc" },
-      select: { name: true },
-    }),
-    db.material.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
-    db.customer.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
-    database.org.findUnique({ where: { id: orgId }, select: { name: true } }),
-  ]);
+  const [rfq, machines, materials, customers, org, files, intake] =
+    await Promise.all([
+      loadRfqView(orgId, id),
+      db.workCenter.findMany({
+        orderBy: { name: "asc" },
+        select: { name: true },
+      }),
+      db.material.findMany({
+        orderBy: { name: "asc" },
+        select: { name: true },
+      }),
+      db.customer.findMany({
+        orderBy: { name: "asc" },
+        select: { name: true },
+      }),
+      database.org.findUnique({ where: { id: orgId }, select: { name: true } }),
+      rfqFilesOf(orgId, id),
+      db.rfq.findFirst({ where: { id }, select: { extracted: true } }),
+    ]);
   if (!rfq) {
     notFound();
   }
@@ -46,6 +58,12 @@ const RfqPage = async ({ params }: { params: Promise<{ id: string }> }) => {
   return (
     <>
       <Header page={rfq.label} pages={["Quotes", "RFQ inbox"]} />
+      <RfqFiles
+        files={files}
+        rfqId={rfq.id}
+        skipped={intakeNoteOf(intake?.extracted)?.skipped ?? []}
+        source={rfq.source}
+      />
       <Workspace
         canEdit={canEditQuotes}
         customers={customers.map((c) => c.name)}

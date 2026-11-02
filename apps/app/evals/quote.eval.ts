@@ -207,7 +207,10 @@ describe("reading RFQs", () => {
       file,
       new Uint8Array(readFileSync(path.join(DIR, file)))
     );
-    const rfq = await intakeRfq(ORG_ID, EVAL_USER, text, file);
+    const rfq = await intakeRfq(ORG_ID, EVAL_USER, text, {
+      fileName: file,
+      checkDuplicates: false,
+    });
     rfqIds.set(file, rfq.id);
     const view = await loadRfqView(ORG_ID, rfq.id);
     expect(view?.status).toBe(golden.status);
@@ -249,7 +252,10 @@ describe("reading RFQs", () => {
       "vague.txt",
       new Uint8Array(readFileSync(path.join(DIR, "vague.txt")))
     );
-    const rfq = await intakeRfq(ORG_ID, EVAL_USER, text, "vague.txt");
+    const rfq = await intakeRfq(ORG_ID, EVAL_USER, text, {
+      fileName: "vague.txt",
+      checkDuplicates: false,
+    });
     const view = await loadRfqView(ORG_ID, rfq.id);
     expect(view?.lines.every((l) => !l.part)).toBe(true);
     expect(view?.questions.join(" ")).toMatch(/part|drawing|which/i);
