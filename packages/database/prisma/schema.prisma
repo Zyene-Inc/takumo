@@ -94,6 +94,7 @@ model Org {
   stockLevels        StockLevel[]
   purchaseOrderLines PurchaseOrderLine[]
   rfqFiles           RfqFile[]
+  uploadParts        UploadPart[]
   shopSettings       ShopSettings?
 }
 
@@ -486,6 +487,25 @@ model RfqFile {
 
   @@index([orgId, rfqId])
   @@index([orgId, sha256])
+}
+
+// A piece of a file being uploaded in parts (requests are capped at 4.5 MB
+// on the host). Put together and deleted when the upload is submitted; left
+// over pieces are removed by the daily cron.
+model UploadPart {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  uploadId  String
+  fileIndex Int
+  partIndex Int
+  name      String
+  size      Int
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, uploadId, fileIndex, partIndex])
+  @@index([createdAt])
 }
 
 // How a shop quotes: one row per shop, every field optional with a default

@@ -24,8 +24,34 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { PACKAGE_TYPES } from "@/lib/quotes/file-types";
+import { MAX_PART_BYTES, pieces } from "@/lib/quotes/upload-limits";
 import { DictateButton } from "../ask/dictate";
-import { type SubmitResult, submitRfq } from "./actions";
+import { type SubmitResult, submitRfq, uploadRfqPart } from "./actions";
+
+/** Send the files a piece at a time; the RFQ is made from them afterwards. */
+const uploadInPieces = async (
+  files: File[]
+): Promise<{ ok: true; uploadId: string } | { ok: false; error: string }> => {
+  const uploadId = crypto.randomUUID();
+  for (const [fileIndex, file] of files.entries()) {
+    for (const [partIndex, [start, end]] of pieces(
+      file.size,
+      MAX_PART_BYTES
+    ).entries()) {
+      const form = new FormData();
+      form.set("uploadId", uploadId);
+      form.set("fileIndex", String(fileIndex));
+      form.set("partIndex", String(partIndex));
+      form.set("name", file.name);
+      form.set("part", file.slice(start, end));
+      const result = await uploadRfqPart(form);
+      if (!result.ok) {
+        return result;
+      }
+    }
+  }
+  return { ok: true, uploadId };
+};
 
 type Mode = "paste" | "upload" | "call";
 type Channel = "" | "portal" | "form";
@@ -101,9 +127,13 @@ export const NewRfq = ({ canEdit }: { canEdit: boolean }) => {
       const form = new FormData();
       form.set("mode", mode);
       if (mode === "upload") {
-        for (const file of files) {
-          form.append("file", file);
+        // Sent in pieces first: the host caps each request at 4.5 MB.
+        const uploaded = await uploadInPieces(files);
+        if (!uploaded.ok) {
+          setProblem(uploaded);
+          return;
         }
+        form.set("uploadId", uploaded.uploadId);
         form.set("channel", channel);
       } else {
         form.set("text", mode === "call" ? notes : text);

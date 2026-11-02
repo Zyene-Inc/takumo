@@ -4,6 +4,7 @@ import { env } from "@/env";
 import { PROVIDER_NAME, type Provider } from "@/lib/connectors/config";
 import { healthLines, lateReports } from "@/lib/erp/health";
 import { notifyAdmins } from "@/lib/notify";
+import { removeOldUploadParts } from "@/lib/quotes/upload-parts";
 
 // Once a day (vercel.json, 15:00 UTC: morning in the US): tell each shop's
 // admins about ERP reports that stopped arriving and mailboxes that
@@ -25,6 +26,8 @@ export const GET = async (request: Request) => {
     return new Response("Unauthorized", { status: 401 });
   }
   const now = new Date();
+  // Housekeeping: pieces of uploads that were never submitted.
+  await removeOldUploadParts(now.getTime()).catch(() => 0);
   const [reports, broken] = await Promise.all([
     database.erpReport.findMany({
       where: { status: "active" },

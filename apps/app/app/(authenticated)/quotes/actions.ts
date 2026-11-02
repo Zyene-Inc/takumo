@@ -21,6 +21,8 @@ import {
   readRfqUpload,
 } from "@/lib/quotes/read";
 import { type LineFinal, MAX_QTY_BREAKS, rfqLabel } from "@/lib/quotes/types";
+import { isUploadId, MAX_UPLOAD_BYTES } from "@/lib/quotes/upload-limits";
+import { keepUploadPart, takeUpload } from "@/lib/quotes/upload-parts";
 import { checkToday } from "@/lib/schedule/request";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -40,11 +42,15 @@ const firstIssue = (error: z.ZodError) =>
   error.issues[0]?.message ?? "Check the form.";
 
 /** Everything uploaded at once (the server action's body limit). */
-const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const OVERRIDES = ["portal", "form"] as const;
 
-const uploadedFiles = async (form: FormData) =>
-  Promise.all(
+const uploadedFiles = (orgId: string, form: FormData) => {
+  // Large uploads come in pieces first (uploadRfqPart), then just their id.
+  const uploadId = String(form.get("uploadId") ?? "");
+  if (uploadId) {
+    return isUploadId(uploadId) ? takeUpload(orgId, uploadId) : [];
+  }
+  return Promise.all(
     form
       .getAll("file")
       .filter((f): f is File => f instanceof File && f.size > 0)
@@ -53,9 +59,34 @@ const uploadedFiles = async (form: FormData) =>
         bytes: new Uint8Array(await f.arrayBuffer()),
       }))
   );
+};
+
+/** One piece of a large upload (the host caps each request at 4.5 MB). */
+export const uploadRfqPart = async (form: FormData): Promise<Result> => {
+  const access = await authorize("quotes:write");
+  if (!access.ok) {
+    return access;
+  }
+  const blob = form.get("part");
+  if (!(blob instanceof Blob)) {
+    return { ok: false, error: "That upload isn't valid. Try again." };
+  }
+  const problem = await keepUploadPart(
+    access.orgId,
+    {
+      uploadId: String(form.get("uploadId") ?? ""),
+      fileIndex: Number(form.get("fileIndex")),
+      partIndex: Number(form.get("partIndex")),
+      name: String(form.get("name") ?? ""),
+    },
+    new Uint8Array(await blob.arrayBuffer())
+  );
+  return problem ? { ok: false, error: problem } : { ok: true };
+};
 
 /** The RFQ's text and files from the form: an upload, a paste or a call. */
 const rfqFromForm = async (
+  orgId: string,
   form: FormData
 ): Promise<RfqText | { error: string }> => {
   const mode = String(form.get("mode") ?? "paste");
@@ -68,7 +99,7 @@ const rfqFromForm = async (
   if (mode !== "upload") {
     return typed ? readPasted(typed) : { error: "Paste the RFQ email." };
   }
-  const files = await uploadedFiles(form);
+  const files = await uploadedFiles(orgId, form);
   if (files.length === 0) {
     return { error: "Choose the RFQ's files." };
   }
@@ -105,7 +136,7 @@ export const submitRfq = async (form: FormData): Promise<SubmitResult> => {
   }
   const { userId } = await auth();
   try {
-    const text = await rfqFromForm(form);
+    const text = await rfqFromForm(access.orgId, form);
     if ("error" in text) {
       return { ok: false, error: text.error };
     }
@@ -116,9 +147,8 @@ export const submitRfq = async (form: FormData): Promise<SubmitResult> => {
           "Takumo couldn't find any text in that RFQ. If it's a scanned PDF, paste the text instead.",
       };
     }
-    const uploads = form.getAll("file").filter((f) => f instanceof File);
     const rfq = await intakeRfq(access.orgId, userId, text, {
-      fileName: uploads.length === 1 ? (uploads[0] as File).name : null,
+      fileName: text.files.length === 1 ? (text.files[0]?.name ?? null) : null,
     });
     if (rfq.duplicate) {
       return {
