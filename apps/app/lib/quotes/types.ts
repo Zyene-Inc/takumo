@@ -82,3 +82,181 @@ export interface QuotedBreak {
   qty: number;
   unitPrice: number;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 2 (docs/PRODUCT-PLAN.md F2.x): shared shapes. Each feature owns the
+// code that fills them; the review screen reads them.
+// ---------------------------------------------------------------------------
+
+/** Where an RFQ came from (Rfq.source), for the inbox and metrics. F2.1-R6 */
+export const RFQ_SOURCES = [
+  "email",
+  "portal",
+  "form",
+  "phone",
+  "upload",
+  "paste",
+] as const;
+export type RfqSource = (typeof RFQ_SOURCES)[number];
+
+export const SOURCE_LABEL: Record<RfqSource, string> = {
+  email: "Email",
+  portal: "Customer portal",
+  form: "Website form",
+  phone: "Phone call",
+  upload: "Upload",
+  paste: "Pasted",
+};
+
+/** RfqFile.kind */
+export const RFQ_FILE_KINDS = [
+  "drawing",
+  "model",
+  "document",
+  "image",
+  "other",
+] as const;
+export type RfqFileKind = (typeof RFQ_FILE_KINDS)[number];
+
+export type Confidence = "high" | "medium" | "low";
+
+/** Where on a sheet a value was read: [ymin, xmin, ymax, xmax], 0–1000. */
+export type Box = [number, number, number, number];
+
+/** One value read from a drawing, with where it came from. F2.2-R3 */
+export interface DrawingValue<T = string> {
+  /** Sheet number, from 1. */
+  box: Box | null;
+  confidence: Confidence;
+  sheet: number;
+  /** The text as printed. */
+  text: string;
+  /** The value, cleaned up (e.g. a number, a normalized grade). */
+  value: T;
+}
+
+export type FinishKind =
+  | "anodize"
+  | "plating"
+  | "heat_treat"
+  | "passivation"
+  | "paint"
+  | "other";
+
+export type FeatureKind =
+  | "hole"
+  | "thread"
+  | "pocket"
+  | "slot"
+  | "bore"
+  | "chamfer"
+  | "radius"
+  | "knurl"
+  | "keyway"
+  | "other";
+
+export type RequirementKind =
+  | "certification"
+  | "fai"
+  | "coc"
+  | "material_cert"
+  | "itar"
+  | "spec"
+  | "other";
+
+/** A "check this" for the estimator, pointing at the drawing. F2.2-R5/R7 */
+export interface DrawingFlag {
+  box: Box | null;
+  kind:
+    | "new_material"
+    | "outsourced"
+    | "tolerance"
+    | "envelope"
+    | "certification"
+    | "low_confidence"
+    | "conflict"
+    | "units"
+    | "no_drawing";
+  message: string;
+  sheet: number | null;
+}
+
+/** RfqLine.drawing: everything read from the line's drawing. F2.2-R2/R6 */
+export interface DrawingReading {
+  envelope: DrawingValue<{
+    diameter?: number;
+    h?: number;
+    l?: number;
+    length?: number;
+    w?: number;
+  }> | null;
+  features: (DrawingValue & {
+    count: number;
+    detail: string | null;
+    kind: FeatureKind;
+  })[];
+  fileId: string;
+  fileName: string;
+  finishes: (DrawingValue & { kind: FinishKind; spec: string | null })[];
+  flags: DrawingFlag[];
+  material:
+    | (DrawingValue & {
+        condition: string | null;
+        grade: string | null;
+        spec: string | null;
+      })
+    | null;
+  /** Numbered drawing notes, verbatim. */
+  notes: DrawingValue[];
+  quantities: DrawingValue<number>[];
+  /** Questions for the customer, written for the draft reply. F2.2-R7 */
+  questions: string[];
+  readAt: string;
+  requirements: (DrawingValue & { kind: RequirementKind })[];
+  sheets: number;
+  stock: {
+    form: "bar" | "plate" | "tube" | "sheet" | "other";
+    size: string;
+  } | null;
+  titleBlock: {
+    approvedDate?: DrawingValue;
+    drawingNo?: DrawingValue;
+    drawnDate?: DrawingValue;
+    generalTolerance?: DrawingValue;
+    partNo?: DrawingValue;
+    rev?: DrawingValue;
+    scale?: DrawingValue;
+    sheet?: DrawingValue;
+    title?: DrawingValue;
+  };
+  tolerances: (DrawingValue & {
+    datums: string[];
+    kind: "dimension" | "gdt" | "surface";
+    symbol: string | null;
+    /** ± inches for dimensions, Ra µin for surface, zone for GD&T. */
+    tolerance: number | null;
+  })[];
+  units: "in" | "mm" | null;
+}
+
+/** An outside process the shop buys (ShopSettings.outsideProcesses). */
+export interface OutsideSupplier {
+  costPerPart: number | null;
+  leadTimeDays: number | null;
+  lotCharge: number | null;
+  process: string;
+  supplier: string | null;
+}
+
+/** How a shop quotes, with defaults filled in (lib/quotes/settings.ts). */
+export interface QuoteSettings {
+  certifications: string[];
+  laborRate: number;
+  materialMarkup: number;
+  outsideProcesses: OutsideSupplier[];
+  quoteValidityDays: number;
+  replyIntro: string | null;
+  signature: string | null;
+  /** Tightest tolerance the shop holds without a flag, inches. */
+  toleranceIn: number;
+}

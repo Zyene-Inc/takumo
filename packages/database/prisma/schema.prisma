@@ -93,6 +93,8 @@ model Org {
   erpReports         ErpReport[]
   stockLevels        StockLevel[]
   purchaseOrderLines PurchaseOrderLine[]
+  rfqFiles           RfqFile[]
+  shopSettings       ShopSettings?
 }
 
 model Member {
@@ -112,20 +114,24 @@ model Member {
 // ---------------------------------------------------------------------------
 
 model WorkCenter {
-  id         String     @id @default(uuid())
-  orgId      String
-  org        Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name       String
-  type       String? // e.g. "cnc_mill", "lathe", "press_brake"
-  hourlyRate Decimal?   @db.Decimal(10, 2)
-  efficiency Float      @default(1.0)
-  shifts     Json? // [{ "days": [1,2,3,4,5], "start": "07:00", "end": "15:30" }]
-  provenance Provenance @default(data)
-  sourceId   String?
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id          String     @id @default(uuid())
+  orgId       String
+  org         Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name        String
+  type        String? // e.g. "cnc_mill", "lathe", "press_brake"
+  hourlyRate  Decimal?   @db.Decimal(10, 2)
+  efficiency  Float      @default(1.0)
+  shifts      Json? // [{ "days": [1,2,3,4,5], "start": "07:00", "end": "15:30" }]
+  // Largest part it takes, in inches: { x, y, z } or { diameter, length }.
+  envelope    Json?
+  // Tightest tolerance it holds, in inches (e.g. 0.0005).
+  toleranceIn Float?
+  provenance  Provenance @default(data)
+  sourceId    String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
   // Last time the shop's ERP report updated it; read-only in Takumo then.
-  syncedAt   DateTime?
+  syncedAt    DateTime?
 
   calendar CalendarDay[]
   routings Routing[]
@@ -191,6 +197,8 @@ model Customer {
   org             Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name            String
   paymentTermDays Int?
+  // Lowest margin the owner accepts for this customer (0.25 = 25%).
+  marginFloor     Float?
   createdAt       DateTime  @default(now())
   // Last time the shop's ERP report updated it; read-only in Takumo then.
   syncedAt        DateTime?
@@ -374,7 +382,8 @@ model Rfq {
   orgId         String
   org           Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   number        Int // RFQ-0001, per shop
-  source        String // "email" | "upload" | "paste"
+  // email | portal | form | phone | upload | paste
+  source        String
   sourceId      String?
   fileName      String?
   subject       String?
@@ -394,10 +403,19 @@ model Rfq {
   createdBy     String?
   receivedAt    DateTime  @default(now())
   updatedAt     DateTime  @default(now()) @updatedAt
+  // The earlier RFQ this one repeats (same sender and files within 7 days).
+  duplicateOfId String?
+  // The draft reply in the mailbox (RfqReply in lib/quotes/types.ts).
+  reply         Json?
+  // When the draft was first ready, the reply sent, and won/lost decided.
+  draftedAt     DateTime?
+  sentAt        DateTime?
+  decidedAt     DateTime?
 
   customer Customer? @relation(fields: [customerId], references: [id])
   lines    RfqLine[]
   quotes   Quote[]
+  files    RfqFile[]
 
   @@unique([orgId, number])
   @@index([orgId, status])
@@ -433,6 +451,10 @@ model RfqLine {
   draft        Json?
   // What the estimator approved: { leadTimeDays, breaks: [{ qty, unitPrice }] }.
   final        Json?
+  // What was read from the drawing, with where (DrawingReading in types.ts).
+  drawing      Json?
+  // The drawing file this line was read from.
+  fileId       String?
   quoteId      String? @unique
 
   rfq      Rfq       @relation(fields: [rfqId], references: [id], onDelete: Cascade)
@@ -442,6 +464,45 @@ model RfqLine {
 
   @@unique([rfqId, lineNo])
   @@index([orgId])
+}
+
+// A file that came with an RFQ (drawing, 3D model, spec), kept so it can be
+// read again and shown beside the quote.
+model RfqFile {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  rfqId     String
+  rfq       Rfq      @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  name      String
+  mediaType String
+  size      Int
+  sha256    String
+  // drawing | model | document | image | other
+  kind      String   @default("other")
+  pages     Int?
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  @@index([orgId, rfqId])
+  @@index([orgId, sha256])
+}
+
+// How a shop quotes: one row per shop, every field optional with a default
+// in lib/quotes/settings.ts.
+model ShopSettings {
+  orgId             String   @id
+  org               Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  quoteValidityDays Int?
+  materialMarkup    Float?
+  laborRate         Float?
+  toleranceIn       Float?
+  certifications    String[] @default([])
+  // [{ process, supplier, leadTimeDays, costPerPart, lotCharge }]
+  outsideProcesses  Json?
+  signature         String?
+  replyIntro        String?
+  updatedAt         DateTime @updatedAt
 }
 
 // ---------------------------------------------------------------------------
@@ -740,6 +801,9 @@ model PurchaseOrderLine {
   qtyOrdered  Float
   qtyReceived Float     @default(0)
   unit        String?
+  // Price per unit on the PO, and when it was ordered (material pricing).
+  unitPrice   Float?
+  orderedAt   DateTime? @db.Date
   dueDate     DateTime  @db.Date
   // open | partial | received | cancelled
   status      String    @default("open")

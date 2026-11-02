@@ -3,12 +3,12 @@
 
 import { extractPages } from "../knowledge/extract";
 import { parseEmail } from "./email";
-import { RFQ_TYPES } from "./types";
+import { RFQ_TYPES, type RfqSource } from "./types";
 
 export interface RfqText {
   body: string;
   sender: string | null;
-  source: "email" | "upload" | "paste";
+  source: RfqSource;
   subject: string | null;
 }
 
