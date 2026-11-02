@@ -16,6 +16,7 @@ import { Header } from "../../../components/header";
 import { DeleteButton } from "../../components/delete-button";
 import {
   EmptyState,
+  ErpBadge,
   formValue,
   isoDate,
   minutes,
@@ -72,7 +73,7 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
       >
         <div className="flex gap-1 px-4">
           <RecordDialog
-            canEdit={canEditShop}
+            canEdit={canEditShop && !part.syncedAt}
             entity="parts"
             initial={{
               partNo: part.partNo,
@@ -94,7 +95,7 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
             }
           />
           <DeleteButton
-            canEdit={canEditShop}
+            canEdit={canEditShop && !part.syncedAt}
             entity="parts"
             id={part.id}
             name={part.partNo}
@@ -172,6 +173,7 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
                           <div className="flex items-center gap-2">
                             {r.workCenter.name}
                             <ProvenanceBadge provenance={r.provenance} />
+                            <ErpBadge syncedAt={r.syncedAt} />
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
@@ -184,7 +186,7 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
                         <TableCell>
                           <div className="flex justify-end">
                             <RecordDialog
-                              canEdit={canEditShop}
+                              canEdit={canEditShop && !r.syncedAt}
                               entity="routings"
                               hidden={["partNo", "rev"]}
                               initial={{
@@ -210,7 +212,7 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
                               }
                             />
                             <DeleteButton
-                              canEdit={canEditShop}
+                              canEdit={canEditShop && !r.syncedAt}
                               entity="routings"
                               id={r.id}
                               name={`operation ${r.seq}`}

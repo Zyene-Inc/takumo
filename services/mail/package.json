@@ -1,0 +1,29 @@
+{
+  "name": "takumo-mail",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Inbound SMTP receiver (MX) that forwards mail to the Takumo app over a signed webhook",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node --test \"dist-test/test/*.test.js\"",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "mailauth": "^8.0.4",
+    "smtp-server": "^3.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/nodemailer": "^8.0.2",
+    "nodemailer": "^10.3.1",
+    "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "joi": "^18.3.1"
+  }
+}

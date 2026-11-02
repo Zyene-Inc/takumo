@@ -67,6 +67,76 @@ const exists = async (
   }
 };
 
+const ERP_OWNED =
+  "This comes from your ERP, which keeps it up to date. Change it in your ERP; the next report brings the change here.";
+
+/** When a record the form would change was last synced from the ERP. */
+const syncedByIdentity = async (
+  orgId: string,
+  entity: EntityKey,
+  v: Record<string, string>
+) => {
+  const db = forOrg(database, orgId);
+  const select = { syncedAt: true } as const;
+  switch (entity) {
+    case "workCenters":
+      return (
+        await db.workCenter.findFirst({ where: { name: v.name }, select })
+      )?.syncedAt;
+    case "customers":
+      return (await db.customer.findFirst({ where: { name: v.name }, select }))
+        ?.syncedAt;
+    case "materials":
+      return (await db.material.findFirst({ where: { name: v.name }, select }))
+        ?.syncedAt;
+    case "parts":
+      return (
+        await db.part.findFirst({
+          where: { partNo: v.partNo, rev: v.rev || "A" },
+          select,
+        })
+      )?.syncedAt;
+    case "routings":
+      return (
+        await db.routing.findFirst({
+          where: {
+            seq: Number(v.seq),
+            part: { partNo: v.partNo, ...(v.rev ? { rev: v.rev } : {}) },
+          },
+          select,
+        })
+      )?.syncedAt;
+    case "orders":
+      return (
+        await db.order.findFirst({ where: { orderNo: v.orderNo }, select })
+      )?.syncedAt;
+    default:
+      return null;
+  }
+};
+
+const syncedById = async (orgId: string, entity: EntityKey, id: string) => {
+  const db = forOrg(database, orgId);
+  const where = { id };
+  const select = { syncedAt: true } as const;
+  switch (entity) {
+    case "workCenters":
+      return (await db.workCenter.findFirst({ where, select }))?.syncedAt;
+    case "customers":
+      return (await db.customer.findFirst({ where, select }))?.syncedAt;
+    case "materials":
+      return (await db.material.findFirst({ where, select }))?.syncedAt;
+    case "parts":
+      return (await db.part.findFirst({ where, select }))?.syncedAt;
+    case "routings":
+      return (await db.routing.findFirst({ where, select }))?.syncedAt;
+    case "orders":
+      return (await db.order.findFirst({ where, select }))?.syncedAt;
+    default:
+      return null;
+  }
+};
+
 /**
  * Saves one record typed in by a person. Goes through the same parsing and
  * upsert code as file imports, marked as "stated" rather than "data".
@@ -90,6 +160,10 @@ export const saveRecord = async (
       ok: false,
       errors: errors.map((e) => `${e.field}: ${e.message}`),
     };
+  }
+  // The ERP owns what it sends (docs/PRODUCT-PLAN.md F1.4).
+  if (mode === "update" && (await syncedByIdentity(orgId, entity, values))) {
+    return { ok: false, errors: [ERP_OWNED] };
   }
   if (mode === "create" && (await exists(orgId, entity, values))) {
     return {
@@ -150,6 +224,9 @@ export const deleteRecord = async (
     return { ok: false, errors: [access.error] };
   }
   const { orgId } = access;
+  if (await syncedById(orgId, entity, id)) {
+    return { ok: false, errors: [ERP_OWNED] };
+  }
   try {
     const { count } = await deleteById(forOrg(database, orgId), entity, id);
     if (count === 0) {

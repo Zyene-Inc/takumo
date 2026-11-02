@@ -248,9 +248,11 @@ describe("QuickBooks", () => {
 });
 
 describe("Gmail", () => {
-  test("the sign-in link asks for read-only mail and a refresh token", () => {
+  test("the sign-in link asks to read mail, write drafts, and for a refresh token", () => {
     const url = new URL(gmail.authorizeUrl("client-1", "https://app/cb", "s"));
-    expect(url.searchParams.get("scope")).toBe(`${gmail.GMAIL_SCOPE} email`);
+    expect(url.searchParams.get("scope")).toBe(
+      `${gmail.GMAIL_SCOPE} ${gmail.GMAIL_COMPOSE_SCOPE} email`
+    );
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.get("prompt")).toBe("consent");
   });
@@ -290,5 +292,127 @@ describe("Gmail", () => {
     await expect(
       gmail.mailbox(fetcher as typeof fetch, "t")
     ).rejects.toBeInstanceOf(gmail.GmailAuthError);
+  });
+
+  test("the default search is the shared RFQ subject words", () => {
+    expect(gmail.DEFAULT_RFQ_QUERY).toBe(
+      'subject:(rfq OR "request for quote" OR "request for quotation" OR "quote request" OR "please quote") -in:sent -in:chats'
+    );
+  });
+
+  test("connections from before drafts ask to reconnect", () => {
+    expect(gmail.canDraft(`${gmail.GMAIL_SCOPE} email`)).toBe(false);
+    expect(gmail.canDraft(null)).toBe(false);
+    expect(
+      gmail.canDraft(`email ${gmail.GMAIL_SCOPE} ${gmail.GMAIL_COMPOSE_SCOPE}`)
+    ).toBe(true);
+  });
+
+  test("a reply draft lands in the RFQ's thread", async () => {
+    const fetcher = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        json({ id: "d1", message: { id: "m9", threadId: "t1" } })
+    );
+    const draft = await gmail.createDraftReply(
+      fetcher as typeof fetch,
+      "tok",
+      {
+        threadId: "t1",
+        messageId: "<rfq-1@buyer.example>",
+        references: "<earlier@buyer.example>",
+        subject: "RFQ NW-2211 gripper brackets",
+        to: "Dana <dana@buyer.example>",
+      },
+      "<p>Thanks — quote attached.</p>"
+    );
+    expect(draft).toEqual({ id: "d1", messageId: "m9" });
+    const [url, init] = fetcher.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe("https://gmail.googleapis.com/gmail/v1/users/me/drafts");
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(String(init.body));
+    expect(body.message.threadId).toBe("t1");
+    const mime = Buffer.from(body.message.raw, "base64url").toString("utf8");
+    expect(mime).toContain("In-Reply-To: <rfq-1@buyer.example>\r\n");
+    expect(mime).toContain(
+      "References: <earlier@buyer.example> <rfq-1@buyer.example>\r\n"
+    );
+    expect(mime).toContain("Subject: Re: RFQ NW-2211 gripper brackets\r\n");
+    expect(mime).toContain("To: Dana <dana@buyer.example>\r\n");
+    const html = mime.split("\r\n\r\n")[1].replace(/\r\n/g, "");
+    expect(Buffer.from(html, "base64").toString("utf8")).toBe(
+      "<p>Thanks — quote attached.</p>"
+    );
+  });
+
+  test("replies keep an existing Re: and encode non-ASCII subjects", () => {
+    const mime = gmail.replyMime(
+      {
+        threadId: "t",
+        messageId: "<a@b>",
+        subject: "Re: Angebot Fräsen",
+        to: "x@y.z",
+      },
+      "<p>hi</p>"
+    );
+    expect(mime).toContain(
+      `Subject: =?UTF-8?B?${Buffer.from("Re: Angebot Fräsen").toString("base64")}?=`
+    );
+    expect(mime).toContain("References: <a@b>\r\n");
+  });
+
+  test("the preview marks which of the last 20 emails the search picks up", async () => {
+    const respond = (url: string | URL | Request) => {
+      const u = new URL(String(url));
+      if (u.pathname.endsWith("/messages")) {
+        const q = u.searchParams.get("q") ?? "";
+        return json({
+          messages: q.startsWith("subject:")
+            ? [{ id: "m1" }]
+            : [{ id: "m2" }, { id: "m1" }],
+        });
+      }
+      expect(u.searchParams.getAll("metadataHeaders")).toEqual([
+        "Subject",
+        "From",
+        "Date",
+      ]);
+      const id = u.pathname.split("/").pop();
+      return json({
+        payload: {
+          headers: [
+            { name: "Subject", value: id === "m1" ? "RFQ 42" : "Lunch" },
+            { name: "From", value: "a@b.c" },
+            { name: "Date", value: "Mon, 2 Nov 2026 09:00:00 +0000" },
+          ],
+        },
+      });
+    };
+    const fetcher = vi.fn((url: string | URL | Request) =>
+      Promise.resolve(respond(url))
+    );
+    const rows = await gmail.previewMessages(
+      fetcher as typeof fetch,
+      "tok",
+      ""
+    );
+    expect(rows).toEqual([
+      {
+        id: "m2",
+        subject: "Lunch",
+        from: "a@b.c",
+        receivedAt: "2026-11-02T09:00:00.000Z",
+        isRfq: false,
+      },
+      {
+        id: "m1",
+        subject: "RFQ 42",
+        from: "a@b.c",
+        receivedAt: "2026-11-02T09:00:00.000Z",
+        isRfq: true,
+      },
+    ]);
   });
 });

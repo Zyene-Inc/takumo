@@ -17,6 +17,7 @@ import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
 import {
   EmptyState,
+  ErpBadge,
   FilterNote,
   formValue,
   ProvenanceBadge,
@@ -97,6 +98,7 @@ const MaterialsPage = async ({
                       <div className="flex items-center gap-2">
                         {m.name}
                         <ProvenanceBadge provenance={m.provenance} />
+                        <ErpBadge syncedAt={m.syncedAt} />
                       </div>
                     </TableCell>
                     <TableCell>{m.spec ?? "—"}</TableCell>
@@ -112,7 +114,7 @@ const MaterialsPage = async ({
                     <TableCell>
                       <div className="flex justify-end">
                         <RecordDialog
-                          canEdit={canEditShop}
+                          canEdit={canEditShop && !m.syncedAt}
                           entity="materials"
                           initial={{
                             name: m.name,
@@ -134,7 +136,7 @@ const MaterialsPage = async ({
                           }
                         />
                         <DeleteButton
-                          canEdit={canEditShop}
+                          canEdit={canEditShop && !m.syncedAt}
                           entity="materials"
                           id={m.id}
                           name={m.name}

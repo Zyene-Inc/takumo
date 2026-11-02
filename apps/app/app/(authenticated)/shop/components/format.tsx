@@ -31,6 +31,17 @@ export const ProvenanceBadge = ({
   ) : null;
 };
 
+/** Records the shop's ERP report keeps up to date: edited there, not here. */
+export const ErpBadge = ({ syncedAt }: { syncedAt: Date | null }) =>
+  syncedAt ? (
+    <Badge
+      title={`From your ERP, last synced ${syncedAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}. Change it in your ERP; the next report brings it here.`}
+      variant="outline"
+    >
+      ERP
+    </Badge>
+  ) : null;
+
 // Form values are strings; empty means "not set".
 export const formValue = (value: { toString(): string } | null | undefined) =>
   value === null || value === undefined ? "" : value.toString();

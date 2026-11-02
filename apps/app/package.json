@@ -21,6 +21,7 @@
     "@repo/auth": "workspace:*",
     "@repo/database": "workspace:*",
     "@repo/design-system": "workspace:*",
+    "@repo/email": "workspace:*",
     "@repo/engine-client": "workspace:*",
     "@repo/feature-flags": "workspace:*",
     "@repo/ingest": "workspace:*",

@@ -19,7 +19,13 @@ interface Context {
   // "data" for file imports, "stated" for values a person typed in.
   readonly provenance: "data" | "stated";
   readonly sourceId: string | null;
+  // Set when the rows come from the shop's ERP: the records become read-only.
+  readonly syncedAt: Date | null;
 }
+
+/** The ERP-sync stamp for a record's data, when the rows came from the ERP. */
+const synced = (ctx: Context) =>
+  ctx.syncedAt ? { syncedAt: ctx.syncedAt } : {};
 
 type Values = Readonly<Record<string, Value>>;
 
@@ -215,8 +221,9 @@ const saveWorkCenters = async (
         sourceId: ctx.sourceId,
         provenance: ctx.provenance,
         ...data,
+        ...synced(ctx),
       },
-      update: { ...data, provenance: ctx.provenance },
+      update: { ...data, provenance: ctx.provenance, ...synced(ctx) },
     });
     count(c, shiftsByName.has(name));
   });
@@ -238,8 +245,8 @@ const saveCustomers = async (
     const data = defined({ paymentTermDays: num(v.paymentTermDays) });
     await db.customer.upsert({
       where: { orgId_name: { orgId, name } },
-      create: { orgId, name, ...data },
-      update: data,
+      create: { orgId, name, ...data, ...synced(ctx) },
+      update: { ...data, ...synced(ctx) },
     });
     count(c, existing.has(name));
   });
@@ -266,8 +273,14 @@ const saveMaterials = async (
     });
     await db.material.upsert({
       where: { orgId_name: { orgId, name } },
-      create: { orgId, name, provenance: ctx.provenance, ...data },
-      update: { ...data, provenance: ctx.provenance },
+      create: {
+        orgId,
+        name,
+        provenance: ctx.provenance,
+        ...data,
+        ...synced(ctx),
+      },
+      update: { ...data, provenance: ctx.provenance, ...synced(ctx) },
     });
     count(c, existing.has(name));
   });
@@ -303,8 +316,8 @@ const saveParts = async (ctx: Context, records: ParsedRecord[], c: Counter) => {
   await inBatches(rows, async ({ partNo, rev, data }) => {
     await db.part.upsert({
       where: { orgId_partNo_rev: { orgId, partNo, rev } },
-      create: { orgId, partNo, rev, ...data },
-      update: data,
+      create: { orgId, partNo, rev, ...data, ...synced(ctx) },
+      update: { ...data, ...synced(ctx) },
     });
     count(c, existing.has(`${partNo}|${rev}`));
   });
@@ -374,8 +387,8 @@ const saveRoutings = async (
   await inBatches(rows, async ({ partId, seq, data }) => {
     await db.routing.upsert({
       where: { partId_seq: { partId, seq } },
-      create: { orgId, partId, seq, ...data },
-      update: data,
+      create: { orgId, partId, seq, ...data, ...synced(ctx) },
+      update: { ...data, ...synced(ctx) },
     });
     count(c, existing.has(`${partId}|${seq}`));
   });
@@ -428,8 +441,8 @@ const saveOrders = async (
   await inBatches(rows, async ({ orderNo, data }) => {
     await db.order.upsert({
       where: { orgId_orderNo: { orgId, orderNo } },
-      create: { orgId, orderNo, ...data },
-      update: data,
+      create: { orgId, orderNo, ...data, ...synced(ctx) },
+      update: { ...data, ...synced(ctx) },
     });
     count(c, existing.has(orderNo));
   });
@@ -600,8 +613,15 @@ const saveJobs = async (ctx: Context, records: ParsedRecord[], c: Counter) => {
   await inBatches(rows, async ({ orderId, seq, data, created }) => {
     await db.job.upsert({
       where: { orderId_routingSeq: { orderId, routingSeq: seq } },
-      create: { orgId, orderId, routingSeq: seq, ...created, ...data },
-      update: data,
+      create: {
+        orgId,
+        orderId,
+        routingSeq: seq,
+        ...created,
+        ...data,
+        ...synced(ctx),
+      },
+      update: { ...data, ...synced(ctx) },
     });
     count(c, existing.has(`${orderId}|${seq}`));
   });
@@ -616,6 +636,126 @@ const saveJobs = async (ctx: Context, records: ParsedRecord[], c: Counter) => {
   ctx.notes.push(...notes.filter((n): n is string => n !== null));
 };
 
+const saveStock = async (ctx: Context, records: ParsedRecord[], c: Counter) => {
+  const { db, orgId } = ctx;
+  const materials = await lookup(ctx, "material");
+  const existing = new Set(
+    (
+      await db.stockLevel.findMany({
+        where: { orgId },
+        select: { materialId: true, location: true },
+      })
+    ).map((r) => `${r.materialId}|${r.location}`)
+  );
+  for (const { values: v } of records) {
+    const materialId = await materials.get(str(v.material));
+    if (!materialId) {
+      c.skipped += 1;
+      continue;
+    }
+    const location = str(v.location) ?? "";
+    const data = {
+      qtyOnHand: num(v.qtyOnHand) ?? 0,
+      qtyAllocated: num(v.qtyAllocated) ?? 0,
+      unit: str(v.unit),
+      asOf: ctx.syncedAt ?? new Date(),
+      ...synced(ctx),
+    };
+    await db.stockLevel.upsert({
+      where: { orgId_materialId_location: { orgId, materialId, location } },
+      create: { orgId, materialId, location, ...data },
+      update: data,
+    });
+    count(c, existing.has(`${materialId}|${location}`));
+  }
+  const note = listNote("New materials", materials.created);
+  if (note) {
+    ctx.notes.push(note);
+  }
+};
+
+const savePurchaseOrders = async (
+  ctx: Context,
+  records: ParsedRecord[],
+  c: Counter
+) => {
+  const { db, orgId } = ctx;
+  const materials = await lookup(ctx, "material");
+  const existing = new Set(
+    (
+      await db.purchaseOrderLine.findMany({
+        where: { orgId },
+        select: { poNo: true, lineNo: true },
+      })
+    ).map((r) => `${r.poNo}|${r.lineNo}`)
+  );
+  for (const { values: v } of records) {
+    const poNo = str(v.poNo) as string;
+    const lineNo = num(v.lineNo) ?? 1;
+    const ordered = num(v.qtyOrdered) ?? 0;
+    const received = num(v.qtyReceived) ?? 0;
+    let status = "open";
+    if (received >= ordered && ordered > 0) {
+      status = "received";
+    } else if (received > 0) {
+      status = "partial";
+    }
+    const data = {
+      materialId: await materials.get(str(v.material)),
+      supplier: str(v.supplier),
+      qtyOrdered: ordered,
+      qtyReceived: received,
+      unit: str(v.unit),
+      dueDate: new Date(str(v.dueDate) as string),
+      status,
+      ...synced(ctx),
+    };
+    await db.purchaseOrderLine.upsert({
+      where: { orgId_poNo_lineNo: { orgId, poNo, lineNo } },
+      create: { orgId, poNo, lineNo, ...data },
+      update: data,
+    });
+    count(c, existing.has(`${poNo}|${lineNo}`));
+  }
+  const note = listNote("New materials", materials.created);
+  if (note) {
+    ctx.notes.push(note);
+  }
+};
+
+// Operators have no unique name in the database: matched by name here.
+const saveOperators = async (
+  ctx: Context,
+  records: ParsedRecord[],
+  c: Counter
+) => {
+  const { db, orgId } = ctx;
+  const byName = new Map(
+    (
+      await db.operator.findMany({
+        where: { orgId },
+        select: { id: true, name: true },
+      })
+    ).map((r) => [r.name.toLowerCase(), r.id])
+  );
+  for (const { values: v } of records) {
+    const name = str(v.name) as string;
+    const data = {
+      ...defined({ hourlyRate: num(v.hourlyRate) }),
+      ...(v.skills === undefined ? {} : { skills: list(v.skills).map(String) }),
+      ...synced(ctx),
+    };
+    const id = byName.get(name.toLowerCase());
+    if (id) {
+      await db.operator.update({ where: { id }, data });
+    } else {
+      const row = await db.operator.create({ data: { orgId, name, ...data } });
+      byName.set(name.toLowerCase(), row.id);
+    }
+    count(c, Boolean(id));
+  }
+};
+
 const SAVERS: Record<
   EntityKey,
   (ctx: Context, records: ParsedRecord[], c: Counter) => Promise<void>
@@ -628,6 +768,9 @@ const SAVERS: Record<
   orders: saveOrders,
   quotes: saveQuotes,
   jobs: saveJobs,
+  stock: saveStock,
+  purchaseOrders: savePurchaseOrders,
+  operators: saveOperators,
 };
 
 // Keeps the last row when a file lists the same record twice.
@@ -642,6 +785,10 @@ const dedupe = (entity: EntityKey, records: readonly ParsedRecord[]) => {
     orders: (v) => String(v.orderNo),
     quotes: (v) => String(v.quoteNo),
     jobs: (v) => `${v.orderNo}|${v.seq}`,
+    stock: (v) =>
+      `${String(v.material).toLowerCase()}|${String(v.location ?? "").toLowerCase()}`,
+    purchaseOrders: (v) => `${v.poNo}|${v.lineNo ?? 1}`,
+    operators: (v) => String(v.name).toLowerCase(),
   };
   const byKey = new Map<string, ParsedRecord>();
   for (const record of records) {
@@ -665,9 +812,15 @@ export const saveRecords = async (
   {
     sourceId = null,
     provenance = "data",
-  }: { sourceId?: string | null; provenance?: "data" | "stated" } = {}
+    syncedAt = null,
+  }: {
+    sourceId?: string | null;
+    provenance?: "data" | "stated";
+    /** The rows come from the shop's ERP (stamped on each record). */
+    syncedAt?: Date | null;
+  } = {}
 ): Promise<SaveResult> => {
-  const ctx: Context = { db, orgId, sourceId, provenance, notes: [] };
+  const ctx: Context = { db, orgId, sourceId, provenance, syncedAt, notes: [] };
   const counter: Counter = { created: 0, updated: 0, skipped: 0 };
   const { unique, duplicates } = dedupe(entity, records);
   if (duplicates > 0) {
