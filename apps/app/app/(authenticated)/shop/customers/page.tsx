@@ -22,6 +22,7 @@ import {
   formValue,
   textFilter,
 } from "../components/format";
+import { MarginFloor } from "../components/limits";
 import { RecordDialog } from "../components/record-dialog";
 
 export const metadata: Metadata = { title: "Customers · Takumo" };
@@ -31,7 +32,7 @@ const CustomersPage = async ({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) => {
-  const { orgId, canEditShop } = await getAccess();
+  const { orgId, canEditShop, canManageBilling } = await getAccess();
   if (!orgId) {
     notFound();
   }
@@ -77,6 +78,7 @@ const CustomersPage = async ({
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead className="text-right">Payment terms</TableHead>
+                  <TableHead className="text-right">Margin floor</TableHead>
                   <TableHead className="text-right">Parts</TableHead>
                   <TableHead className="text-right">Orders</TableHead>
                   <TableHead className="text-right">Quotes</TableHead>
@@ -98,6 +100,11 @@ const CustomersPage = async ({
                         : `Net ${c.paymentTermDays}`}
                     </TableCell>
                     <TableCell className="text-right">
+                      {c.marginFloor === null
+                        ? "—"
+                        : `${Math.round(c.marginFloor * 1000) / 10}%`}
+                    </TableCell>
+                    <TableCell className="text-right">
                       {c._count.parts}
                     </TableCell>
                     <TableCell className="text-right">
@@ -108,6 +115,13 @@ const CustomersPage = async ({
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end">
+                        {canManageBilling && (
+                          <MarginFloor
+                            floor={c.marginFloor}
+                            id={c.id}
+                            name={c.name}
+                          />
+                        )}
                         <RecordDialog
                           canEdit={canEditShop && !c.syncedAt}
                           entity="customers"

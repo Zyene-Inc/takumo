@@ -196,6 +196,10 @@ const data = {
           url: "/settings/integrations",
         },
         {
+          title: "Quoting",
+          url: "/settings/quoting",
+        },
+        {
           title: "Billing",
           url: "/settings/billing",
         },

@@ -49,7 +49,12 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useState, useTransition } from "react";
-import type { LineFinal, RfqStatus } from "@/lib/quotes/types";
+import type {
+  CostSource,
+  LineFinal,
+  PriceBuildUp,
+  RfqStatus,
+} from "@/lib/quotes/types";
 import type { LineView } from "@/lib/quotes/view";
 import { localToday } from "../../schedule/gantt";
 import {
@@ -560,6 +565,115 @@ const Fold = ({
   </Collapsible>
 );
 
+const BASIS_HREF: Partial<Record<CostSource["kind"], (ref: string) => string>> =
+  {
+    po: () => "/shop/materials",
+    material: (ref) => `/shop/materials?q=${encodeURIComponent(ref)}`,
+    routing: (ref) => `/shop/parts?q=${encodeURIComponent(ref)}`,
+    erp: (ref) => `/shop/parts?q=${encodeURIComponent(ref)}`,
+    actuals: (ref) => `/shop/parts?q=${encodeURIComponent(ref)}`,
+    similar_part: (ref) => `/shop/parts?q=${encodeURIComponent(ref)}`,
+    rate: (ref) => `/shop/work-centers?q=${encodeURIComponent(ref)}`,
+    fact: () => "/knowledge/facts",
+  };
+
+/** A number's source, as a small chip; defaults stand out. */
+const Basis = ({ source }: { source: CostSource }) => {
+  const href = source.ref ? BASIS_HREF[source.kind]?.(source.ref) : undefined;
+  const chip = (
+    <span
+      className={cn(
+        "rounded border px-1.5 py-0.5 text-[11px]",
+        source.kind === "default"
+          ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300"
+          : "bg-muted/50 text-muted-foreground"
+      )}
+    >
+      {source.label}
+    </span>
+  );
+  return href ? (
+    <Link className="hover:underline" href={href}>
+      {chip}
+    </Link>
+  ) : (
+    chip
+  );
+};
+
+const minutes = (value: number) => `${Math.round(value * 100) / 100} min`;
+
+/** Where each part of one quantity's price came from (F2.4-R6). */
+const BuildUpSources = ({ b }: { b: PriceBuildUp }) => (
+  <div className="grid gap-2 rounded-lg border p-3 text-xs">
+    <p className="font-medium text-sm">Where the numbers come from</p>
+    <div className="grid gap-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-muted-foreground">Material</span>
+        <span>
+          {b.material.perPart === null
+            ? "—"
+            : `${usd(b.material.perPart)}/part`}
+          {b.material.stock ? ` · ${b.material.stock}` : ""}
+          {b.material.markup ? ` · incl. ${pct(b.material.markup)} markup` : ""}
+        </span>
+        <Basis source={b.material.source} />
+      </div>
+      {b.operations.map((op) => (
+        <div className="flex flex-wrap items-center gap-1.5" key={op.seq}>
+          <span className="text-muted-foreground">
+            Op {op.seq} · {op.workCenter}
+          </span>
+          <span>
+            {minutes(op.setupMin)} setup ({minutes(op.setupPerPart)}/part) +{" "}
+            {minutes(op.runMinPerUnit)}/part
+            {op.rate === null ? "" : ` at ${usd(op.rate)}/h`}
+          </span>
+          <Basis source={op.basis} />
+          <Basis source={op.rateSource} />
+          {op.alternates.length > 0 && (
+            <span className="text-muted-foreground">
+              or {op.alternates.join(", ")}
+            </span>
+          )}
+        </div>
+      ))}
+      {b.outside.map((o) => (
+        <div className="flex flex-wrap items-center gap-1.5" key={o.process}>
+          <span className="text-muted-foreground">Outside</span>
+          <span>
+            {o.process}
+            {o.supplier ? ` · ${o.supplier}` : ""}
+            {o.leadTimeDays === null ? "" : ` · ${o.leadTimeDays} days`}
+          </span>
+          <Basis source={o.source} />
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-muted-foreground">Margin</span>
+        <span>
+          {pct(b.margin.pct)}
+          {b.margin.low !== null && b.margin.high !== null
+            ? ` (usual ${pct(b.margin.low)}–${pct(b.margin.high)})`
+            : ""}
+          {b.margin.floor === null ? "" : ` · floor ${pct(b.margin.floor)}`}
+        </span>
+        {b.margin.raisedByFloor && <Basis source={b.margin.source} />}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-muted-foreground">Lead time</span>
+        <span>
+          {b.leadTimeDays === null ? "—" : `${b.leadTimeDays} days`}
+          {b.lead.outsideDays > 0
+            ? ` (incl. ${b.lead.outsideDays} days outside)`
+            : ""}
+        </span>
+        <Basis source={b.lead.materialSource} />
+      </div>
+    </div>
+  </div>
+);
+
 const CostBuild = ({ line }: { line: LineView }) => {
   const r = line.draft?.response;
   const [qty, setQty] = useState(r?.breaks[0]?.qty ?? 0);
@@ -623,6 +737,10 @@ const CostBuild = ({ line }: { line: LineView }) => {
             )}
           </div>
         </div>
+        {(() => {
+          const b = line.draft?.buildUp?.find((x) => x.qty === row.qty);
+          return b ? <BuildUpSources b={b} /> : null;
+        })()}
         {r.lead_time_note && (
           <p className="text-muted-foreground text-xs">{r.lead_time_note}</p>
         )}
