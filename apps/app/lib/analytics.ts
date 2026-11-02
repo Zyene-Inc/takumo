@@ -11,6 +11,8 @@ export const EVENTS = [
   "capacity_checked",
   "plan_built",
   "rfq_received",
+  "po_received",
+  "po_entered",
   "erp_report_received",
   "quote_drafted",
   "quote_approved",

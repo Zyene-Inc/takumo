@@ -11,6 +11,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { erpFeeds } from "@/lib/erp/feeds";
 import { Header } from "../../components/header";
 import { EmptyState } from "../../shop/components/format";
 import { LogButton, type LoggableOp, PlanLink, UndoButton } from "./log-form";
@@ -26,10 +27,39 @@ const SHOWN = 60;
 const local = (value: Date | null) =>
   value ? value.toISOString().slice(0, 16).replace("T", " ") : "—";
 
+/** The ERP sends actual job times: shown instead of the log form. */
+const FromErp = ({ at }: { at: Date | null }) => (
+  <>
+    <Header page="Shop floor" pages={["Schedule"]} />
+    <div className="flex flex-1 flex-col gap-3 p-4 pt-0">
+      <p className="max-w-3xl text-sm">
+        Your ERP sends what each job actually took (the job history report), so
+        there's nothing to log here.
+        {at
+          ? ` Last updated ${at.toLocaleDateString("en-US", { month: "short", day: "numeric" })}.`
+          : " Waiting for its first report."}
+      </p>
+      <p className="max-w-3xl text-muted-foreground text-sm">
+        Takumo compares those times with your routings to keep quotes and the
+        schedule accurate. See{" "}
+        <Link className="underline" href="/knowledge/calibration">
+          how close the estimates are
+        </Link>
+        .
+      </p>
+    </div>
+  </>
+);
+
 const FloorPage = async () => {
   const { orgId, canLogFloor } = await getAccess();
   if (!orgId) {
     notFound();
+  }
+  // The ERP already records what each job took: nobody types it again here.
+  const feeds = await erpFeeds(orgId);
+  if ("jobs" in feeds) {
+    return <FromErp at={feeds.jobs ?? null} />;
   }
   const db = forOrg(database, orgId);
   const [planned, recent] = await Promise.all([

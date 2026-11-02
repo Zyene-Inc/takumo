@@ -5,6 +5,7 @@ import { log } from "@repo/observability/log";
 import { after } from "next/server";
 import { recordFailedUsage, recordUsage } from "../ai-usage";
 import type { MailThread } from "../connectors/thread";
+import { intakePo } from "../orders/intake";
 import { readDrawings } from "./drawing";
 import { extractRfq } from "./extract";
 import {
@@ -247,7 +248,10 @@ export type IntakeResult =
       id: string;
       number: number;
       receivedAt: Date;
-      /** full: read and drafted; otherwise waiting in the inbox. */
+      /**
+       * full: read and drafted; po: a customer PO (id and number are the
+       * PO's, in Incoming POs); otherwise waiting in the inbox.
+       */
       lane: Lane;
       /** Files left out (too large, too many). */
       skipped: string[];
@@ -278,6 +282,22 @@ export const intakeRfq = async (
     ? await screenMailboxRfq(orgId, text, options.screen)
     : null;
   const lane: Lane = screening?.lane ?? "full";
+  if (lane === "po") {
+    // A customer's purchase order, not an RFQ: read into Incoming POs.
+    const po = await intakePo(orgId, userId, text, {
+      sourceId: options.sourceId,
+      mail: options.mail,
+      customerId: screening?.customerId ?? null,
+    });
+    return {
+      duplicate: false,
+      lane,
+      id: po.id,
+      number: po.number,
+      receivedAt: po.duplicate ? new Date() : po.receivedAt,
+      skipped: po.duplicate ? [] : po.skipped,
+    };
+  }
   const kept = {
     ...(options.mail ? { mail: options.mail } : {}),
     ...(skipped.length ? { intake: { skipped } satisfies IntakeNote } : {}),

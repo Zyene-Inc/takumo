@@ -4,6 +4,7 @@ import { env } from "@/env";
 import { PROVIDER_NAME, type Provider } from "@/lib/connectors/config";
 import { healthLines, lateReports } from "@/lib/erp/health";
 import { notifyAdmins } from "@/lib/notify";
+import { markAllEnteredFromErp } from "@/lib/orders/settle";
 import { removeOldFiltered } from "@/lib/quotes/screening";
 import { settleAllFromErp } from "@/lib/quotes/settle";
 import { removeOldUploadParts } from "@/lib/quotes/upload-parts";
@@ -92,5 +93,7 @@ export const GET = async (request: Request) => {
   }
   // Quotes answered by ERP orders, or unanswered for 60 days (F2.7).
   const settled = await settleAllFromErp(now);
-  return Response.json({ ok: true, notified, settled });
+  // Customer POs whose order the ERP now has.
+  const posEntered = await markAllEnteredFromErp().catch(() => 0);
+  return Response.json({ ok: true, notified, settled, posEntered });
 };

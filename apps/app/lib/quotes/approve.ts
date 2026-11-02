@@ -1,10 +1,17 @@
 import "server-only";
 
 import { database, forOrg, Prisma } from "@repo/database";
+import { erpFeeds, fedByErp } from "../erp/feeds";
 import { approvalProblems, finalFor } from "./approval";
 import { matchCustomer } from "./match";
 import { nextNumber } from "./numbers";
-import type { LineDraft, LineFinal, QuotedBreak, RfqReply } from "./types";
+import type {
+  ErpOrderEntry,
+  LineDraft,
+  LineFinal,
+  QuotedBreak,
+  RfqReply,
+} from "./types";
 
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -260,9 +267,114 @@ export type Outcome = { lineId: string } & (
   | { status: "lost" }
 );
 
+interface Won {
+  chosen: QuotedBreak;
+  line: {
+    description: string | null;
+    final: unknown;
+    id: string;
+    partNo: string | null;
+    rev: string | null;
+  };
+  quote: {
+    customerId: string | null;
+    partId: string | null;
+    quoteNo: string;
+  };
+  today: string;
+}
+
+const withFinal = (line: Won["line"], extra: object) => ({
+  ...((line.final as object | null) ?? {}),
+  ...extra,
+});
+
+/**
+ * The ERP is where orders are entered: lay the won quote out for that instead
+ * of making a second copy here. The next orders report brings it back.
+ */
+const layOutForErp = async (tx: Tx, orgId: string, won: Won) => {
+  const { quote, line, chosen, today } = won;
+  const part = quote.partId
+    ? await tx.part.findFirst({
+        where: { id: quote.partId, orgId },
+        select: { partNo: true, rev: true, description: true },
+      })
+    : null;
+  const customer = quote.customerId
+    ? await tx.customer.findFirst({
+        where: { id: quote.customerId, orgId },
+        select: { name: true },
+      })
+    : null;
+  const erpOrder: ErpOrderEntry = {
+    customer: customer?.name ?? null,
+    partNo: part?.partNo ?? line.partNo ?? "",
+    rev: part?.rev ?? line.rev,
+    description: part?.description ?? line.description,
+    qty: chosen.qty,
+    unitPrice: chosen.unitPrice,
+    dueDate: addDays(today, chosen.leadTimeDays).toISOString().slice(0, 10),
+    quoteNo: quote.quoteNo,
+  };
+  await tx.rfqLine.update({
+    where: { id: line.id },
+    data: { final: withFinal(line, { erpOrder }) },
+  });
+};
+
+/** No ERP feed for orders: the won quote becomes an open order in Takumo. */
+const makeOrder = async (tx: Tx, orgId: string, won: Won) => {
+  const { quote, line, chosen, today } = won;
+  const orders = await tx.order.findMany({
+    where: { orgId },
+    select: { orderNo: true },
+  });
+  const made = nextNumber(
+    orders.map((o) => o.orderNo),
+    "SO-0001"
+  );
+  await tx.order.create({
+    data: {
+      orgId,
+      orderNo: made,
+      customerId: quote.customerId,
+      partId: quote.partId as string,
+      qty: chosen.qty,
+      price: chosen.price,
+      dueDate: addDays(today, chosen.leadTimeDays),
+    },
+  });
+  await tx.rfqLine.update({
+    where: { id: line.id },
+    data: { final: withFinal(line, { orderNo: made }) },
+  });
+  return made;
+};
+
+/** The quote takes the quantity the customer chose. */
+const keepChosen = (tx: Tx, quoteId: string, chosen: QuotedBreak) =>
+  tx.quote.update({
+    where: { id: quoteId },
+    data: {
+      qty: chosen.qty,
+      price: chosen.price,
+      leadTimeDays: chosen.leadTimeDays,
+      estCost: chosen.cost,
+      // Keep the draft comparable with what the customer accepted.
+      draftPrice:
+        chosen.draftUnitPrice === null
+          ? null
+          : Math.round(chosen.draftUnitPrice * chosen.qty * 100) / 100,
+      draftLeadTimeDays: chosen.draftLeadTimeDays,
+    },
+  });
+
 /**
  * The customer's answer for one line. Won: the quote takes the chosen
- * quantity and becomes an open order, due the quoted lead time from today.
+ * quantity. When the ERP sends the shop's orders, the order is laid out for
+ * entering there (LineFinal.erpOrder); otherwise it becomes an open order in
+ * Takumo, due the quoted lead time from today.
  */
 export const recordOutcome = async (
   orgId: string,
@@ -286,6 +398,7 @@ export const recordOutcome = async (
   }
   const quote = line.quote;
   const breaks = (quote.breaks as QuotedBreak[] | null) ?? [];
+  const ordersFromErp = fedByErp(await erpFeeds(orgId), "orders");
   const chosen =
     outcome.status === "won"
       ? breaks.find((b) => b.qty === outcome.qty)
@@ -306,46 +419,12 @@ export const recordOutcome = async (
       }
       let made: string | null = null;
       if (chosen && quote.partId) {
-        const orders = await tx.order.findMany({
-          where: { orgId },
-          select: { orderNo: true },
-        });
-        made = nextNumber(
-          orders.map((o) => o.orderNo),
-          "SO-0001"
-        );
-        await tx.order.create({
-          data: {
-            orgId,
-            orderNo: made,
-            customerId: quote.customerId,
-            partId: quote.partId,
-            qty: chosen.qty,
-            price: chosen.price,
-            dueDate: addDays(today, chosen.leadTimeDays),
-          },
-        });
-        await tx.rfqLine.update({
-          where: { id: line.id },
-          data: {
-            final: { ...((line.final as object | null) ?? {}), orderNo: made },
-          },
-        });
-        await tx.quote.update({
-          where: { id: quote.id },
-          data: {
-            qty: chosen.qty,
-            price: chosen.price,
-            leadTimeDays: chosen.leadTimeDays,
-            estCost: chosen.cost,
-            // Keep the draft comparable with what the customer accepted.
-            draftPrice:
-              chosen.draftUnitPrice === null
-                ? null
-                : Math.round(chosen.draftUnitPrice * chosen.qty * 100) / 100,
-            draftLeadTimeDays: chosen.draftLeadTimeDays,
-          },
-        });
+        if (ordersFromErp) {
+          await layOutForErp(tx, orgId, { quote, line, chosen, today });
+        } else {
+          made = await makeOrder(tx, orgId, { quote, line, chosen, today });
+        }
+        await keepChosen(tx, quote.id, chosen);
       }
       await closeRfqWhenAnswered(tx, orgId, rfqId);
       return made;

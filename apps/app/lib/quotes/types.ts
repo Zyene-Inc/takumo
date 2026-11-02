@@ -176,8 +176,25 @@ export interface PriceBuildUp {
 /** RfqLine.final: what the estimator approved. */
 export interface LineFinal {
   breaks: { leadTimeDays: number; qty: number; unitPrice: number }[];
+  /**
+   * When the shop's ERP sends its orders, Takumo doesn't make the order:
+   * this is what to enter in the ERP, and its report brings it back.
+   */
+  erpOrder?: ErpOrderEntry;
   /** The order created when the customer accepted. */
   orderNo?: string;
+}
+
+/** A won quote laid out for entering in the ERP (LineFinal.erpOrder). */
+export interface ErpOrderEntry {
+  customer: string | null;
+  description: string | null;
+  dueDate: string;
+  partNo: string;
+  qty: number;
+  quoteNo: string;
+  rev: string | null;
+  unitPrice: number;
 }
 
 /** Quote.breaks */
