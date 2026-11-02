@@ -14,7 +14,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { erpFeeds } from "@/lib/erp/feeds";
 import { Header } from "../../components/header";
+import { ErpFeedNote } from "../components/erp-feed-note";
 import {
   EmptyState,
   ErpBadge,
@@ -34,6 +36,9 @@ const PartsPage = async ({
   if (!orgId) {
     notFound();
   }
+  // Data the ERP sends is added there, not typed in here.
+  const feeds = await erpFeeds(orgId);
+  const erpFed = "parts" in feeds || "routings" in feeds;
   const q = textFilter((await searchParams).q);
   const db = forOrg(database, orgId);
   const [parts, customers, materials] = await Promise.all([
@@ -61,20 +66,24 @@ const PartsPage = async ({
     <>
       <Header page="Parts & routings" pages={["Shop"]}>
         <div className="px-4">
-          <RecordDialog
-            canEdit={canEditShop}
-            entity="parts"
-            options={{
-              customer: customers.map((c) => c.name),
-              material: materials.map((m) => m.name),
-            }}
-            title="Add a part"
-            trigger={
-              <Button size="sm">
-                <PlusIcon /> Add part
-              </Button>
-            }
-          />
+          {erpFed ? (
+            <ErpFeedNote at={feeds.parts ?? feeds.routings} />
+          ) : (
+            <RecordDialog
+              canEdit={canEditShop}
+              entity="parts"
+              options={{
+                customer: customers.map((c) => c.name),
+                material: materials.map((m) => m.name),
+              }}
+              title="Add a part"
+              trigger={
+                <Button size="sm">
+                  <PlusIcon /> Add part
+                </Button>
+              }
+            />
+          )}
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">

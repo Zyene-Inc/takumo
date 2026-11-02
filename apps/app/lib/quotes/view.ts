@@ -102,6 +102,7 @@ export const loadRfqView = async (orgId: string, rfqId: string) => {
           }
         : null,
       orderNo: (line.final as LineFinal | null)?.orderNo ?? null,
+      erpOrder: (line.final as LineFinal | null)?.erpOrder ?? null,
     };
   });
   return {
