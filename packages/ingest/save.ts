@@ -440,6 +440,7 @@ const saveOrders = async (
         ...defined({
           customerId: await customers.get(str(v.customer)),
           price: num(v.price),
+          customerPo: str(v.customerPo),
           priority: num(v.priority),
           status: str(v.status),
         }),
