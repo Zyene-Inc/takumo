@@ -1,6 +1,7 @@
 // Configuration from the environment. Everything is checked at startup, so the
 // receiver never runs half-configured (for example without a webhook secret).
 import { hostname } from "node:os";
+import type { ScanConfig } from "./scan.js";
 
 export interface Limits {
   /** New connections per IP per minute (token bucket, burst = the same number). */
@@ -26,6 +27,8 @@ export interface Config {
   limits: Limits;
   maxMessageBytes: number;
   port: number;
+  /** clamd, when CLAMD_HOST is set; otherwise messages aren't scanned. */
+  scan?: ScanConfig;
   secret: string;
   tlsCertFile?: string;
   tlsKeyFile?: string;
@@ -95,7 +98,17 @@ export function loadConfig(env: Env = process.env): Config {
     errors.push("Set both TLS_CERT_FILE and TLS_KEY_FILE, or neither");
   }
 
+  const clamdHost = env.CLAMD_HOST?.trim() || undefined;
+  const scan: ScanConfig | undefined = clamdHost
+    ? {
+        host: clamdHost,
+        port: intFrom(env, "CLAMD_PORT", 3310, errors),
+        timeoutMs: intFrom(env, "SCAN_TIMEOUT_MS", 30_000, errors),
+      }
+    : undefined;
+
   const config: Config = {
+    scan,
     secret,
     webhookUrl,
     domains,

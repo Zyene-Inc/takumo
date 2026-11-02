@@ -12,6 +12,7 @@ import { checkAuth, type DnsResolver } from "./auth.js";
 import type { Config } from "./config.js";
 import { log } from "./log.js";
 import { RateLimiter } from "./rate-limit.js";
+import { scanMessage } from "./scan.js";
 import { acceptRecipient, MAX_RECIPIENTS } from "./recipients.js";
 import type { KeyPair } from "./tls.js";
 import { deliver, type SmtpReply } from "./webhook.js";
@@ -215,8 +216,33 @@ export function createMailServer(
     mailFrom: string,
     recipients: string[],
     started: number
-  ): Promise<SmtpReply> {
+  ): Promise<{ code: SmtpReply["code"] | 554; message: string }> {
     const helo = session.hostNameAppearsAs || "";
+    if (config.scan) {
+      const scanned = await scanMessage(config.scan, raw);
+      if (scanned.status !== "clean") {
+        const infected = scanned.status === "infected";
+        log("message", {
+          ip,
+          helo,
+          from: mailFrom,
+          rcpts: recipients,
+          size: raw.length,
+          // The signature name only, never the content.
+          ...(infected
+            ? { malware: scanned.signature }
+            : { scanError: scanned.message }),
+          result: infected ? 554 : 451,
+          durationMs: Date.now() - started,
+        });
+        return infected
+          ? { code: 554, message: "Message rejected: it contains malware" }
+          : {
+              code: 451,
+              message: "Can't check the message right now, try again later",
+            };
+      }
+    }
     const auth = await checkAuth({
       raw,
       ip,
