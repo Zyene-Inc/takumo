@@ -188,7 +188,8 @@ describe("notes become facts", () => {
   });
 });
 
-describe.sequential("review, recalibration and the error trend", () => {
+// Tests in a suite run one after another by default.
+describe("review, recalibration and the error trend", () => {
   test("a correction told to Ask Takumo waits for review", async () => {
     const settings = await agentSettings({
       orgId: ORG_ID,
