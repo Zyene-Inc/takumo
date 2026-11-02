@@ -2,6 +2,7 @@
 // Parsing and matching are pure and run anywhere; saving and AI mapping are
 // server-only (import them from "@repo/ingest/save" and "@repo/ingest/ai-mapping").
 
+export * from "./contacts";
 export * from "./entities";
 export * from "./match";
 export * from "./transform";

@@ -8,6 +8,7 @@ import { budgetProblem } from "../ai-usage";
 import { track } from "../analytics";
 import { intakeRfq } from "../quotes/intake";
 import { readRfqFile } from "../quotes/read";
+import type { Lane } from "../quotes/screen";
 import { checkSentReplies } from "../quotes/sent";
 import { rfqLabel } from "../quotes/types";
 import {
@@ -281,6 +282,21 @@ const alreadyHave = async (orgId: string, mail: MailThread) => {
   return found?.number ?? null;
 };
 
+/** The sync note for a new RFQ, by where screening put it. */
+const laneNote = (
+  text: { sender: string | null; subject: string | null },
+  number: number,
+  lane: Lane
+) => {
+  const what = `${text.subject ?? "(no subject)"} from ${text.sender ?? "an email"} (#${number})`;
+  if (lane === "filtered") {
+    return `Filtered out ${what}: not a request for quote.`;
+  }
+  return lane === "new_sender"
+    ? `New sender: ${what}, waiting for someone to say whether to quote it.`
+    : `RFQ: ${what}`;
+};
+
 /** The sync note for an RFQ that's already in Takumo (same sender and files). */
 const sameRfqNote = (
   text: { sender: string | null; subject: string | null },
@@ -359,6 +375,7 @@ const syncGmail = async (
       const rfq = await intakeRfq(orgId, connection.createdBy, text, {
         sourceId: id,
         mail,
+        screen: { account: connection.account, settings: connection.settings },
       });
       if (rfq.duplicate) {
         result.skipped += 1;
@@ -367,12 +384,10 @@ const syncGmail = async (
       }
       track("rfq_received", {
         orgId,
-        properties: { source: "gmail", channel: text.source },
+        properties: { source: "gmail", channel: text.source, lane: rfq.lane },
       });
       result.created += 1;
-      result.notes.push(
-        `RFQ from ${text.sender ?? "an email"}: ${text.subject ?? "(no subject)"} (#${rfq.number})`
-      );
+      result.notes.push(laneNote(text, rfq.number, rfq.lane));
     } catch (error) {
       result.skipped += 1;
       result.notes.push(
@@ -574,6 +589,10 @@ const readOutlookRfqs = async (
       const rfq = await intakeRfq(orgId, connection.createdBy, text, {
         sourceId: message.id,
         mail,
+        screen: {
+          account: shared ?? connection.account,
+          settings: connection.settings,
+        },
       });
       if (rfq.duplicate) {
         result.skipped += 1;
@@ -582,12 +601,10 @@ const readOutlookRfqs = async (
       }
       track("rfq_received", {
         orgId,
-        properties: { source: "outlook", channel: text.source },
+        properties: { source: "outlook", channel: text.source, lane: rfq.lane },
       });
       result.created += 1;
-      result.notes.push(
-        `RFQ from ${text.sender ?? "an email"}: ${text.subject ?? "(no subject)"} (#${rfq.number})`
-      );
+      result.notes.push(laneNote(text, rfq.number, rfq.lane));
     } catch (error) {
       result.skipped += 1;
       result.notes.push(

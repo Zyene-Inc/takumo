@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { PrismaClient } from "@repo/database";
+import { companyDomains, emailsIn } from "./contacts";
 import type { EntityKey } from "./entities";
 import type { ParsedRecord, Value } from "./transform";
 
@@ -242,7 +243,14 @@ const saveCustomers = async (
   );
   await inBatches(records, async ({ values: v }) => {
     const name = str(v.name) as string;
-    const data = defined({ paymentTermDays: num(v.paymentTermDays) });
+    const emails = emailsIn(str(v.emails));
+    const domains = companyDomains(emails, str(v.website));
+    const data = defined({
+      paymentTermDays: num(v.paymentTermDays),
+      // Only when the report has them: an empty cell never clears them.
+      emails: emails.length ? emails : undefined,
+      domains: domains.length ? domains : undefined,
+    });
     await db.customer.upsert({
       where: { orgId_name: { orgId, name } },
       create: { orgId, name, ...data, ...synced(ctx) },

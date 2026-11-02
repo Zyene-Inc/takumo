@@ -13,6 +13,9 @@ export const MAX_RFQ_BYTES = 10 * 1024 * 1024;
 export const MAX_QTY_BREAKS = 6;
 
 export const RFQ_STATUSES = [
+  // Screening (mailbox RFQs): waiting for a person, nothing read yet.
+  "new_sender",
+  "filtered",
   "reading",
   "review",
   "drafted",
@@ -25,6 +28,8 @@ export const RFQ_STATUSES = [
 export type RfqStatus = (typeof RFQ_STATUSES)[number];
 
 export const STATUS_LABEL: Record<RfqStatus, string> = {
+  new_sender: "New sender",
+  filtered: "Filtered",
   reading: "Reading",
   review: "To review",
   drafted: "Draft ready",

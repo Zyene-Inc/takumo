@@ -13,7 +13,8 @@ export type AiFeature =
   | "routing_proposal"
   | "note_read"
   | "doc_read"
-  | "drawing_read";
+  | "drawing_read"
+  | "rfq_triage";
 
 /** Record what an AI call used. Never throws: spend tracking can't break a request. */
 export const recordUsage = async (

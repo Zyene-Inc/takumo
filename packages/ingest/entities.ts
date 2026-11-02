@@ -140,6 +140,27 @@ const customers: EntityDef = {
       synonyms: ["payment terms", "terms", "net days", "payment term days"],
       hint: "Net 30 → 30",
     },
+    {
+      key: "emails",
+      label: "Contact emails",
+      kind: "text",
+      synonyms: [
+        "email",
+        "emails",
+        "e-mail",
+        "contact email",
+        "buyer email",
+        "email address",
+        "contact",
+      ],
+      hint: "Used to recognise their RFQs; several are fine",
+    },
+    {
+      key: "website",
+      label: "Website or domain",
+      kind: "text",
+      synonyms: ["website", "web site", "web", "url", "domain", "homepage"],
+    },
   ],
 };
 

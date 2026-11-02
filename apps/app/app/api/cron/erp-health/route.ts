@@ -4,6 +4,7 @@ import { env } from "@/env";
 import { PROVIDER_NAME, type Provider } from "@/lib/connectors/config";
 import { healthLines, lateReports } from "@/lib/erp/health";
 import { notifyAdmins } from "@/lib/notify";
+import { removeOldFiltered } from "@/lib/quotes/screening";
 import { settleAllFromErp } from "@/lib/quotes/settle";
 import { removeOldUploadParts } from "@/lib/quotes/upload-parts";
 
@@ -30,6 +31,7 @@ export const GET = async (request: Request) => {
   const now = new Date();
   // Housekeeping: pieces of uploads that were never submitted.
   await removeOldUploadParts(now.getTime()).catch(() => 0);
+  await removeOldFiltered(now.getTime()).catch(() => 0);
   const [reports, broken] = await Promise.all([
     database.erpReport.findMany({
       where: { status: "active" },

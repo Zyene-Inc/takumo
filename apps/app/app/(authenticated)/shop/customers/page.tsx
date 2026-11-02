@@ -93,6 +93,16 @@ const CustomersPage = async ({
                         {c.name}
                         <ErpBadge syncedAt={c.syncedAt} />
                       </div>
+                      {(c.domains.length > 0 || c.emails.length > 0) && (
+                        <p
+                          className="max-w-72 truncate font-normal text-muted-foreground text-xs"
+                          title="Their RFQs are recognised by these"
+                        >
+                          {[...c.domains.map((d) => `@${d}`), ...c.emails]
+                            .slice(0, 3)
+                            .join(", ")}
+                        </p>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       {c.paymentTermDays === null
@@ -128,6 +138,8 @@ const CustomersPage = async ({
                           initial={{
                             name: c.name,
                             paymentTermDays: formValue(c.paymentTermDays),
+                            emails: c.emails.join(", "),
+                            website: c.domains[0] ?? "",
                           }}
                           locked={["name"]}
                           title={`Edit ${c.name}`}

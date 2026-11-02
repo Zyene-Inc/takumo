@@ -11,12 +11,15 @@ import {
 } from "./attachments";
 import { channelOf } from "./channel";
 import { parseEmail } from "./email";
+import { SCREEN_HEADERS } from "./screen";
 import { RFQ_TYPES, type RfqSource } from "./types";
 
 export interface RfqText {
   body: string;
   /** Files that came with the RFQ (attachments, a package), kept on it. */
   files: IncomingFile[];
+  /** An email's headers the RFQ screening reads (lower-cased names). */
+  headers?: Record<string, string>;
   sender: string | null;
   source: RfqSource;
   subject: string | null;
@@ -107,6 +110,12 @@ const readEmail = async (bytes: Uint8Array): Promise<RfqText> => {
     sender: email.from,
     body,
     files: email.attachments,
+    headers: Object.fromEntries(
+      SCREEN_HEADERS.flatMap((name) => {
+        const value = email.headers.get(name);
+        return value === undefined ? [] : [[name, value]];
+      })
+    ),
   };
 };
 

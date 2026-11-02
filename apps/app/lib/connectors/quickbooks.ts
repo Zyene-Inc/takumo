@@ -27,7 +27,10 @@ export interface QbCustomer {
   Active?: boolean;
   DisplayName: string;
   Id: string;
+  /** "a@x.com, b@x.com" when several. */
+  PrimaryEmailAddr?: { Address?: string };
   SalesTermRef?: { value: string };
+  WebAddr?: { URI?: string };
 }
 
 export interface QbTerm {
@@ -95,6 +98,11 @@ export const customerRecords = (
         values: {
           name: c.DisplayName.trim(),
           ...(typeof days === "number" ? { paymentTermDays: days } : {}),
+          // So their RFQs are recognised (RFQ screening), no typing.
+          ...(c.PrimaryEmailAddr?.Address
+            ? { emails: c.PrimaryEmailAddr.Address }
+            : {}),
+          ...(c.WebAddr?.URI ? { website: c.WebAddr.URI } : {}),
         },
       };
     });
