@@ -63,12 +63,8 @@ const PdfSheet = ({
       target.height = Math.floor(viewport.height * ratio);
       target.style.width = `${viewport.width}px`;
       target.style.height = `${viewport.height}px`;
-      const context = target.getContext("2d");
-      if (!context) {
-        return;
-      }
       const render = page.render({
-        canvasContext: context,
+        canvas: target,
         viewport,
         transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
       });
@@ -127,7 +123,7 @@ export const DrawingViewer = ({
       return;
     }
     let cancelled = false;
-    let loaded: PDFDocumentProxy | null = null;
+    let loading: { destroy(): Promise<void> } | null = null;
     (async () => {
       try {
         const response = await fetch(url, { credentials: "same-origin" });
@@ -136,8 +132,11 @@ export const DrawingViewer = ({
         }
         const data = new Uint8Array(await response.arrayBuffer());
         const pdfjs = await loadPdfJs();
-        loaded = await pdfjs.getDocument({ data, isEvalSupported: false })
-          .promise;
+        // pdf.js 6 never evaluates code from the PDF (the old
+        // isEvalSupported switch is gone).
+        const task = pdfjs.getDocument({ data });
+        loading = task;
+        const loaded = await task.promise;
         if (!cancelled) {
           setDoc(loaded);
         }
@@ -149,7 +148,7 @@ export const DrawingViewer = ({
     })();
     return () => {
       cancelled = true;
-      loaded?.destroy();
+      loading?.destroy();
     };
   }, [isPdf, url]);
 
