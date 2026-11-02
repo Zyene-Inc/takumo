@@ -178,8 +178,8 @@ importers:
         specifier: ^3.0.0
         version: 3.5.3
       lucide-react:
-        specifier: ^0.577.0
-        version: 0.577.0(react@19.2.4)
+        specifier: ^1.65.0
+        version: 1.65.0(@types/react@19.2.14)(react@19.2.4)
       mammoth:
         specifier: 1.13.0
         version: 1.13.0
@@ -355,13 +355,13 @@ importers:
         version: 4.4.0
       fumadocs-core:
         specifier: ^16.6.12
-        version: 16.17.9(@mdx-js/mdx@3.1.1)(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.2.14)(lucide-react@0.577.0(react@19.2.4))(next@16.4.3(@opentelemetry/api@1.10.0)(@types/node@25.3.5)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(zod@4.6.7)
+        version: 16.17.9(@mdx-js/mdx@3.1.1)(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.2.14)(lucide-react@1.65.0(@types/react@19.2.14)(react@19.2.4))(next@16.4.3(@opentelemetry/api@1.10.0)(@types/node@25.3.5)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(zod@4.6.7)
       import-in-the-middle:
         specifier: ^3.0.0
         version: 3.5.3
       lucide-react:
-        specifier: ^0.577.0
-        version: 0.577.0(react@19.2.4)
+        specifier: ^1.65.0
+        version: 1.65.0(@types/react@19.2.14)(react@19.2.4)
       next:
         specifier: 16.4.3
         version: 16.4.3(@babel/core@7.29.7)(@opentelemetry/api@1.10.0)(@types/node@25.3.5)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -617,8 +617,8 @@ importers:
         specifier: ^1.4.2
         version: 1.5.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       lucide-react:
-        specifier: ^0.577.0
-        version: 0.577.0(react@19.2.4)
+        specifier: ^1.65.0
+        version: 1.65.0(@types/react@19.2.14)(react@19.2.4)
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -5786,10 +5786,14 @@ packages:
     resolution: {integrity: sha512-5J9ysMYUpYIg9RF2vJpy9SinEmSviFSe0GyPpCQ4L5QSkLAgeLXlTAOu2ZwWUU5m+0SBl6gUU1R1ZQB3aKypfA==}
     engines: {bun: '>=1.0.0', deno: '>=1.30.0', node: '>=8.0.0'}
 
-  lucide-react@0.577.0:
-    resolution: {integrity: sha512-4LjoFv2eEPwYDPg/CUdBJQSDfPyzXCRrVW1X7jrx/trgxnxkHFjnVZINbzvzxjN70dxychOfg+FTYwBiS3pQ5A==}
+  lucide-react@1.65.0:
+    resolution: {integrity: sha512-roSdtzudEY39i2hn5LLjA8toYfhF2z4S10WSqZF4ubXpHlOmNTvaxMxZLdJfQDi6pEifQWX+cRmYihKSsvAxfA==}
     peerDependencies:
+      '@types/react': '*'
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
 
   lz-string@1.5.0:
     resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
@@ -11391,7 +11395,7 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  fumadocs-core@16.17.9(@mdx-js/mdx@3.1.1)(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.2.14)(lucide-react@0.577.0(react@19.2.4))(next@16.4.3(@opentelemetry/api@1.10.0)(@types/node@25.3.5)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(zod@4.6.7):
+  fumadocs-core@16.17.9(@mdx-js/mdx@3.1.1)(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.2.14)(lucide-react@1.65.0(@types/react@19.2.14)(react@19.2.4))(next@16.4.3(@opentelemetry/api@1.10.0)(@types/node@25.3.5)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(zod@4.6.7):
     dependencies:
       '@fumari/image-size': 0.1.1
       estree-util-value-to-estree: 3.5.0
@@ -11418,7 +11422,7 @@ snapshots:
       '@types/hast': 3.0.5
       '@types/mdast': 4.0.4
       '@types/react': 19.2.14
-      lucide-react: 0.577.0(react@19.2.4)
+      lucide-react: 1.65.0(@types/react@19.2.14)(react@19.2.4)
       next: 16.4.3(@babel/core@7.29.7)(@opentelemetry/api@1.10.0)(@types/node@25.3.5)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
@@ -12008,9 +12012,11 @@ snapshots:
 
   lru.min@1.1.5: {}
 
-  lucide-react@0.577.0(react@19.2.4):
+  lucide-react@1.65.0(@types/react@19.2.14)(react@19.2.4):
     dependencies:
       react: 19.2.4
+    optionalDependencies:
+      '@types/react': 19.2.14
 
   lz-string@1.5.0: {}
 
