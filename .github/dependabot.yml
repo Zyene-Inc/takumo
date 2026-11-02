@@ -16,14 +16,14 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 8
     groups:
       # Safe updates in one PR.
       minor-and-patch:
         update-types: ["minor", "patch"]
-      # Breaking updates in one PR, to review together.
-      major:
-        update-types: ["major"]
+      # Major (breaking) updates are not grouped: each library gets its own
+      # PR, so one break doesn't hold back the rest and a regression points
+      # at one library.
     ignore:
       # TypeScript 7 (native compiler) isn't supported by Next.js and Prisma yet.
       - dependency-name: "typescript"
@@ -40,6 +40,7 @@ updates:
     groups:
       python:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # Inbound mail receiver (standalone npm package, outside the pnpm workspace).
   - package-ecosystem: "npm"
@@ -49,6 +50,8 @@ updates:
     groups:
       mail:
         patterns: ["*"]
+        # Majors come one per PR (see the npm entry above).
+        update-types: ["minor", "patch"]
     ignore:
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
