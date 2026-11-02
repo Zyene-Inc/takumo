@@ -1,15 +1,8 @@
 import { authMiddleware } from "@repo/auth/proxy";
-import {
-  noseconeOptions,
-  noseconeOptionsWithToolbar,
-  securityMiddleware,
-} from "@repo/security/proxy";
+import { noseconeOptions, securityMiddleware } from "@repo/security/proxy";
 import type { NextProxy } from "next/server";
-import { env } from "./env";
 
-const securityHeaders = env.FLAGS_SECRET
-  ? securityMiddleware(noseconeOptionsWithToolbar)
-  : securityMiddleware(noseconeOptions);
+const securityHeaders = securityMiddleware(noseconeOptions);
 
 // WorkOS AuthKit manages the session; everything except these paths
 // requires a signed-in user. Cron routes check CRON_SECRET themselves; the

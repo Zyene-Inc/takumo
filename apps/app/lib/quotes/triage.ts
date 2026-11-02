@@ -18,10 +18,10 @@ const BODY_CHARS = 2000;
 export const DAILY_TRIAGE_LIMIT = 300;
 
 const schema = z.object({
-  isRfq: z
-    .boolean()
+  kind: z
+    .enum(["rfq", "po", "other"])
     .describe(
-      "True when someone asks this shop for a price or quote on parts or work (an RFQ, RFP, quote request, re-quote, or a portal notice of a new RFQ)"
+      "rfq: someone asks this shop for a price or quote on parts or work (an RFQ, RFP, quote request, re-quote, or a portal notice of a new RFQ). po: a customer sends a purchase order (an order to make parts, usually with a PO number). other: anything else"
     ),
   confidence: z.enum(["high", "medium", "low"]),
   summary: z
@@ -31,9 +31,10 @@ const schema = z.object({
     ),
 });
 
-const SYSTEM = `You sort a machine shop's incoming email. Decide whether the email asks the shop to quote a price for parts or work.
-Requests for quote, re-quotes, quote revisions and customer-portal notices of a new RFQ count.
-Invoices, payment and shipping questions, order confirmations, purchase orders for already-quoted work, sales pitches, newsletters, job applications and internal chatter do not.
+const SYSTEM = `You sort a machine shop's incoming email into one of three kinds.
+rfq: it asks the shop to quote a price for parts or work. Requests for quote, re-quotes, quote revisions and customer-portal notices of a new RFQ count.
+po: a customer places an order with the shop: a purchase order (PO) for parts, often with a PO number, quantities and prices, usually as an attachment.
+other: everything else, e.g. invoices, payment and shipping questions, order confirmations the shop sent, sales pitches, newsletters, job applications and internal chatter.
 Judge only from what is given. If unsure, say so with low confidence.`;
 
 const dayStart = (now: Date) =>
@@ -70,7 +71,8 @@ ${email.body.slice(0, BODY_CHARS)}`,
     });
     await recordUsage(orgId, "rfq_triage", response.modelId, usage);
     return {
-      isRfq: output.isRfq,
+      isRfq: output.kind === "rfq",
+      kind: output.kind,
       confidence: output.confidence,
       summary: output.summary.slice(0, 160),
     };

@@ -9,9 +9,11 @@ import { track } from "../analytics";
 import { handleReportSheet, type SheetOutcome } from "../erp/reports";
 import { isReport, readSheets } from "../erp/sheets";
 import { notifyAdmins } from "../notify";
+import { intakePo } from "../orders/intake";
 import { parseEmail } from "../quotes/email";
 import { intakeRfq } from "../quotes/intake";
 import { readRfqFile } from "../quotes/read";
+import { triageEmail } from "../quotes/triage";
 import {
   authenticated,
   emailAddress,
@@ -247,6 +249,22 @@ const processRfq = async (
     return;
   }
   const text = await readRfqFile("message.eml", raw);
+  // Staff forward customer POs here too: those go to Incoming POs.
+  const kind = await triageEmail(orgId, {
+    from: text.sender,
+    subject: text.subject,
+    body: text.body,
+  });
+  if (kind?.kind === "po" && kind.confidence !== "low") {
+    const po = await intakePo(orgId, null, text, {
+      sourceId: `inbound:${sha256}`,
+    });
+    await finish(orgId, messageId, "processed", {
+      po: po.number,
+      ...(po.duplicate ? { poRepeat: true } : {}),
+    });
+    return;
+  }
   const rfq = await intakeRfq(orgId, null, text, {
     sourceId: `inbound:${sha256}`,
   });

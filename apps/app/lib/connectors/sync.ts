@@ -282,6 +282,23 @@ const alreadyHave = async (orgId: string, mail: MailThread) => {
   return found?.number ?? null;
 };
 
+/** Messages already read into an RFQ or a customer PO (never read twice). */
+const seenMessages = async (orgId: string, ids: string[]) => {
+  const db = forOrg(database, orgId);
+  const [rfqs, pos] = await Promise.all([
+    // Any channel: a portal or form email is still read once.
+    db.rfq.findMany({
+      where: { sourceId: { in: ids } },
+      select: { sourceId: true },
+    }),
+    db.customerPo.findMany({
+      where: { sourceId: { in: ids } },
+      select: { sourceId: true },
+    }),
+  ]);
+  return new Set([...rfqs, ...pos].map((r) => r.sourceId));
+};
+
 /** The sync note for a new RFQ, by where screening put it. */
 const laneNote = (
   text: { sender: string | null; subject: string | null },
@@ -291,6 +308,9 @@ const laneNote = (
   const what = `${text.subject ?? "(no subject)"} from ${text.sender ?? "an email"} (#${number})`;
   if (lane === "filtered") {
     return `Filtered out ${what}: not a request for quote.`;
+  }
+  if (lane === "po") {
+    return `Customer PO: ${text.subject ?? "(no subject)"} from ${text.sender ?? "an email"} (PO-${String(number).padStart(4, "0")}), ready to check and enter in your ERP.`;
   }
   return lane === "new_sender"
     ? `New sender: ${what}, waiting for someone to say whether to quote it.`
@@ -338,15 +358,7 @@ const syncGmail = async (
     token,
     searchFor(gmailQuery(settings.query, rules), since)
   );
-  const seen = new Set(
-    (
-      await forOrg(database, orgId).rfq.findMany({
-        // Any channel: a portal or form email is still read once.
-        where: { sourceId: { in: ids } },
-        select: { sourceId: true },
-      })
-    ).map((r) => r.sourceId)
-  );
+  const seen = await seenMessages(orgId, ids);
   const result: SyncResult = { created: 0, updated: 0, skipped: 0, notes: [] };
   let paused: string | null = null;
   // Oldest first, so RFQ numbers follow the order the mail arrived.
@@ -642,13 +654,9 @@ const syncOutlook = async (
     rules,
     await senderFilter(orgId, rules)
   );
-  const seen = new Set(
-    (
-      await forOrg(database, orgId).rfq.findMany({
-        where: { sourceId: { in: candidates.map((m) => m.id) } },
-        select: { sourceId: true },
-      })
-    ).map((r) => r.sourceId)
+  const seen = await seenMessages(
+    orgId,
+    candidates.map((m) => m.id)
   );
   const fresh = candidates.filter((m) => !seen.has(m.id));
   result.skipped += candidates.length - fresh.length;

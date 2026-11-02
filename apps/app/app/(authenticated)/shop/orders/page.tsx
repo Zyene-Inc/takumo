@@ -14,8 +14,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { erpFeeds } from "@/lib/erp/feeds";
 import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
+import { ErpFeedNote } from "../components/erp-feed-note";
 import {
   EmptyState,
   ErpBadge,
@@ -48,6 +50,9 @@ const OrdersPage = async ({
   if (!orgId) {
     notFound();
   }
+  // Data the ERP sends is added there, not typed in here.
+  const feeds = await erpFeeds(orgId);
+  const erpFed = "orders" in feeds || "jobs" in feeds;
   const { view: viewKey, q: rawQ } = await searchParams;
   const view = VIEWS.find((v) => v.key === viewKey) ?? VIEWS[0];
   // A search (e.g. from an Ask Takumo citation) looks across every status.
@@ -89,18 +94,22 @@ const OrdersPage = async ({
     <>
       <Header page="Orders" pages={["Shop"]}>
         <div className="px-4">
-          <RecordDialog
-            canEdit={canEditShop}
-            entity="orders"
-            initial={{ status: "open" }}
-            options={options}
-            title="Add an order"
-            trigger={
-              <Button size="sm">
-                <PlusIcon /> Add order
-              </Button>
-            }
-          />
+          {erpFed ? (
+            <ErpFeedNote at={feeds.orders ?? feeds.jobs} />
+          ) : (
+            <RecordDialog
+              canEdit={canEditShop}
+              entity="orders"
+              initial={{ status: "open" }}
+              options={options}
+              title="Add an order"
+              trigger={
+                <Button size="sm">
+                  <PlusIcon /> Add order
+                </Button>
+              }
+            />
+          )}
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">

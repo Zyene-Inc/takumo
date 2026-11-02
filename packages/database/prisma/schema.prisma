@@ -94,6 +94,8 @@ model Org {
   stockLevels        StockLevel[]
   purchaseOrderLines PurchaseOrderLine[]
   rfqFiles           RfqFile[]
+  customerPos        CustomerPo[]
+  customerPoFiles    CustomerPoFile[]
   uploadParts        UploadPart[]
   shopSettings       ShopSettings?
 }
@@ -208,10 +210,11 @@ model Customer {
   // Last time the shop's ERP report updated it; read-only in Takumo then.
   syncedAt        DateTime?
 
-  parts  Part[]
-  orders Order[]
-  quotes Quote[]
-  rfqs   Rfq[]
+  parts       Part[]
+  orders      Order[]
+  quotes      Quote[]
+  rfqs        Rfq[]
+  customerPos CustomerPo[]
 
   @@unique([orgId, name])
   @@index([orgId])
@@ -297,6 +300,8 @@ model Order {
   qty        Int
   dueDate    DateTime    @db.Date
   price      Decimal?    @db.Decimal(12, 2)
+  // The customer's purchase order number, as the ERP has it.
+  customerPo String?
   priority   Int         @default(0)
   status     OrderStatus @default(open)
   createdAt  DateTime    @default(now())
@@ -510,6 +515,64 @@ model UploadPart {
 
   @@unique([orgId, uploadId, fileIndex, partIndex])
   @@index([createdAt])
+}
+
+// A purchase order a customer sent (by email or upload): read, checked
+// against the quote, and laid out ready to enter in the ERP. Takumo never
+// creates the order itself; the ERP's report brings it back once entered.
+model CustomerPo {
+  id           String    @id @default(uuid())
+  orgId        String
+  org          Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // PO-0001, per shop (Takumo's own number for it).
+  number       Int
+  // The customer's PO number, as written on the PO.
+  poNo         String?
+  customerId   String?
+  customerName String?
+  contact      String?
+  sender       String?
+  subject      String?
+  // The text Takumo read the PO from.
+  body         String
+  // email | upload | paste
+  source       String
+  sourceId     String?
+  // reading | review | entered | rejected | failed
+  status       String    @default("reading")
+  error        String?
+  // [PoLine] and PO-level checks (lib/orders/types.ts).
+  lines        Json?
+  checks       Json?
+  // Ship-to, terms, notes; the mail thread it came in.
+  extracted    Json?
+  receivedAt   DateTime  @default(now())
+  enteredAt    DateTime?
+  enteredBy    String?
+  createdBy    String?
+  updatedAt    DateTime  @default(now()) @updatedAt
+
+  customer Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  files    CustomerPoFile[]
+
+  @@unique([orgId, number])
+  @@index([orgId, status])
+}
+
+model CustomerPoFile {
+  id        String     @id @default(uuid())
+  orgId     String
+  org       Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  poId      String
+  po        CustomerPo @relation(fields: [poId], references: [id], onDelete: Cascade)
+  name      String
+  mediaType String
+  size      Int
+  sha256    String
+  data      Bytes
+  createdAt DateTime   @default(now())
+
+  @@index([orgId, poId])
 }
 
 // How a shop quotes: one row per shop, every field optional with a default

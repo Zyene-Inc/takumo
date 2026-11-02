@@ -13,9 +13,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { erpFeeds } from "@/lib/erp/feeds";
 import { envelopeText } from "@/lib/quotes/pricing";
 import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
+import { ErpFeedNote } from "../components/erp-feed-note";
 import {
   EmptyState,
   ErpBadge,
@@ -44,6 +46,9 @@ const WorkCentersPage = async ({
   if (!orgId) {
     notFound();
   }
+  // Data the ERP sends is added there, not typed in here.
+  const feeds = await erpFeeds(orgId);
+  const erpFed = "workCenters" in feeds;
   const q = textFilter((await searchParams).q);
   const machines = await forOrg(database, orgId).workCenter.findMany({
     where: q ? { name: { contains: q, mode: "insensitive" } } : {},
@@ -55,16 +60,20 @@ const WorkCentersPage = async ({
     <>
       <Header page="Work centers" pages={["Shop"]}>
         <div className="px-4">
-          <RecordDialog
-            canEdit={canEditShop}
-            entity="workCenters"
-            title="Add a machine"
-            trigger={
-              <Button size="sm">
-                <PlusIcon /> Add machine
-              </Button>
-            }
-          />
+          {erpFed ? (
+            <ErpFeedNote at={feeds.workCenters} />
+          ) : (
+            <RecordDialog
+              canEdit={canEditShop}
+              entity="workCenters"
+              title="Add a machine"
+              trigger={
+                <Button size="sm">
+                  <PlusIcon /> Add machine
+                </Button>
+              }
+            />
+          )}
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">

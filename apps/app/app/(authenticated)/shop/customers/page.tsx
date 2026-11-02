@@ -13,8 +13,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { erpFeeds } from "@/lib/erp/feeds";
 import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
+import { ErpFeedNote } from "../components/erp-feed-note";
 import {
   EmptyState,
   ErpBadge,
@@ -36,6 +38,9 @@ const CustomersPage = async ({
   if (!orgId) {
     notFound();
   }
+  // Data the ERP sends is added there, not typed in here.
+  const feeds = await erpFeeds(orgId);
+  const erpFed = "customers" in feeds;
   const q = textFilter((await searchParams).q);
   const customers = await forOrg(database, orgId).customer.findMany({
     where: q ? { name: { contains: q, mode: "insensitive" } } : {},
@@ -49,16 +54,20 @@ const CustomersPage = async ({
     <>
       <Header page="Customers" pages={["Shop"]}>
         <div className="px-4">
-          <RecordDialog
-            canEdit={canEditShop}
-            entity="customers"
-            title="Add a customer"
-            trigger={
-              <Button size="sm">
-                <PlusIcon /> Add customer
-              </Button>
-            }
-          />
+          {erpFed ? (
+            <ErpFeedNote at={feeds.customers} />
+          ) : (
+            <RecordDialog
+              canEdit={canEditShop}
+              entity="customers"
+              title="Add a customer"
+              trigger={
+                <Button size="sm">
+                  <PlusIcon /> Add customer
+                </Button>
+              }
+            />
+          )}
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">

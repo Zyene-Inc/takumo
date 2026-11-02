@@ -9,7 +9,8 @@ import { domainOf, emailAddress, senderAllowed } from "../inbound/verify";
 import type { RfqSource } from "./types";
 
 /** new_sender: looks like an RFQ from someone Takumo doesn't know yet. */
-export type Lane = "full" | "new_sender" | "filtered";
+/** po: a customer's purchase order, read into Incoming POs (lib/orders). */
+export type Lane = "full" | "new_sender" | "filtered" | "po";
 
 export interface Screening {
   /** Customer the sender belongs to, when matched. */
@@ -128,10 +129,14 @@ export const recognise = (
   };
 };
 
+export type TriageKind = "rfq" | "po" | "other";
+
 export interface Triage {
   /** high | medium | low */
   confidence: string;
   isRfq: boolean;
+  /** What the email is; isRfq is kind === "rfq". Missing: rfq or other. */
+  kind?: TriageKind;
   summary: string;
 }
 
@@ -155,6 +160,22 @@ export const chooseLane = (input: {
     return { ...base, lane: "filtered", reason: input.freeProblem };
   }
   const t = input.triage;
+  // A purchase order: a customer's goes to Incoming POs; a stranger's isn't
+  // worth reading.
+  if (t?.kind === "po" && t.confidence !== "low") {
+    return input.known
+      ? {
+          ...base,
+          lane: "po",
+          reason: "A purchase order from one of your customers.",
+        }
+      : {
+          ...base,
+          lane: "filtered",
+          reason:
+            "Looks like a purchase order from someone Takumo doesn't know.",
+        };
+  }
   // Not an RFQ, said with some confidence: even a customer's invoice or
   // shipping question doesn't need a quote.
   if (t && !t.isRfq && t.confidence !== "low") {
