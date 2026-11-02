@@ -29,7 +29,8 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useState, useTransition } from "react";
-import { STATUS_LABEL } from "@/lib/quotes/types";
+import { topIssues } from "@/lib/quotes/review";
+import { type RfqSource, SOURCE_LABEL, STATUS_LABEL } from "@/lib/quotes/types";
 import type { RfqView } from "@/lib/quotes/view";
 import { localToday } from "../../schedule/gantt";
 import {
@@ -43,7 +44,10 @@ import {
 } from "../actions";
 import { STATUS_VARIANT } from "../status";
 import { Confirm } from "./confirm";
+import type { ViewerFile } from "./drawing-viewer";
 import { LineCard, LineSpecForm } from "./line-card";
+import { ReviewFocusProvider } from "./review-focus";
+import { TopIssues } from "./top-issues";
 
 export interface WorkspaceOptions {
   canEdit: boolean;
@@ -606,17 +610,26 @@ const MailboxDraft = ({
   );
 };
 
+/** "Original email", "Original form submission", … (every channel). */
+const originalTitle = (source: string) => {
+  const label = SOURCE_LABEL[source as RfqSource];
+  if (source === "email") {
+    return "Original email";
+  }
+  if (source === "phone") {
+    return "Call notes";
+  }
+  return label ? `Original RFQ (${label.toLowerCase()})` : "Original RFQ";
+};
+
 const SidePanel = ({
   rfq,
   reply,
-  draft,
 }: {
-  draft: ReactNode;
   reply: { body: string; subject: string } | null;
   rfq: RfqView;
 }) => (
   <aside className="grid content-start gap-4">
-    {draft}
     {reply && (
       <Section
         action={
@@ -633,24 +646,7 @@ const SidePanel = ({
         </pre>
       </Section>
     )}
-    {rfq.questions.length > 0 && !reply && (
-      <Section
-        action={
-          <CopyButton
-            label="Copy"
-            text={rfq.questions.map((q) => `- ${q}`).join("\n")}
-          />
-        }
-        title="Questions for the customer"
-      >
-        <ul className="list-disc space-y-1 pl-4 text-sm">
-          {rfq.questions.map((q) => (
-            <li key={q}>{q}</li>
-          ))}
-        </ul>
-      </Section>
-    )}
-    <Section title={rfq.source === "email" ? "Original email" : "Original RFQ"}>
+    <Section title={originalTitle(rfq.source)}>
       <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap font-sans text-sm">
         {rfq.body}
       </pre>
@@ -661,8 +657,11 @@ const SidePanel = ({
 export const Workspace = ({
   rfq,
   reply,
+  files = [],
   ...options
 }: WorkspaceOptions & {
+  /** The RFQ's files, to show each line's drawing beside its price. */
+  files?: ViewerFile[];
   reply: { body: string; subject: string } | null;
   rfq: RfqView;
 }) => {
@@ -675,6 +674,17 @@ export const Workspace = ({
   } | null>(null);
   const [adding, setAdding] = useState(false);
   const editable = options.canEdit && EDITABLE.includes(rfq.status);
+  const fileById = new Map(files.map((f) => [f.id, f]));
+  const lineLabel = (l: RfqView["lines"][number]) =>
+    `Line ${l.lineNo} · ${l.partNo ?? l.description ?? "Part"}`;
+  const issues = topIssues(
+    rfq.lines.map((l) => ({
+      id: l.id,
+      label: lineLabel(l),
+      drawing: l.drawing,
+    })),
+    rfq.questions
+  );
 
   const run: Run = (label, action, done) =>
     start(async () => {
@@ -695,91 +705,91 @@ export const Workspace = ({
     });
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <ActionBar
-        busy={busy}
-        canEdit={options.canEdit}
-        onDeleted={(error) => {
-          if (error) {
-            setMessage({ error: true, text: error });
-          } else {
-            router.push("/quotes");
-          }
-        }}
-        pending={pending}
-        rfq={rfq}
-        run={run}
-      />
-      <StatusAlerts
-        busy={busy}
-        canEdit={options.canEdit}
-        message={message}
-        rfq={rfq}
-      />
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <div className="grid min-w-0 content-start gap-4">
-          <RfqDetails
-            editable={editable}
-            key={`${rfq.customerName}-${rfq.contact}-${rfq.requestedDate}`}
-            rfq={rfq}
-          />
-          {rfq.lines.map((line) => (
-            <LineCard
-              editable={editable}
-              key={line.id}
-              line={line}
-              options={options}
-              otherLines={rfq.lines
-                .filter((l) => l.id !== line.id && !l.quote)
-                .map((l) => ({
-                  id: l.id,
-                  label: `Line ${l.lineNo} · ${l.partNo ?? l.description ?? "Part"}`,
-                }))}
-              requestedDate={rfq.requestedDate}
-              rfqId={rfq.id}
-              status={rfq.status}
-            />
-          ))}
-          {editable && adding && (
-            <Section title={`Line ${rfq.lines.length + 1}`}>
-              <LineSpecForm
-                materials={options.materials}
-                onDone={() => setAdding(false)}
-                rfqId={rfq.id}
-              />
-            </Section>
-          )}
-          {editable && !adding && (
-            <Button
-              className="justify-self-start"
-              onClick={() => setAdding(true)}
-              size="sm"
-              variant="outline"
-            >
-              <PlusIcon /> Add a line
-            </Button>
-          )}
-        </div>
-        <SidePanel
-          draft={
-            <MailboxDraft
-              busy={busy}
-              canEdit={options.canEdit}
-              pending={pending}
-              rfq={rfq}
-              run={run}
-            />
-          }
-          reply={reply}
+    <ReviewFocusProvider>
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        <ActionBar
+          busy={busy}
+          canEdit={options.canEdit}
+          onDeleted={(error) => {
+            if (error) {
+              setMessage({ error: true, text: error });
+            } else {
+              router.push("/quotes");
+            }
+          }}
+          pending={pending}
+          rfq={rfq}
+          run={run}
+        />
+        <StatusAlerts
+          busy={busy}
+          canEdit={options.canEdit}
+          message={message}
           rfq={rfq}
         />
+        <TopIssues flags={issues.flags} questions={issues.questions} />
+        <MailboxDraft
+          busy={busy}
+          canEdit={options.canEdit}
+          pending={pending}
+          rfq={rfq}
+          run={run}
+        />
+
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+          <div className="grid min-w-0 content-start gap-4">
+            <RfqDetails
+              editable={editable}
+              key={`${rfq.customerName}-${rfq.contact}-${rfq.requestedDate}`}
+              rfq={rfq}
+            />
+            {rfq.lines.map((line) => (
+              <LineCard
+                drawingFile={
+                  line.drawing
+                    ? (fileById.get(line.drawing.fileId) ?? null)
+                    : null
+                }
+                editable={editable}
+                key={line.id}
+                line={line}
+                options={options}
+                otherLines={rfq.lines
+                  .filter((l) => l.id !== line.id && !l.quote)
+                  .map((l) => ({ id: l.id, label: lineLabel(l) }))}
+                requestedDate={rfq.requestedDate}
+                rfqId={rfq.id}
+                status={rfq.status}
+              />
+            ))}
+            {editable && adding && (
+              <Section title={`Line ${rfq.lines.length + 1}`}>
+                <LineSpecForm
+                  materials={options.materials}
+                  onDone={() => setAdding(false)}
+                  rfqId={rfq.id}
+                />
+              </Section>
+            )}
+            {editable && !adding && (
+              <Button
+                className="justify-self-start"
+                onClick={() => setAdding(true)}
+                size="sm"
+                variant="outline"
+              >
+                <PlusIcon /> Add a line
+              </Button>
+            )}
+          </div>
+          <SidePanel reply={reply} rfq={rfq} />
+        </div>
+        <datalist id="rfq-customers">
+          {options.customers.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
       </div>
-      <datalist id="rfq-customers">
-        {options.customers.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
-    </div>
+    </ReviewFocusProvider>
   );
 };

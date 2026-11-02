@@ -49,12 +49,8 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useState, useTransition } from "react";
-import type {
-  CostSource,
-  LineFinal,
-  PriceBuildUp,
-  RfqStatus,
-} from "@/lib/quotes/types";
+import { buildUpRows } from "@/lib/quotes/review";
+import type { LineFinal, PriceBuildUp, RfqStatus } from "@/lib/quotes/types";
 import type { LineView } from "@/lib/quotes/view";
 import { localToday } from "../../schedule/gantt";
 import {
@@ -67,6 +63,9 @@ import {
 } from "../actions";
 import { Confirm } from "./confirm";
 import { DrawingSummary, type OtherLine } from "./drawing-summary";
+import { DrawingViewer, type ViewerFile } from "./drawing-viewer";
+import { lineAnchor } from "./review-focus";
+import { SourceChip as CostSourceChip } from "./source-chip";
 import type { WorkspaceOptions } from "./workspace";
 
 const usd = (value: number | null | undefined, cents = true) =>
@@ -566,48 +565,38 @@ const Fold = ({
   </Collapsible>
 );
 
-const BASIS_HREF: Partial<Record<CostSource["kind"], (ref: string) => string>> =
-  {
-    po: () => "/shop/materials",
-    material: (ref) => `/shop/materials?q=${encodeURIComponent(ref)}`,
-    routing: (ref) => `/shop/parts?q=${encodeURIComponent(ref)}`,
-    erp: (ref) => `/shop/parts?q=${encodeURIComponent(ref)}`,
-    actuals: (ref) => `/shop/parts?q=${encodeURIComponent(ref)}`,
-    similar_part: (ref) => `/shop/parts?q=${encodeURIComponent(ref)}`,
-    rate: (ref) => `/shop/work-centers?q=${encodeURIComponent(ref)}`,
-    fact: () => "/knowledge/facts",
-  };
-
-/** A number's source, as a small chip; defaults stand out. */
-const Basis = ({ source }: { source: CostSource }) => {
-  const href = source.ref ? BASIS_HREF[source.kind]?.(source.ref) : undefined;
-  const chip = (
-    <span
-      className={cn(
-        "rounded border px-1.5 py-0.5 text-[11px]",
-        source.kind === "default"
-          ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300"
-          : "bg-muted/50 text-muted-foreground"
-      )}
-    >
-      {source.label}
-    </span>
-  );
-  return href ? (
-    <Link className="hover:underline" href={href}>
-      {chip}
-    </Link>
-  ) : (
-    chip
-  );
-};
-
 const minutes = (value: number) => `${Math.round(value * 100) / 100} min`;
 
 /** Where each part of one quantity's price came from (F2.4-R6). */
 const BuildUpSources = ({ b }: { b: PriceBuildUp }) => (
   <div className="grid gap-2 rounded-lg border p-3 text-xs">
-    <p className="font-medium text-sm">Where the numbers come from</p>
+    <p className="font-medium text-sm">
+      Per part at {b.qty.toLocaleString()} pcs
+    </p>
+    <dl className="grid gap-0.5 text-sm">
+      {buildUpRows(b).map((row) => (
+        <div
+          className={cn(
+            "flex justify-between gap-4",
+            (row.key === "cost" || row.key === "price") &&
+              "border-t pt-0.5 font-medium"
+          )}
+          key={row.key}
+        >
+          <dt
+            className={
+              row.isDefault ? "text-amber-700 dark:text-amber-400" : ""
+            }
+          >
+            {row.label}
+            {row.isDefault ? " (includes a default)" : ""}
+          </dt>
+          <dd className="tabular-nums">{usd(row.amount)}</dd>
+        </div>
+      ))}
+    </dl>
+    <p className="pt-1 font-medium text-sm">Where the numbers come from</p>
+    <p className="text-muted-foreground">Click a source to see it.</p>
     <div className="grid gap-1">
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-muted-foreground">Material</span>
@@ -618,7 +607,7 @@ const BuildUpSources = ({ b }: { b: PriceBuildUp }) => (
           {b.material.stock ? ` · ${b.material.stock}` : ""}
           {b.material.markup ? ` · incl. ${pct(b.material.markup)} markup` : ""}
         </span>
-        <Basis source={b.material.source} />
+        <CostSourceChip source={b.material.source} />
       </div>
       {b.operations.map((op) => (
         <div className="flex flex-wrap items-center gap-1.5" key={op.seq}>
@@ -630,8 +619,8 @@ const BuildUpSources = ({ b }: { b: PriceBuildUp }) => (
             {minutes(op.runMinPerUnit)}/part
             {op.rate === null ? "" : ` at ${usd(op.rate)}/h`}
           </span>
-          <Basis source={op.basis} />
-          <Basis source={op.rateSource} />
+          <CostSourceChip source={op.basis} />
+          <CostSourceChip source={op.rateSource} />
           {op.alternates.length > 0 && (
             <span className="text-muted-foreground">
               or {op.alternates.join(", ")}
@@ -647,7 +636,7 @@ const BuildUpSources = ({ b }: { b: PriceBuildUp }) => (
             {o.supplier ? ` · ${o.supplier}` : ""}
             {o.leadTimeDays === null ? "" : ` · ${o.leadTimeDays} days`}
           </span>
-          <Basis source={o.source} />
+          <CostSourceChip source={o.source} />
         </div>
       ))}
       <div className="flex flex-wrap items-center gap-1.5">
@@ -659,7 +648,7 @@ const BuildUpSources = ({ b }: { b: PriceBuildUp }) => (
             : ""}
           {b.margin.floor === null ? "" : ` · floor ${pct(b.margin.floor)}`}
         </span>
-        {b.margin.raisedByFloor && <Basis source={b.margin.source} />}
+        {b.margin.raisedByFloor && <CostSourceChip source={b.margin.source} />}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-muted-foreground">Lead time</span>
@@ -669,7 +658,7 @@ const BuildUpSources = ({ b }: { b: PriceBuildUp }) => (
             ? ` (incl. ${b.lead.outsideDays} days outside)`
             : ""}
         </span>
-        <Basis source={b.lead.materialSource} />
+        <CostSourceChip source={b.lead.materialSource} />
       </div>
     </div>
   </div>
@@ -683,7 +672,7 @@ const CostBuild = ({ line }: { line: LineView }) => {
   }
   const row = r.breaks.find((b) => b.qty === qty) ?? r.breaks[0];
   return (
-    <Fold title="How the price is built">
+    <Fold open title="How the price is built">
       <div className="grid gap-3">
         {r.breaks.length > 1 && (
           <div className="flex gap-1">
@@ -1404,7 +1393,10 @@ export const LineCard = ({
   options,
   otherLines = [],
   requestedDate,
+  drawingFile = null,
 }: {
+  /** The drawing this line was read from, shown beside its price (F2.6). */
+  drawingFile?: ViewerFile | null;
   editable: boolean;
   line: LineView;
   options: WorkspaceOptions;
@@ -1434,7 +1426,7 @@ export const LineCard = ({
   ];
 
   return (
-    <section className="rounded-xl border">
+    <section className="scroll-mt-4 rounded-xl border" id={lineAnchor(line.id)}>
       <Confirm
         action="Remove"
         description="Its draft goes too."
@@ -1476,70 +1468,85 @@ export const LineCard = ({
           </div>
         )}
       </div>
-      <div className="grid gap-4 p-4">
-        {editing ? (
-          <LineSpecForm
-            line={line}
-            materials={options.materials}
-            onDone={() => setEditing(false)}
-            rfqId={rfqId}
-          />
-        ) : (
-          <>
-            {line.description && <p className="text-sm">{line.description}</p>}
-            <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-              {spec
-                .filter(([, v]) => v)
-                .map(([label, value]) => (
-                  <div className="flex gap-1.5" key={label}>
-                    <dt className="text-muted-foreground">{label}</dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
-            </dl>
-          </>
+      <div
+        className={cn(
+          "grid gap-4 p-4",
+          drawingFile &&
+            "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start"
         )}
-        {line.drawing && !editing && (
-          <DrawingSummary
-            drawing={line.drawing}
-            editable={editable && !line.quote}
-            lineId={line.id}
-            otherLines={otherLines}
-            rfqId={rfqId}
-          />
+      >
+        {drawingFile && (
+          <div className="lg:sticky lg:top-4">
+            <DrawingViewer file={drawingFile} lineId={line.id} rfqId={rfqId} />
+          </div>
         )}
-        {line.quote ? (
-          <Outcome canEdit={options.canEdit} line={line} rfqId={rfqId} />
-        ) : null}
-        {line.draft ? (
-          <>
-            <PriceTable
-              editable={draftable && !line.quote}
-              key={`${line.draft.estimatedAt}-${JSON.stringify(line.final)}`}
+        <div className="grid min-w-0 gap-4">
+          {editing ? (
+            <LineSpecForm
               line={line}
-              requestedDate={requestedDate}
+              materials={options.materials}
+              onDone={() => setEditing(false)}
               rfqId={rfqId}
             />
-            <Notices line={line} />
-            <Comparables line={line} />
-            <CostBuild key={line.draft.estimatedAt} line={line} />
-            <InputsEditor
-              editable={draftable && !line.quote}
-              key={`inputs-${line.draft.estimatedAt}`}
-              line={line}
-              machines={options.machines}
+          ) : (
+            <>
+              {line.description && (
+                <p className="text-sm">{line.description}</p>
+              )}
+              <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                {spec
+                  .filter(([, v]) => v)
+                  .map(([label, value]) => (
+                    <div className="flex gap-1.5" key={label}>
+                      <dt className="text-muted-foreground">{label}</dt>
+                      <dd>{value}</dd>
+                    </div>
+                  ))}
+              </dl>
+            </>
+          )}
+          {line.drawing && !editing && (
+            <DrawingSummary
+              drawing={line.drawing}
+              editable={editable && !line.quote}
+              lineId={line.id}
+              otherLines={otherLines}
               rfqId={rfqId}
             />
-          </>
-        ) : (
-          !editing && (
-            <p className="text-muted-foreground text-sm">
-              {line.part
-                ? "Not drafted yet."
-                : "Not drafted yet. Takumo will propose operations for this new part from the most similar parts you make."}
-            </p>
-          )
-        )}
+          )}
+          {line.quote ? (
+            <Outcome canEdit={options.canEdit} line={line} rfqId={rfqId} />
+          ) : null}
+          {line.draft ? (
+            <>
+              <PriceTable
+                editable={draftable && !line.quote}
+                key={`${line.draft.estimatedAt}-${JSON.stringify(line.final)}`}
+                line={line}
+                requestedDate={requestedDate}
+                rfqId={rfqId}
+              />
+              <Notices line={line} />
+              <Comparables line={line} />
+              <CostBuild key={line.draft.estimatedAt} line={line} />
+              <InputsEditor
+                editable={draftable && !line.quote}
+                key={`inputs-${line.draft.estimatedAt}`}
+                line={line}
+                machines={options.machines}
+                rfqId={rfqId}
+              />
+            </>
+          ) : (
+            !editing && (
+              <p className="text-muted-foreground text-sm">
+                {line.part
+                  ? "Not drafted yet."
+                  : "Not drafted yet. Takumo will propose operations for this new part from the most similar parts you make."}
+              </p>
+            )
+          )}
+        </div>
       </div>
     </section>
   );
