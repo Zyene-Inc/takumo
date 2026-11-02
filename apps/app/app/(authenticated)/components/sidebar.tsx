@@ -99,6 +99,10 @@ const data = {
           title: "Past quotes",
           url: "/quotes/history",
         },
+        {
+          title: "Incoming POs",
+          url: "/orders/incoming",
+        },
       ],
     },
     {
