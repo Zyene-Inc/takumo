@@ -6,6 +6,7 @@ import {
   type HistoryPart,
   type OutsideProcess,
   type PastQuote,
+  type QuoteBreak,
   type QuoteMaterial,
   type QuoteOperation,
   type QuoteResponse,
@@ -13,9 +14,36 @@ import {
 import { recordFailedUsage, recordUsage } from "../ai-usage";
 import { CHECK_TIME_LIMIT_S, engineProblem, loadShop } from "../schedule/plan";
 import { isoDay } from "../schedule/request";
+import {
+  applyMarginFloor,
+  buildUp,
+  drawingSummary,
+  envelopeText,
+  explainMaterialLine,
+  groupByWait,
+  latestPoPrice,
+  type MaterialPricing,
+  type MaterialWait,
+  materialPricing,
+  materialWait,
+  mergeResponses,
+  operationBasis,
+  outsideDays,
+  outsideProcesses,
+  type PlannedOperation,
+  type PoLine,
+  readDrawing,
+  withOutsideDays,
+} from "./pricing";
 import { proposeRouting } from "./propose";
 import { type CandidatePart, similarParts, withActuals } from "./routing";
-import type { DraftInputs, LineDraft } from "./types";
+import { quoteSettings } from "./settings";
+import type {
+  BuildUpOutside,
+  DraftInputs,
+  DrawingReading,
+  LineDraft,
+} from "./types";
 
 /** Past quotes sent to the engine (most recent first). */
 const HISTORY_LIMIT = 2000;
@@ -64,7 +92,17 @@ export const loadQuoteHistory = async (orgId: string) => {
         },
       },
     }),
-    db.workCenter.findMany({ select: { id: true, name: true, type: true } }),
+    db.workCenter.findMany({
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        hourlyRate: true,
+        efficiency: true,
+        envelope: true,
+        toleranceIn: true,
+      },
+    }),
   ]);
   const wcName = new Map(workCenters.map((w) => [w.id, w.name]));
   const candidates: CandidatePart[] = parts.map((p) => ({
@@ -116,7 +154,18 @@ export const loadQuoteHistory = async (orgId: string) => {
     history,
     historyParts: [...byPartNo.values()],
     candidates,
-    machines: workCenters.map((w) => ({ name: w.name, type: w.type })),
+    machines: workCenters.map((w) => ({
+      name: w.name,
+      type: w.type,
+      envelope: envelopeText(w.envelope),
+      toleranceIn: w.toleranceIn,
+    })),
+    rates: new Map(
+      workCenters.map((w) => [
+        w.name,
+        { rate: num(w.hourlyRate), efficiency: w.efficiency || 1 },
+      ])
+    ),
   };
 };
 
@@ -142,7 +191,13 @@ export const runEstimate = async (
   orgId: string,
   input: EstimateInput,
   history: Awaited<ReturnType<typeof loadQuoteHistory>>,
-  leadTimes = true
+  leadTimes = true,
+  options: {
+    /** Rate for machines without an hourly rate of their own. */
+    laborRate?: number;
+    /** Days until the material is in the shop, per quantity (F2.4-R5). */
+    materialWaits?: Map<number, number | null>;
+  } = {}
 ): Promise<EstimateResult> => {
   if (input.routing.length === 0) {
     return {
@@ -154,25 +209,41 @@ export const runEstimate = async (
     return { ok: false, error: "Add at least one quantity." };
   }
   const built = await loadShop(orgId, input.today);
+  const workCenters =
+    options.laborRate === undefined
+      ? built.request.work_centers
+      : built.request.work_centers.map((wc) => ({
+          ...wc,
+          hourly_rate: wc.hourly_rate ?? options.laborRate,
+        }));
   let response: QuoteResponse;
   try {
-    response = await estimateQuote({
-      ...built.request,
-      time_limit_s: CHECK_TIME_LIMIT_S,
-      lead_times: leadTimes,
-      history: history.history,
-      history_parts: history.historyParts,
-      quote: {
-        part_no: input.partNo,
-        customer: input.customer,
-        material: input.material,
-        routing: input.routing,
-        qty_breaks: input.qtys,
-        outside: input.outside,
-        target_margin: input.targetMargin,
-        requested_date: input.requestedDate,
-      },
-    });
+    const responses = await Promise.all(
+      groupByWait(input.qtys, options.materialWaits).map((group) =>
+        estimateQuote({
+          ...built.request,
+          work_centers: workCenters,
+          time_limit_s: CHECK_TIME_LIMIT_S,
+          lead_times: leadTimes,
+          history: history.history,
+          history_parts: history.historyParts,
+          quote: {
+            part_no: input.partNo,
+            customer: input.customer,
+            material:
+              input.material && !group.keep
+                ? { ...input.material, lead_time_days: group.days }
+                : input.material,
+            routing: input.routing,
+            qty_breaks: group.qtys,
+            outside: input.outside,
+            target_margin: input.targetMargin,
+            requested_date: input.requestedDate,
+          },
+        })
+      )
+    );
+    response = mergeResponses(responses);
   } catch (error) {
     return { ok: false, error: engineProblem(error) };
   }
@@ -263,6 +334,7 @@ const quoteMaterial = (
 interface LineForRouting {
   description: string | null;
   draft: unknown;
+  drawing: unknown;
   finish: string | null;
   id: string;
   notes: string | null;
@@ -273,10 +345,61 @@ interface LineForRouting {
   tolerances: string | null;
 }
 
+interface RoutingFacts {
+  erpSynced: boolean;
+  /** Approved facts on the part's operation times, by op number. */
+  facts: Map<number, { date: string; number: number }>;
+}
+
+/** Approved facts on a part's routing times, and whether the ERP sends it. */
+const routingFacts = async (
+  orgId: string,
+  partId: string
+): Promise<RoutingFacts> => {
+  const db = forOrg(database, orgId);
+  const ops = await db.routing.findMany({
+    where: { partId },
+    select: { id: true, seq: true, syncedAt: true },
+  });
+  const facts = ops.length
+    ? await db.fact.findMany({
+        where: {
+          subjectType: "routing",
+          subjectId: { in: ops.map((o) => o.id) },
+          status: "approved",
+          attribute: { in: ["setupMin", "runMinPerUnit"] },
+          validTo: null,
+        },
+        orderBy: { reviewedAt: "desc" },
+        select: {
+          subjectId: true,
+          number: true,
+          reviewedAt: true,
+          createdAt: true,
+        },
+      })
+    : [];
+  const seqOf = new Map(ops.map((o) => [o.id, o.seq]));
+  const bySeq = new Map<number, { date: string; number: number }>();
+  for (const f of facts) {
+    const seq = seqOf.get(f.subjectId);
+    if (seq !== undefined && !bySeq.has(seq)) {
+      bySeq.set(seq, {
+        number: f.number,
+        date: isoDay(f.reviewedAt ?? f.createdAt),
+      });
+    }
+  }
+  return { erpSynced: ops.some((o) => o.syncedAt), facts: bySeq };
+};
+
+const NO_FACTS: RoutingFacts = { erpSynced: false, facts: new Map() };
+
 /**
  * The line's operations: what the estimator saved, else the part's routing
- * (with actual times), else a proposal for a new part, saved on the line so
- * re-estimating doesn't change it under the estimator.
+ * (approved facts as they are, other times from finished jobs), else a
+ * proposal for a new part from the drawing and similar parts, saved on the
+ * line so re-estimating doesn't change it under the estimator.
  */
 const operationsFor = async (
   orgId: string,
@@ -284,27 +407,38 @@ const operationsFor = async (
   shop: Awaited<ReturnType<typeof loadQuoteHistory>>,
   context: { customer: string | null; materialName: string | null }
 ): Promise<
-  | { ok: true; routing: QuoteOperation[]; routingNotes: string[] }
+  | {
+      ok: true;
+      facts: RoutingFacts;
+      routing: PlannedOperation[];
+      routingNotes: string[];
+    }
   | { ok: false; error: string }
 > => {
-  const saved = line.routing as QuoteOperation[] | null;
+  const saved = line.routing as PlannedOperation[] | null;
+  const part = line.part
+    ? shop.candidates.find((c) => c.id === line.part?.id)
+    : undefined;
+  const facts = part ? await routingFacts(orgId, part.id) : NO_FACTS;
   if (saved) {
     const previous = line.draft as LineDraft | null;
     return {
       ok: true,
+      facts,
       routing: saved,
       routingNotes: previous?.routingNotes ?? [],
     };
   }
-  const part = line.part
-    ? shop.candidates.find((c) => c.id === line.part?.id)
-    : undefined;
   if (part?.routing.length) {
-    return {
-      ok: true,
-      routing: withActuals(part.routing, await actualJobs(orgId, part.id)),
-      routingNotes: [],
-    };
+    const actual = withActuals(part.routing, await actualJobs(orgId, part.id));
+    // An approved fact is what the shop says the time is: it stands.
+    const routing = actual.map((op) => {
+      const original = part.routing.find((r) => r.seq === op.seq);
+      return facts.facts.has(op.seq) && original
+        ? { ...original, source: "routing" as const }
+        : op;
+    });
+    return { ok: true, facts, routing, routingNotes: [] };
   }
   try {
     const proposal = await proposeRouting({
@@ -326,6 +460,7 @@ const operationsFor = async (
         tolerances: line.tolerances,
         finish: line.finish,
         notes: line.notes,
+        drawing: drawingSummary(readDrawing(line.drawing)),
       },
     });
     await recordUsage(
@@ -338,7 +473,12 @@ const operationsFor = async (
       where: { id: line.id },
       data: { routing: proposal.ops as object[] },
     });
-    return { ok: true, routing: proposal.ops, routingNotes: proposal.notes };
+    return {
+      ok: true,
+      facts,
+      routing: proposal.ops,
+      routingNotes: proposal.notes,
+    };
   } catch (error) {
     await recordFailedUsage(orgId, "routing_proposal", error);
     return {
@@ -355,9 +495,206 @@ export type LineEstimate =
   | { ok: true; draft: LineDraft }
   | { ok: false; error: string };
 
+const MATERIAL_SELECT = {
+  id: true,
+  name: true,
+  unit: true,
+  unitCost: true,
+  leadTimeDays: true,
+} as const;
+
+/** Open and past PO lines, and free stock, for one material. */
+const materialSupply = async (orgId: string, materialId: string) => {
+  const db = forOrg(database, orgId);
+  const [pos, stock] = await Promise.all([
+    db.purchaseOrderLine.findMany({
+      where: { materialId },
+      orderBy: { dueDate: "desc" },
+      take: 200,
+      select: {
+        poNo: true,
+        lineNo: true,
+        supplier: true,
+        qtyOrdered: true,
+        qtyReceived: true,
+        unit: true,
+        unitPrice: true,
+        orderedAt: true,
+        dueDate: true,
+        status: true,
+      },
+    }),
+    db.stockLevel.findMany({
+      where: { materialId },
+      select: { qtyOnHand: true, qtyAllocated: true },
+    }),
+  ]);
+  const lines: PoLine[] = pos.map((p) => ({
+    ...p,
+    orderedAt: p.orderedAt ? isoDay(p.orderedAt) : null,
+    dueDate: isoDay(p.dueDate),
+  }));
+  return {
+    lines,
+    available: stock.reduce((sum, s) => sum + s.qtyOnHand - s.qtyAllocated, 0),
+  };
+};
+
+/** The material the engine prices with: our cost per part, or its record. */
+const engineMaterial = (
+  pricing: MaterialPricing | null,
+  material: {
+    leadTimeDays: number | null;
+    name: string;
+    unit: string;
+    unitCost: { toString(): string } | null;
+  } | null,
+  line: {
+    materialCost: number | null;
+    materialText: string | null;
+    usagePerPart: number | null;
+  }
+): QuoteMaterial | null =>
+  pricing
+    ? {
+        name: material?.name ?? line.materialText ?? "Material",
+        unit: "ea",
+        unit_cost: pricing.perPart,
+        usage_per_part: 1,
+        lead_time_days: material?.leadTimeDays ?? null,
+      }
+    : quoteMaterial(material, line);
+
+interface MaterialRecord {
+  id: string;
+  leadTimeDays: number | null;
+  name: string;
+  unit: string;
+  unitCost: { toString(): string } | null;
+}
+
+/** The material's price per part and, per quantity, when it's in the shop. */
+const planMaterial = async (
+  orgId: string,
+  input: {
+    drawing: DrawingReading | null;
+    line: {
+      materialCost: number | null;
+      materialText: string | null;
+      qtys: number[];
+      usagePerPart: number | null;
+    };
+    markup: number;
+    material: MaterialRecord | null;
+    today: string;
+  }
+) => {
+  const { line, material, drawing } = input;
+  const supply = material
+    ? await materialSupply(orgId, material.id)
+    : { lines: [], available: 0 };
+  const pricing = materialPricing({
+    estimatorCost: line.materialCost,
+    usagePerPart: line.usagePerPart,
+    stock: drawing?.stock ?? null,
+    drawingUnits: drawing?.units ?? null,
+    markup: input.markup,
+    materialText: line.materialText,
+    material: material
+      ? {
+          name: material.name,
+          unit: material.unit,
+          unitCost: num(material.unitCost),
+        }
+      : null,
+    poPrice: material ? latestPoPrice(supply.lines, material.unit) : null,
+  });
+  const usage =
+    pricing && pricing.unit === material?.unit
+      ? pricing.usagePerPart
+      : line.usagePerPart;
+  const waits = new Map<number, MaterialWait>(
+    line.qtys.map((qty) => [
+      qty,
+      materialWait({
+        qty,
+        today: input.today,
+        materialName: material?.name ?? null,
+        unit: material?.unit ?? null,
+        usagePerPart: usage,
+        available: supply.available,
+        openPos: supply.lines,
+        leadTimeDays: material?.leadTimeDays ?? null,
+      }),
+    ])
+  );
+  return { pricing, waits };
+};
+
+/** What the estimator should check: unknown outside lead times, default times. */
+const lineWarnings = (
+  outside: BuildUpOutside[],
+  routing: PlannedOperation[],
+  ctx: RoutingFacts & { partNo: string }
+) => {
+  const warnings: string[] = [];
+  const unknownLead = outside.filter(
+    (m) => !m.askSupplier && m.leadTimeDays === null
+  );
+  if (unknownLead.length) {
+    warnings.push(
+      `No lead time known for ${unknownLead.map((m) => m.process).join(", ")}: ask your supplier, or add it in Settings → Quoting.`
+    );
+  }
+  const defaults = routing.filter((op) => operationBasis(op, ctx).isDefault);
+  if (defaults.length) {
+    warnings.push(
+      `Op ${defaults.map((op) => op.seq).join(", ")}: times are Takumo's estimate with no similar operation behind them. Check them.`
+    );
+  }
+  return warnings;
+};
+
+/** The engine's answer with the customer's floor and outside days applied. */
+const finishResponse = (
+  response: QuoteResponse,
+  options: {
+    customer: string | null;
+    floor: number | null;
+    material: MaterialPricing | null;
+    outsideDays: number;
+    requestedDate: string | null;
+  }
+) => {
+  const raised = new Set<number>();
+  const breaks: QuoteBreak[] = response.breaks.map((b) => {
+    const floored = applyMarginFloor(b, options.floor);
+    if (floored.raised) {
+      raised.add(b.qty);
+    }
+    return withOutsideDays(
+      {
+        ...floored.row,
+        lines: explainMaterialLine(floored.row.lines, options.material),
+      },
+      options.outsideDays,
+      options.requestedDate
+    );
+  });
+  const checks = [...response.checks];
+  if (raised.size && options.floor !== null) {
+    checks.push(
+      `Raised to ${options.customer ?? "the customer"}'s ${Math.round(options.floor * 1000) / 10}% margin floor at ${[...raised].map((q) => q.toLocaleString("en-US")).join(", ")} pcs.`
+    );
+  }
+  return { response: { ...response, breaks, checks }, raised };
+};
+
 /**
  * Draft one RFQ line: work out its operations (the part's routing, or a
- * proposal for a new part), run the estimate, and save it on the line.
+ * proposal for a new part), price its material, outside processes and
+ * margin with the shop's own costs, run the estimate, and save it with a
+ * build-up of where every number came from.
  */
 export const estimateLine = async (
   orgId: string,
@@ -374,33 +711,17 @@ export const estimateLine = async (
           id: true,
           customerName: true,
           requestedDate: true,
-          customer: { select: { name: true } },
+          customer: { select: { name: true, marginFloor: true } },
         },
       },
       part: {
         select: {
           id: true,
           partNo: true,
-          material: {
-            select: {
-              id: true,
-              name: true,
-              unit: true,
-              unitCost: true,
-              leadTimeDays: true,
-            },
-          },
+          material: { select: MATERIAL_SELECT },
         },
       },
-      material: {
-        select: {
-          id: true,
-          name: true,
-          unit: true,
-          unitCost: true,
-          leadTimeDays: true,
-        },
-      },
+      material: { select: MATERIAL_SELECT },
     },
   });
   if (!line) {
@@ -409,10 +730,20 @@ export const estimateLine = async (
   if (line.qtys.length === 0) {
     return { ok: false, error: `Line ${line.lineNo} has no quantity.` };
   }
-  const shop = history ?? (await loadQuoteHistory(orgId));
+  const [shop, settings] = await Promise.all([
+    history ?? loadQuoteHistory(orgId),
+    quoteSettings(orgId),
+  ]);
+  const laborRateSet = await db.shopSettings
+    .findFirst({ select: { laborRate: true } })
+    .then((r) => r?.laborRate != null);
   const material = line.material ?? line.part?.material ?? null;
   const customer = line.rfq.customer?.name ?? line.rfq.customerName ?? null;
   const partNo = line.part?.partNo ?? line.partNo ?? `Line ${line.lineNo}`;
+  const drawing = readDrawing(line.drawing);
+  const requestedDate = line.rfq.requestedDate
+    ? isoDay(line.rfq.requestedDate)
+    : null;
 
   const operations = await operationsFor(orgId, line, shop, {
     customer,
@@ -421,7 +752,23 @@ export const estimateLine = async (
   if (!operations.ok) {
     return operations;
   }
-  const { routing, routingNotes } = operations;
+  const { routing, routingNotes, facts } = operations;
+
+  const { pricing, waits } = await planMaterial(orgId, {
+    line,
+    material,
+    drawing,
+    markup: settings.materialMarkup,
+    today,
+  });
+
+  const outside = outsideProcesses({
+    saved: line.outside as OutsideProcess[] | null,
+    drawingFinishes: drawing?.finishes ?? [],
+    lineFinish: line.finish,
+    suppliers: settings.outsideProcesses,
+  });
+  const extraDays = outsideDays(outside.meta);
 
   const result = await runEstimate(
     orgId,
@@ -429,28 +776,56 @@ export const estimateLine = async (
       partNo,
       newPart: !line.part,
       customer,
-      material: quoteMaterial(material, line),
+      material: engineMaterial(pricing, material, line),
       routing,
       qtys: line.qtys,
-      outside:
-        (line.outside as OutsideProcess[] | null) ??
-        (line.finish ? [{ description: line.finish }] : []),
+      outside: outside.outside,
       targetMargin: line.targetMargin,
-      requestedDate: line.rfq.requestedDate
-        ? isoDay(line.rfq.requestedDate)
-        : null,
+      requestedDate,
       today,
     },
-    shop
+    shop,
+    true,
+    {
+      laborRate: settings.laborRate,
+      materialWaits: material
+        ? new Map([...waits].map(([q, w]) => [q, w.days]))
+        : undefined,
+    }
   );
   if (!result.ok) {
     return result;
   }
+  const floor = line.rfq.customer?.marginFloor ?? null;
+  const finished = finishResponse(result.response, {
+    customer,
+    floor,
+    material: pricing,
+    outsideDays: extraDays,
+    requestedDate,
+  });
+  finished.response.warnings.push(
+    ...lineWarnings(outside.meta, routing, { ...facts, partNo })
+  );
   const draft: LineDraft = {
     estimatedAt: new Date().toISOString(),
     inputs: result.inputs,
     routingNotes,
-    response: result.response,
+    response: finished.response,
+    buildUp: buildUp(finished.response, {
+      routing,
+      material: pricing,
+      materialWaits: waits,
+      outside: outside.meta,
+      outsideDays: extraDays,
+      floor,
+      floorRaised: finished.raised,
+      laborRate: { rate: settings.laborRate, set: laborRateSet },
+      machines: shop.rates,
+      opBasis: new Map(
+        routing.map((op) => [op.seq, operationBasis(op, { ...facts, partNo })])
+      ),
+    }),
   };
   // A line that's been quoted keeps the numbers that were sent.
   const saved = await db.rfqLine.updateMany({
@@ -514,6 +889,8 @@ export const estimateForPart = async (
       requestedDate: options.requestedDate,
       today: options.today,
     },
-    shop
+    shop,
+    true,
+    { laborRate: (await quoteSettings(orgId)).laborRate }
   );
 };

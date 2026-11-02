@@ -2,9 +2,17 @@ import "server-only";
 
 import { database, forOrg, Prisma } from "@repo/database";
 import { log } from "@repo/observability/log";
+import { after } from "next/server";
 import { recordFailedUsage, recordUsage } from "../ai-usage";
 import type { MailThread } from "../connectors/thread";
+import { readDrawings } from "./drawing";
 import { extractRfq } from "./extract";
+import {
+  findDuplicate,
+  type PreparedFile,
+  prepareFiles,
+  saveRfqFiles,
+} from "./files";
 import { partsMentioned } from "./match";
 import type { RfqText } from "./read";
 
@@ -15,9 +23,9 @@ const createRfq = async (
   orgId: string,
   userId: string | null,
   text: RfqText,
-  fileName: string | null,
-  sourceId: string | null = null,
-  mail: MailThread | null = null
+  options: IntakeOptions,
+  /** Kept on Rfq.extracted beside the reading: { mail, intake }. */
+  kept: object
 ) => {
   for (let attempt = 0; ; attempt += 1) {
     const last = await forOrg(database, orgId).rfq.findFirst({
@@ -30,14 +38,14 @@ const createRfq = async (
           orgId,
           number: (last?.number ?? 0) + 1,
           source: text.source,
-          sourceId,
-          fileName,
+          sourceId: options.sourceId ?? null,
+          fileName: options.fileName ?? null,
           subject: text.subject,
           sender: text.sender,
           body: text.body,
           createdBy: userId,
           // Kept through every reading (see readRfq).
-          ...(mail ? { extracted: { mail } as object } : {}),
+          ...(Object.keys(kept).length ? { extracted: kept } : {}),
         },
         select: { id: true, number: true, receivedAt: true },
       });
@@ -62,12 +70,39 @@ const readingProblem = (read: { isRfq: boolean; lines: unknown[] }) => {
     : "Takumo didn't find any parts to quote in this RFQ. Add the lines yourself.";
 };
 
-const mailKey = (extracted: unknown) => {
-  const mail =
+/** What intake keeps on Rfq.extracted, carried over each new reading. */
+const keptKeys = (extracted: unknown) => {
+  const e =
     extracted && typeof extracted === "object"
-      ? (extracted as { mail?: unknown }).mail
-      : undefined;
-  return mail ? { mail } : {};
+      ? (extracted as { intake?: unknown; mail?: unknown })
+      : {};
+  return {
+    ...(e.mail ? { mail: e.mail } : {}),
+    ...(e.intake ? { intake: e.intake } : {}),
+  };
+};
+
+/** Rfq.extracted.intake: what happened to the files at intake. */
+export interface IntakeNote {
+  /** Files left out, with why (too large, too many). */
+  skipped: string[];
+}
+
+/** Files left out of an RFQ at intake, from Rfq.extracted. */
+export const intakeNoteOf = (extracted: unknown): IntakeNote | null => {
+  const intake =
+    extracted && typeof extracted === "object"
+      ? (extracted as { intake?: unknown }).intake
+      : null;
+  if (!intake || typeof intake !== "object") {
+    return null;
+  }
+  const skipped = (intake as { skipped?: unknown }).skipped;
+  return {
+    skipped: Array.isArray(skipped)
+      ? skipped.filter((s): s is string => typeof s === "string")
+      : [],
+  };
 };
 
 /**
@@ -118,7 +153,7 @@ export const readRfq = async (orgId: string, rfqId: string) => {
           // The mail thread it came from stays beside the new reading.
           extracted: {
             ...(read.reading as object),
-            ...mailKey(rfq.extracted),
+            ...keptKeys(rfq.extracted),
           },
           status: read.isRfq && read.lines.length ? "review" : "failed",
           error: readingProblem(read),
@@ -142,6 +177,18 @@ export const readRfq = async (orgId: string, rfqId: string) => {
         })),
       }),
     ]);
+    await readDrawings(orgId, rfqId);
+    // A package that is only drawings (scans, no RFQ text) has its parts on
+    // the drawings: once they made lines, it's ready for review after all.
+    if (!(read.isRfq && read.lines.length)) {
+      const lines = await db.rfqLine.count({ where: { rfqId } });
+      if (lines > 0) {
+        await db.rfq.updateMany({
+          where: { id: rfqId },
+          data: { status: "review", error: null },
+        });
+      }
+    }
   } catch (error) {
     log.warn("Reading an RFQ failed", { rfqId, error: String(error) });
     await recordFailedUsage(orgId, "rfq_read", error);
@@ -156,18 +203,101 @@ export const readRfq = async (orgId: string, rfqId: string) => {
   }
 };
 
-/** A new RFQ from an upload, a paste or the mailbox, read straight away. */
+export interface IntakeOptions {
+  /** Off for evals and tests that send the same files again on purpose. */
+  checkDuplicates?: boolean;
+  /** The uploaded file's name, when there was one. */
+  fileName?: string | null;
+  /** The mail thread, for replying in it and spotting the same RFQ again. */
+  mail?: MailThread | null;
+  /** The message id, for RFQs from a mailbox (never read twice). */
+  sourceId?: string | null;
+}
+
+export type IntakeResult =
+  | {
+      duplicate: false;
+      id: string;
+      number: number;
+      receivedAt: Date;
+      /** Files left out (too large, too many). */
+      skipped: string[];
+    }
+  /** Same sender and files as an RFQ from the last week: nothing new made. */
+  | { duplicate: true; id: string; number: number };
+
+/**
+ * A new RFQ from any channel, read straight away. Its files are kept. When
+ * the same sender sent the same files in the last week, no RFQ is made and
+ * the earlier one is returned (F2.1-R7).
+ */
 export const intakeRfq = async (
   orgId: string,
   userId: string | null,
   text: RfqText,
-  fileName: string | null,
-  /** The message id, for RFQs from a connected mailbox (never read twice). */
-  sourceId: string | null = null,
-  /** The mail thread, for replying in it and spotting the same RFQ again. */
-  mail: MailThread | null = null
-) => {
-  const rfq = await createRfq(orgId, userId, text, fileName, sourceId, mail);
+  options: IntakeOptions = {}
+): Promise<IntakeResult> => {
+  const { files, skipped } = await prepareFiles(text.files);
+  const earlier =
+    options.checkDuplicates === false
+      ? null
+      : await findDuplicate(orgId, text.sender, files);
+  if (earlier) {
+    return { duplicate: true, id: earlier.id, number: earlier.number };
+  }
+  const kept = {
+    ...(options.mail ? { mail: options.mail } : {}),
+    ...(skipped.length ? { intake: { skipped } satisfies IntakeNote } : {}),
+  };
+  const rfq = await createRfq(orgId, userId, text, options, kept);
+  await keepFiles(orgId, rfq.id, files, kept);
   await readRfq(orgId, rfq.id);
-  return rfq;
+  if (options.sourceId) {
+    // Arrived by email (a mailbox or the RFQ address): price it and put the
+    // draft reply in the thread without anyone clicking (F2.5).
+    draftLater(orgId, rfq.id);
+  }
+  return { duplicate: false, skipped, ...rfq };
+};
+
+/** Saving the files must not lose the RFQ: a failure is logged and noted. */
+const keepFiles = async (
+  orgId: string,
+  rfqId: string,
+  files: PreparedFile[],
+  kept: { intake?: IntakeNote; mail?: MailThread }
+) => {
+  try {
+    await saveRfqFiles(orgId, rfqId, files);
+  } catch (error) {
+    log.error("Saving RFQ files failed", { rfqId, error: String(error) });
+    await forOrg(database, orgId).rfq.updateMany({
+      where: { id: rfqId },
+      data: {
+        extracted: {
+          ...kept,
+          intake: {
+            skipped: [
+              ...(kept.intake?.skipped ?? []),
+              ...files.map((f) => `${f.name}: couldn't be saved`),
+            ],
+          } satisfies IntakeNote,
+        } as object,
+      },
+    });
+  }
+};
+
+/** After the response (or the sync) finishes: estimate and draft the reply. */
+const draftLater = (orgId: string, rfqId: string) => {
+  const run = async () => {
+    const { draftWhenReady } = await import("./mailbox-reply");
+    await draftWhenReady(orgId, rfqId);
+  };
+  try {
+    after(run);
+  } catch {
+    // Outside a request (a script): the estimator drafts it from the RFQ page.
+    log.info("RFQ not drafted automatically (no request)", { rfqId });
+  }
 };

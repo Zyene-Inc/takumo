@@ -10,6 +10,7 @@ import { changesForErp } from "@/lib/erp/changes";
 import type { ReportResult } from "@/lib/erp/reports";
 import { ensureAddresses } from "@/lib/inbound/process";
 import { addressFor, type InboundKind } from "@/lib/inbound/verify";
+import { rfqLabel } from "@/lib/quotes/types";
 import { Header } from "../../../components/header";
 import { AddressCard } from "./address-card";
 import { ReportRow, type ReportView } from "./report-row";
@@ -29,7 +30,7 @@ const STATUS_TEXT: Record<string, string> = {
 
 const ADDRESS_COPY: Record<
   InboundKind,
-  { title: string; description: string }
+  { title: string; description: string; help?: string[] }
 > = {
   erp: {
     title: "ERP reports",
@@ -39,7 +40,12 @@ const ADDRESS_COPY: Record<
   rfq: {
     title: "RFQs",
     description:
-      "Forward RFQs from customer portals, website forms or anywhere else here. Each one becomes an RFQ in Quotes, read and ready to price, like the ones from your mailbox.",
+      "Forward RFQs from customer portals, website forms or anywhere else here. Each one becomes an RFQ in Quotes, read and ready to price, like the ones from your mailbox. Drawings, 3D models and zipped RFQ packages are kept with it.",
+    help: [
+      "Customer portals: set the portal to email its RFQ notifications to this address, or forward them. Add the portal's sending address (or @its-domain) to the list below.",
+      "Website form: in your form tool (WordPress, Webflow, Squarespace, HubSpot, Jotform and the like), add this address as a notification recipient. Add the form's sending address to the list below.",
+      "Phone calls: use New RFQ → From a call in Quotes and type or dictate what the customer asked for.",
+    ],
   },
 };
 
@@ -60,9 +66,11 @@ const summary = (result: unknown) => {
 
 const detailText = (detail: unknown) => {
   const d = detail as {
+    duplicateOf?: number;
     error?: string;
     reports?: string[];
     rfq?: number;
+    skipped?: string[];
   } | null;
   if (!d) {
     return "";
@@ -70,8 +78,13 @@ const detailText = (detail: unknown) => {
   if (d.error) {
     return d.error;
   }
+  if (d.duplicateOf) {
+    return `Same as ${rfqLabel(d.duplicateOf)}: same sender and files this week, so no new RFQ.`;
+  }
   if (d.rfq) {
-    return `RFQ-${String(d.rfq).padStart(4, "0")}`;
+    return d.skipped?.length
+      ? `${rfqLabel(d.rfq)} · left out: ${d.skipped.join("; ")}`
+      : rfqLabel(d.rfq);
   }
   return d.reports?.join(" · ") ?? "";
 };

@@ -7,6 +7,7 @@
 
 import type { Operation, QuoteOperation } from "@repo/engine-client/types";
 import { normalizePartNo } from "./match";
+import { DEFAULT_NOTE, type PlannedOperation } from "./pricing";
 
 /** Jobs needed before their actual times replace the routing's. */
 export const MIN_ACTUAL_JOBS = 2;
@@ -117,6 +118,8 @@ export const similarParts = (
 
 /** One operation as the model proposes it. */
 export interface ProposedOp {
+  /** Other shop machines that could run it. */
+  alternates?: string[];
   basisPartNo: string | null;
   basisSeq: number | null;
   reason: string;
@@ -139,8 +142,8 @@ export const applyProposal = (
   proposed: ProposedOp[],
   candidates: CandidatePart[],
   machines: string[]
-): { ops: QuoteOperation[]; dropped: string[] } => {
-  const ops: QuoteOperation[] = [];
+): { ops: PlannedOperation[]; dropped: string[] } => {
+  const ops: PlannedOperation[] = [];
   const dropped: string[] = [];
   for (const p of proposed) {
     if (!machines.includes(p.workCenter)) {
@@ -151,6 +154,17 @@ export const applyProposal = (
       .find((c) => c.partNo === p.basisPartNo)
       ?.routing.find((r) => r.seq === p.basisSeq);
     const seq = (ops.length + 1) * 10;
+    const alternates = [
+      ...new Set(
+        (p.alternates ?? []).filter(
+          (a) => a !== p.workCenter && machines.includes(a)
+        )
+      ),
+    ];
+    const extra = {
+      reason: p.reason,
+      ...(alternates.length ? { alt_work_centers: alternates } : {}),
+    };
     if (basis) {
       const setupScale = clampScale(p.setupScale);
       const runScale = clampScale(p.runScale);
@@ -160,11 +174,14 @@ export const applyProposal = (
         setup_min: round(basis.setup_min * setupScale, 1),
         run_min_per_unit: round(basis.run_min_per_unit * runScale),
         source: "comparable",
-        note: `${p.basisPartNo} op ${p.basisSeq} (${basis.setup_min} min + ${basis.run_min_per_unit} min/ea)${
+        basis_part_no: p.basisPartNo,
+        is_default: false,
+        ...extra,
+        note: `${p.reason}: like ${p.basisPartNo} op ${p.basisSeq} (${basis.setup_min} min + ${basis.run_min_per_unit} min/ea)${
           setupScale !== 1 || runScale !== 1
             ? ` × ${setupScale} setup, × ${runScale} run`
             : ""
-        }: ${p.reason}`,
+        }`,
       });
     } else if (p.setupMin !== null && p.runMinPerUnit !== null) {
       ops.push({
@@ -173,7 +190,10 @@ export const applyProposal = (
         setup_min: round(Math.max(0, p.setupMin), 1),
         run_min_per_unit: round(Math.max(0, p.runMinPerUnit)),
         source: "comparable",
-        note: `no similar operation in the shop, Takumo's estimate: ${p.reason}`,
+        basis_part_no: null,
+        is_default: true,
+        ...extra,
+        note: `${DEFAULT_NOTE}, Takumo's estimate: ${p.reason}`,
       });
     } else {
       dropped.push(`${p.workCenter}: no times given`);

@@ -247,9 +247,22 @@ const processRfq = async (
     return;
   }
   const text = await readRfqFile("message.eml", raw);
-  const rfq = await intakeRfq(orgId, null, text, null, `inbound:${sha256}`);
-  await finish(orgId, messageId, "processed", { rfq: rfq.number });
-  track("rfq_received", { orgId, properties: { source: "inbound_email" } });
+  const rfq = await intakeRfq(orgId, null, text, {
+    sourceId: `inbound:${sha256}`,
+  });
+  if (rfq.duplicate) {
+    // The same sender sent the same files this week: linked, not repeated.
+    await finish(orgId, messageId, "processed", { duplicateOf: rfq.number });
+    return;
+  }
+  await finish(orgId, messageId, "processed", {
+    rfq: rfq.number,
+    ...(rfq.skipped.length ? { skipped: rfq.skipped } : {}),
+  });
+  track("rfq_received", {
+    orgId,
+    properties: { source: "inbound_email", channel: text.source },
+  });
 };
 
 /** The slow half of receiving a message; never throws. */

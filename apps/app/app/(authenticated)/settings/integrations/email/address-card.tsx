@@ -18,6 +18,8 @@ export interface AddressView {
   address: string | null;
   allowedSenders: string[];
   description: string;
+  /** How to point portals, website forms and the like at this address. */
+  help?: string[];
   kind: "erp" | "rfq";
   title: string;
 }
@@ -75,6 +77,13 @@ export const AddressCard = ({
           <p className="text-muted-foreground text-sm">
             Inbound email isn't set up on this Takumo yet.
           </p>
+        )}
+        {view.help && view.help.length > 0 && (
+          <ul className="grid list-disc gap-1 pl-5 text-muted-foreground text-xs">
+            {view.help.map((h) => (
+              <li key={h}>{h}</li>
+            ))}
+          </ul>
         )}
         <div className="grid gap-2">
           <label

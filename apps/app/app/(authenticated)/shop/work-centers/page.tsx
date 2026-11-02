@@ -13,6 +13,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { envelopeText } from "@/lib/quotes/pricing";
 import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
 import {
@@ -24,6 +25,7 @@ import {
   ProvenanceBadge,
   textFilter,
 } from "../components/format";
+import { type Envelope, MachineLimits } from "../components/limits";
 import { RecordDialog } from "../components/record-dialog";
 
 export const metadata: Metadata = { title: "Work centers · Takumo" };
@@ -85,6 +87,7 @@ const WorkCentersPage = async ({
                   <TableHead className="text-right">Rate / hour</TableHead>
                   <TableHead className="text-right">Efficiency</TableHead>
                   <TableHead className="text-right">Hours / day</TableHead>
+                  <TableHead className="text-right">Size / tolerance</TableHead>
                   <TableHead className="text-right">Operations</TableHead>
                   <TableHead className="w-24" />
                 </TableRow>
@@ -111,11 +114,27 @@ const WorkCentersPage = async ({
                       <TableCell className="text-right">
                         {hours ?? "—"}
                       </TableCell>
+                      <TableCell className="text-right text-muted-foreground text-xs">
+                        {[
+                          envelopeText(m.envelope),
+                          m.toleranceIn === null ? null : `±${m.toleranceIn}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
+                      </TableCell>
                       <TableCell className="text-right">
                         {m._count.routings}
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end">
+                          {canEditShop && (
+                            <MachineLimits
+                              envelope={m.envelope as Envelope | null}
+                              id={m.id}
+                              name={m.name}
+                              toleranceIn={m.toleranceIn}
+                            />
+                          )}
                           <RecordDialog
                             canEdit={canEditShop && !m.syncedAt}
                             entity="workCenters"

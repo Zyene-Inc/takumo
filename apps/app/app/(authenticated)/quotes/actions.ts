@@ -5,29 +5,32 @@ import { database, forOrg, Prisma } from "@repo/database";
 import type { OutsideProcess, QuoteOperation } from "@repo/engine-client/types";
 import { log } from "@repo/observability/log";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { authorize } from "@/lib/access";
 import { track } from "@/lib/analytics";
 import { featureProblem } from "@/lib/billing";
 import { approveRfq, type Outcome, recordOutcome } from "@/lib/quotes/approve";
-import { estimateLine, loadQuoteHistory } from "@/lib/quotes/estimate";
+import { estimateLine } from "@/lib/quotes/estimate";
+import { estimateRfqLines } from "@/lib/quotes/estimate-rfq";
 import { intakeRfq, readRfq } from "@/lib/quotes/intake";
+import { writeReplyDraft } from "@/lib/quotes/mailbox-reply";
 import { matchCustomer, matchMaterial, matchPart } from "@/lib/quotes/match";
 import { parseQtys } from "@/lib/quotes/numbers";
-import { readPasted, readRfqFile } from "@/lib/quotes/read";
 import {
-  type LineFinal,
-  MAX_QTY_BREAKS,
-  MAX_RFQ_BYTES,
-  RFQ_TYPES,
-} from "@/lib/quotes/types";
+  type RfqText,
+  readCall,
+  readPasted,
+  readRfqUpload,
+} from "@/lib/quotes/read";
+import { type LineFinal, MAX_QTY_BREAKS, rfqLabel } from "@/lib/quotes/types";
+import { isUploadId, MAX_UPLOAD_BYTES } from "@/lib/quotes/upload-limits";
+import { keepUploadPart, takeUpload } from "@/lib/quotes/upload-parts";
 import { checkToday } from "@/lib/schedule/request";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 const WRONG_DATE = "Your computer's date looks wrong; reload and try again.";
-/** Lines estimated at once (each runs the scheduler). */
-const PARALLEL_LINES = 2;
 
 const refresh = (rfqId?: string) => {
   revalidatePath("/quotes");
@@ -39,10 +42,91 @@ const refresh = (rfqId?: string) => {
 const firstIssue = (error: z.ZodError) =>
   error.issues[0]?.message ?? "Check the form.";
 
-/** A new RFQ from an uploaded file or pasted text. Read straight away. */
-export const submitRfq = async (
+/** Everything uploaded at once (the server action's body limit). */
+const OVERRIDES = ["portal", "form"] as const;
+
+const uploadedFiles = (orgId: string, form: FormData) => {
+  // Large uploads come in pieces first (uploadRfqPart), then just their id.
+  const uploadId = String(form.get("uploadId") ?? "");
+  if (uploadId) {
+    return isUploadId(uploadId) ? takeUpload(orgId, uploadId) : [];
+  }
+  return Promise.all(
+    form
+      .getAll("file")
+      .filter((f): f is File => f instanceof File && f.size > 0)
+      .map(async (f) => ({
+        name: f.name,
+        bytes: new Uint8Array(await f.arrayBuffer()),
+      }))
+  );
+};
+
+/** One piece of a large upload (the host caps each request at 4.5 MB). */
+export const uploadRfqPart = async (form: FormData): Promise<Result> => {
+  const access = await authorize("quotes:write");
+  if (!access.ok) {
+    return access;
+  }
+  const blob = form.get("part");
+  if (!(blob instanceof Blob)) {
+    return { ok: false, error: "That upload isn't valid. Try again." };
+  }
+  const problem = await keepUploadPart(
+    access.orgId,
+    {
+      uploadId: String(form.get("uploadId") ?? ""),
+      fileIndex: Number(form.get("fileIndex")),
+      partIndex: Number(form.get("partIndex")),
+      name: String(form.get("name") ?? ""),
+    },
+    new Uint8Array(await blob.arrayBuffer())
+  );
+  return problem ? { ok: false, error: problem } : { ok: true };
+};
+
+/** The RFQ's text and files from the form: an upload, a paste or a call. */
+const rfqFromForm = async (
+  orgId: string,
   form: FormData
-): Promise<Result<{ id: string }>> => {
+): Promise<RfqText | { error: string }> => {
+  const mode = String(form.get("mode") ?? "paste");
+  const typed = String(form.get("text") ?? "").trim();
+  if (mode === "call") {
+    return typed.length >= 10
+      ? readCall(typed)
+      : { error: "Type or dictate what the customer asked for." };
+  }
+  if (mode !== "upload") {
+    return typed ? readPasted(typed) : { error: "Paste the RFQ email." };
+  }
+  const files = await uploadedFiles(orgId, form);
+  if (files.length === 0) {
+    return { error: "Choose the RFQ's files." };
+  }
+  const total = files.reduce((sum, f) => sum + f.bytes.length, 0);
+  if (total > MAX_UPLOAD_BYTES) {
+    return {
+      error:
+        "Upload up to 20 MB at once. Zip the drawings, or email the package to your RFQ address.",
+    };
+  }
+  const text = await readRfqUpload(files);
+  const override = String(form.get("channel") ?? "");
+  return (OVERRIDES as readonly string[]).includes(override)
+    ? { ...text, source: override as RfqText["source"] }
+    : text;
+};
+
+export type SubmitResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string; existing?: { id: string; label: string } };
+
+/**
+ * A new RFQ from an uploaded package, pasted text or a call. Read straight
+ * away; the same sender and files within a week link to the earlier RFQ.
+ */
+export const submitRfq = async (form: FormData): Promise<SubmitResult> => {
   const access = await authorize("quotes:write");
   if (!access.ok) {
     return access;
@@ -52,44 +136,32 @@ export const submitRfq = async (
     return { ok: false, error: locked };
   }
   const { userId } = await auth();
-  const file = form.get("file");
-  const pasted = String(form.get("text") ?? "").trim();
   try {
-    let text: ReturnType<typeof readPasted>;
-    let fileName: string | null = null;
-    if (file instanceof File && file.size > 0) {
-      if (file.size > MAX_RFQ_BYTES) {
-        return { ok: false, error: "RFQ files can be up to 10 MB." };
-      }
-      const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-      if (!(RFQ_TYPES as readonly string[]).includes(ext)) {
-        return {
-          ok: false,
-          error: `Takumo reads RFQs as ${RFQ_TYPES.join(", ")} files.`,
-        };
-      }
-      text = await readRfqFile(
-        file.name,
-        new Uint8Array(await file.arrayBuffer())
-      );
-      fileName = file.name;
-    } else if (pasted) {
-      text = readPasted(pasted);
-    } else {
-      return { ok: false, error: "Paste the RFQ email or choose a file." };
+    const text = await rfqFromForm(access.orgId, form);
+    if ("error" in text) {
+      return { ok: false, error: text.error };
     }
-    if (text.body.trim().length < 10) {
+    if (text.body.trim().length < 10 && text.files.length === 0) {
       return {
         ok: false,
         error:
           "Takumo couldn't find any text in that RFQ. If it's a scanned PDF, paste the text instead.",
       };
     }
-    const rfq = await intakeRfq(access.orgId, userId, text, fileName);
+    const rfq = await intakeRfq(access.orgId, userId, text, {
+      fileName: text.files.length === 1 ? (text.files[0]?.name ?? null) : null,
+    });
+    if (rfq.duplicate) {
+      return {
+        ok: false,
+        error: `This is the same as ${rfqLabel(rfq.number)}: same sender and files, received in the last week.`,
+        existing: { id: rfq.id, label: rfqLabel(rfq.number) },
+      };
+    }
     track("rfq_received", {
       orgId: access.orgId,
       userId,
-      properties: { source: text.source },
+      properties: { source: text.source, files: text.files.length },
     });
     refresh(rfq.id);
     return { ok: true, id: rfq.id };
@@ -403,32 +475,25 @@ export const draftQuote = async (
   if (rfq.lines.length === 0) {
     return { ok: false, error: "Add at least one line first." };
   }
-  const history = await loadQuoteHistory(access.orgId);
-  const todo = rfq.lines.filter((l) => redo || !l.draft);
-  const errors: string[] = [];
-  for (let i = 0; i < todo.length; i += PARALLEL_LINES) {
-    const batch = todo.slice(i, i + PARALLEL_LINES);
-    const results = await Promise.all(
-      batch.map((l) => estimateLine(access.orgId, l.id, start, history))
-    );
-    results.forEach((r, j) => {
-      if (!r.ok) {
-        errors.push(`Line ${batch[j].lineNo}: ${r.error}`);
-      }
-    });
-  }
+  const { drafted, total, attempted, errors } = await estimateRfqLines(
+    access.orgId,
+    rfqId,
+    start,
+    redo
+  );
   track("quote_drafted", {
     orgId: access.orgId,
-    properties: { lines: todo.length, failed: errors.length },
+    properties: { lines: attempted, failed: errors.length },
   });
-  const drafted = await forOrg(database, access.orgId).rfqLine.count({
-    where: { rfqId, draft: { not: Prisma.DbNull } },
-  });
-  // Only while it's still being drafted: someone may have approved it meanwhile.
-  await forOrg(database, access.orgId).rfq.updateMany({
-    where: { id: rfqId, status: { in: ["review", "drafted"] } },
-    data: { status: drafted === rfq.lines.length ? "drafted" : "review" },
-  });
+  if (drafted === total) {
+    // The draft reply goes in the mailbox (or the PDF is made) meanwhile.
+    const orgId = access.orgId;
+    after(() =>
+      writeReplyDraft(orgId, rfqId, "auto", { notify: false }).then(
+        () => undefined
+      )
+    );
+  }
   refresh(rfqId);
   return { ok: true, errors };
 };
@@ -529,6 +594,19 @@ export const reestimateLine = async (
     return { ok: false, error: "That line no longer exists." };
   }
   const result = await estimateLine(access.orgId, lineId, start);
+  if (result.ok) {
+    // An existing draft reply follows the new estimate (edited ones are kept).
+    const orgId = access.orgId;
+    after(async () => {
+      const current = await forOrg(database, orgId).rfq.findFirst({
+        where: { id: rfqId },
+        select: { reply: true },
+      });
+      if (current?.reply) {
+        await writeReplyDraft(orgId, rfqId, "auto", { notify: false });
+      }
+    });
+  }
   refresh(rfqId);
   return result.ok ? { ok: true } : result;
 };
@@ -691,4 +769,44 @@ export const deleteRfq = async (rfqId: string): Promise<Result> => {
   await forOrg(database, access.orgId).rfq.deleteMany({ where: { id: rfqId } });
   refresh();
   return { ok: true };
+};
+
+/**
+ * Put the reply draft in the mailbox now, or refresh it: an unedited draft is
+ * replaced, an edited one gets an "(updated)" draft beside it, and a deleted
+ * one is made again. Takumo never sends it.
+ */
+export const updateReplyDraft = async (
+  rfqId: string
+): Promise<Result<{ message: string }>> => {
+  const access = await authorize("quotes:write");
+  if (!access.ok) {
+    return access;
+  }
+  const locked = await featureProblem(access.orgId, "quotes");
+  if (locked) {
+    return { ok: false, error: locked };
+  }
+  const result = await writeReplyDraft(access.orgId, rfqId, "explicit");
+  refresh(rfqId);
+  if (!result.ok) {
+    return result;
+  }
+  const where =
+    result.reply?.provider === "gmail" ? "Gmail drafts" : "Outlook drafts";
+  const messages: Record<string, string> = {
+    created: `The draft is in your ${where}. Check it and send it from there.`,
+    replaced: `The draft in your ${where} now has the latest prices.`,
+    added: `You'd edited the draft, so a new one marked "(updated)" is beside it in your ${where}.`,
+    unchanged: "The draft is already up to date.",
+    pdf_only:
+      result.reply?.note ??
+      "The quote PDF is ready. Download it and send it with your reply.",
+    skipped: "Nothing changed.",
+  };
+  track("reply_drafted", {
+    orgId: access.orgId,
+    properties: { action: result.action },
+  });
+  return { ok: true, message: messages[result.action] };
 };

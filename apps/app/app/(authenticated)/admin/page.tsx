@@ -14,6 +14,7 @@ import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/admin";
 import { monthlyBudget } from "@/lib/ai-usage";
 import { lateReports } from "@/lib/erp/health";
+import { formatHours, percent, quoteMetrics } from "@/lib/quotes/metrics";
 import { Header } from "../components/header";
 import { ExtendTrial } from "./extend-trial";
 
@@ -22,6 +23,11 @@ export const metadata: Metadata = { title: "Admin · Takumo" };
 /** Phase 6 is done with this many paying shops (docs/TAKUMO.md section 13). */
 const PAYING_GOAL = 3;
 const WEEK_MS = 7 * 86_400_000;
+/** Quoting metrics per shop look this far back. */
+const QUOTING_DAYS = 90;
+
+const num = (value: { toString(): string } | null) =>
+  value === null ? null : Number(value.toString());
 
 const AdminPage = async () => {
   if (!(await requireAdmin())) {
@@ -90,6 +96,49 @@ const AdminPage = async () => {
       _count: true,
     }),
   ]);
+  // Quoting per shop (F2.7-R2).
+  const quotingSince = new Date(Date.now() - QUOTING_DAYS * 86_400_000);
+  const [rfqTimes, quoteFigures] = await Promise.all([
+    database.rfq.findMany({
+      where: { receivedAt: { gte: quotingSince } },
+      select: { orgId: true, receivedAt: true, draftedAt: true, sentAt: true },
+    }),
+    database.quote.findMany({
+      where: { draftPrice: { not: null }, quotedAt: { gte: quotingSince } },
+      select: {
+        orgId: true,
+        price: true,
+        draftPrice: true,
+        leadTimeDays: true,
+        draftLeadTimeDays: true,
+        estCost: true,
+        status: true,
+      },
+    }),
+  ]);
+  const quoting = orgs
+    .map((o) => {
+      const rfqsOf = rfqTimes.filter((r) => r.orgId === o.id);
+      return {
+        id: o.id,
+        name: o.name,
+        rfqs: rfqsOf.length,
+        m: quoteMetrics(
+          rfqsOf,
+          quoteFigures
+            .filter((q) => q.orgId === o.id)
+            .map((q) => ({
+              price: num(q.price),
+              draftPrice: num(q.draftPrice),
+              leadTimeDays: q.leadTimeDays,
+              draftLeadTimeDays: q.draftLeadTimeDays,
+              estCost: num(q.estCost),
+              status: q.status,
+            }))
+        ),
+      };
+    })
+    .filter((s) => s.rfqs > 0 || s.m.smallEdits.drafted > 0);
   const orgName = new Map(orgs.map((o) => [o.id, o.name]));
   const syncProblems = [
     ...lateReports(staleReports, now).map((r) => ({
@@ -252,6 +301,61 @@ const AdminPage = async () => {
             </TableBody>
           </Table>
         </div>
+        <section className="grid gap-2">
+          <h2 className="font-semibold text-lg">
+            Quoting, last {QUOTING_DAYS} days
+          </h2>
+          {quoting.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No RFQs yet.</p>
+          ) : (
+            <div className="rounded-xl border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Shop</TableHead>
+                    <TableHead className="text-right">RFQs</TableHead>
+                    <TableHead className="text-right">To draft</TableHead>
+                    <TableHead className="text-right">To send</TableHead>
+                    <TableHead className="text-right">Small edits</TableHead>
+                    <TableHead className="text-right">Win rate</TableHead>
+                    <TableHead className="text-right">Avg margin</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {quoting.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">{s.name}</TableCell>
+                      <TableCell className="text-right">{s.rfqs}</TableCell>
+                      <TableCell className="text-right">
+                        {formatHours(s.m.hoursToDraft)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatHours(s.m.hoursToSent)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {percent(s.m.smallEdits.rate)}
+                        <span className="text-muted-foreground text-xs">
+                          {" "}
+                          ({s.m.smallEdits.accepted}/{s.m.smallEdits.drafted})
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {percent(s.m.win.rate)}
+                        <span className="text-muted-foreground text-xs">
+                          {" "}
+                          ({s.m.win.won}/{s.m.win.decided})
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {percent(s.m.margin)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </section>
         <section className="grid gap-2">
           <h2 className="font-semibold text-lg">Sync problems</h2>
           {syncProblems.length === 0 ? (

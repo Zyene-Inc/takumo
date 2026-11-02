@@ -5,6 +5,7 @@
 export type Permission =
   | "shop:write"
   | "quotes:write"
+  | "knowledge:share"
   | "knowledge:write"
   | "knowledge:review"
   | "floor:write"
@@ -15,7 +16,17 @@ const GRANTS: Readonly<Record<Permission, readonly string[]>> = {
   // Machines, parts, routings, orders, customers, materials.
   "shop:write": ["owner", "admin", "planner"],
   "quotes:write": ["owner", "admin", "estimator"],
-  // Upload and remove documents (SOPs, setup sheets, specs) for Ask Takumo.
+  // Give Takumo knowledge: upload documents (SOPs, setup sheets, specs,
+  // handbooks). Anyone in the company can, from the founder to the floor.
+  "knowledge:share": [
+    "owner",
+    "admin",
+    "planner",
+    "estimator",
+    "operator",
+    "member",
+  ],
+  // Remove, replace or read again documents someone else gave.
   "knowledge:write": ["owner", "admin", "planner", "estimator"],
   // Approve or reject facts. An approved fact can change routings, rates and
   // costs, so supervisors only. Anyone in the shop can propose one.

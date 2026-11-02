@@ -4,10 +4,13 @@ import { env } from "@/env";
 import { PROVIDER_NAME, type Provider } from "@/lib/connectors/config";
 import { healthLines, lateReports } from "@/lib/erp/health";
 import { notifyAdmins } from "@/lib/notify";
+import { settleAllFromErp } from "@/lib/quotes/settle";
+import { removeOldUploadParts } from "@/lib/quotes/upload-parts";
 
 // Once a day (vercel.json, 15:00 UTC: morning in the US): tell each shop's
 // admins about ERP reports that stopped arriving and mailboxes that
-// disconnected, so stale data gets noticed before it misleads anyone.
+// disconnected, so stale data gets noticed before it misleads anyone. Also
+// settles quotes the ERP's orders answered.
 export const maxDuration = 120;
 
 const authorized = (header: string | null) => {
@@ -25,6 +28,8 @@ export const GET = async (request: Request) => {
     return new Response("Unauthorized", { status: 401 });
   }
   const now = new Date();
+  // Housekeeping: pieces of uploads that were never submitted.
+  await removeOldUploadParts(now.getTime()).catch(() => 0);
   const [reports, broken] = await Promise.all([
     database.erpReport.findMany({
       where: { status: "active" },
@@ -83,5 +88,7 @@ export const GET = async (request: Request) => {
     }
     notified.push({ orgId, late: late.length, mailboxes: mailboxes.length });
   }
-  return Response.json({ ok: true, notified });
+  // Quotes answered by ERP orders, or unanswered for 60 days (F2.7).
+  const settled = await settleAllFromErp(now);
+  return Response.json({ ok: true, notified, settled });
 };

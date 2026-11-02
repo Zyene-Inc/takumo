@@ -11,7 +11,9 @@ export const permissionFor = (entity: EntityKey): Permission =>
 export const NO_ACCESS_MESSAGE: Record<Permission, string> = {
   "shop:write": `Only ${rolesWith("shop:write").join(" or ")}s can change shop data. Ask an admin to change your role.`,
   "quotes:write": `Only ${rolesWith("quotes:write").join(" or ")}s can change quotes. Ask an admin to change your role.`,
-  "knowledge:write": `Only ${rolesWith("knowledge:write").join(", ")} roles can add or remove documents. Ask an admin to change your role.`,
+  "knowledge:share":
+    "Only people in this shop can add documents. Ask an admin to invite you.",
+  "knowledge:write": `Only ${rolesWith("knowledge:write").join(", ")} roles can remove or replace documents. Ask an admin to change your role.`,
   "knowledge:review": `Only ${rolesWith("knowledge:review").join(" or ")}s can approve facts. Ask an admin to change your role.`,
   "floor:write": `Only ${rolesWith("floor:write").join(", ")} roles can log shop-floor times. Ask an admin to change your role.`,
   "billing:manage": "Only the shop's owner or an admin can change the plan.",
@@ -27,6 +29,7 @@ export const getAccess = async () => {
     role,
     canEditShop: can(role, "shop:write"),
     canEditQuotes: can(role, "quotes:write"),
+    canShareKnowledge: can(role, "knowledge:share"),
     canEditKnowledge: can(role, "knowledge:write"),
     canReviewFacts: can(role, "knowledge:review"),
     canLogFloor: can(role, "floor:write"),

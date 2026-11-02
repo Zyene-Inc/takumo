@@ -706,6 +706,8 @@ const savePurchaseOrders = async (
       qtyOrdered: ordered,
       qtyReceived: received,
       unit: str(v.unit),
+      unitPrice: num(v.unitPrice),
+      orderedAt: str(v.orderedAt) ? new Date(str(v.orderedAt) as string) : null,
       dueDate: new Date(str(v.dueDate) as string),
       status,
       ...synced(ctx),

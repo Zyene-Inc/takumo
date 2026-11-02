@@ -121,6 +121,8 @@ const readQuoteFiles = async (
       first.text.body,
       ...rest.map((r) => `[Attachment: ${r.name}]\n${r.text.body}`),
     ].join("\n\n"),
+    // Every file is kept with the RFQ, as at intake (drawings for F2.2).
+    files: texts.flatMap((t) => t.text.files),
   };
 };
 
@@ -208,7 +210,10 @@ const runQuotes = async (p: Partner, key: AnswerKey) => {
     const elapsed = () => Math.round((Date.now() - t0) / 1000);
     try {
       const text = await readQuoteFiles(p.dir, quote);
-      const rfq = await intakeRfq(key.orgId, EVAL_USER, text, quote.files[0]);
+      const rfq = await intakeRfq(key.orgId, EVAL_USER, text, {
+        fileName: quote.files[0],
+        checkDuplicates: false,
+      });
       const drafted = await draftedLines(key.orgId, rfq.id, quote.receivedDate);
       const seconds = elapsed();
       for (const line of quote.lines) {
