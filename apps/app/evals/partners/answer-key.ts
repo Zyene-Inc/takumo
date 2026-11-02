@@ -30,6 +30,7 @@ export const COLUMNS = {
     "lead_time_days",
     "outcome",
     "estimator_minutes",
+    "tightest_tolerance",
   ],
   feasibility: [
     "case_id",
@@ -79,6 +80,8 @@ const quoteRow = z.object({
   lead_time_days: z.number().int().nonnegative().nullable(),
   outcome: z.enum(["won", "lost", "pending"]).nullable(),
   estimator_minutes: z.number().positive().nullable(),
+  // Optional: the tightest ± tolerance on the drawing, in inches (F2.2).
+  tightest_tolerance: z.number().positive("must be above 0").nullable(),
 });
 
 const feasibilityRow = z.object({
@@ -109,6 +112,8 @@ export interface ExpectedLine {
   material: string | null;
   partNo: string;
   rev: string | null;
+  /** The tightest ± tolerance on the drawing, inches (optional column). */
+  tightestTolerance?: number | null;
 }
 
 export interface QuoteCase {
@@ -279,6 +284,7 @@ const readQuotes = (book: WorkBook, problems: Problem[]) => {
       lead_time_days: num(row.lead_time_days),
       outcome: lower(row.outcome),
       estimator_minutes: num(row.estimator_minutes),
+      tightest_tolerance: num(row.tightest_tolerance),
     });
     // Row 1 is the header.
     if (!parsed.success) {
@@ -306,6 +312,7 @@ const readQuotes = (book: WorkBook, problems: Problem[]) => {
         rev: r.rev,
         material: r.material,
         finish: r.finish,
+        tightestTolerance: r.tightest_tolerance,
         breaks: [],
       };
       quote.lines.push(line);
@@ -459,6 +466,7 @@ export const templateWorkbook = () => {
         15,
         "won",
         75,
+        0.0005,
       ],
       [
         "Q-001",
@@ -475,6 +483,7 @@ export const templateWorkbook = () => {
         20,
         "won",
         75,
+        0.0005,
       ],
     ]),
     SHEETS.quotes

@@ -14,7 +14,7 @@ const MIN_PAGE_TEXT = 40;
 const PAGES_PER_CALL = 5;
 const PARALLEL_CALLS = 3;
 
-const IMAGE_MEDIA: Record<string, string> = {
+export const IMAGE_MEDIA: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".png": "image/png",
@@ -77,7 +77,7 @@ const recognize = async (
 };
 
 /** Copy some pages of a PDF into a new, smaller PDF. */
-const pdfPages = async (bytes: Uint8Array, pages: number[]) => {
+export const pdfPages = async (bytes: Uint8Array, pages: number[]) => {
   const { PDFDocument } = await import("pdf-lib");
   const source = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const out = await PDFDocument.create();
@@ -91,7 +91,7 @@ const pdfPages = async (bytes: Uint8Array, pages: number[]) => {
   return out.save();
 };
 
-const inGroups = <T>(items: T[], size: number) =>
+export const inGroups = <T>(items: T[], size: number) =>
   Array.from({ length: Math.ceil(items.length / size) }, (_, i) =>
     items.slice(i * size, (i + 1) * size)
   );

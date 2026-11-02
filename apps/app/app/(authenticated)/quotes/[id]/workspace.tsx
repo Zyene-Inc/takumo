@@ -607,6 +607,12 @@ export const Workspace = ({
               key={line.id}
               line={line}
               options={options}
+              otherLines={rfq.lines
+                .filter((l) => l.id !== line.id && !l.quote)
+                .map((l) => ({
+                  id: l.id,
+                  label: `Line ${l.lineNo} · ${l.partNo ?? l.description ?? "Part"}`,
+                }))}
               requestedDate={rfq.requestedDate}
               rfqId={rfq.id}
               status={rfq.status}

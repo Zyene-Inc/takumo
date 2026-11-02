@@ -5,6 +5,7 @@ import type { OutsideProcess, QuoteOperation } from "@repo/engine-client/types";
 import { approvalProblems, finalFor } from "./approval";
 import { matchPart } from "./match";
 import {
+  type DrawingReading,
   type LineDraft,
   type LineFinal,
   type QuotedBreak,
@@ -87,6 +88,7 @@ export const loadRfqView = async (orgId: string, rfqId: string) => {
       materialCost: line.materialCost,
       targetMargin: line.targetMargin,
       draft: line.draft as LineDraft | null,
+      drawing: (line.drawing as DrawingReading | null) ?? null,
       final: (line.final as LineFinal | null) ?? null,
       sendFinal: finalFor(line),
       quote: line.quote

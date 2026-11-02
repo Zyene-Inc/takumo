@@ -161,6 +161,7 @@ Start from [answer-key-template.xlsx](answer-key-template.xlsx). It has three sh
 | `lead_time_days` | `15` | Lead time sent, in days |
 | `outcome` | `won` / `lost` / `pending` | |
 | `estimator_minutes` | `75` | How long that quote took, if known |
+| `tightest_tolerance` | `0.0005` | Optional: the tightest ± tolerance on the drawing, in inches (scores drawing reading) |
 
 **Feasibility:** one row per delivery question. Most useful when recorded **the day it's asked**
 (older cases are marked "historical": the shop's schedule has changed since).
@@ -197,6 +198,15 @@ EVAL_CONFIRM=yes PARTNER=acme pnpm --filter app eval:partners   # one shop
 Needs the shop's data in its Takumo organization (imported from the exports in section 5), the
 scheduling engine, and the AI settings in `apps/app/.env.local`. Each RFQ goes through the same
 reading and pricing as the app; the run removes the RFQs and checks it made.
+
+Drawing reading (F2.2) has its own run over the same folders: every PDF or image in a quote's
+files is read as a drawing and compared with the key's `rev`, `material`, `finish` and
+`tightest_tolerance` (targets: 90% for the first three, 80% for the tolerance, and nothing wrong
+while shown as certain). About $0.03 per drawing:
+```bash
+pnpm --filter app eval:drawings                     # counts drawings, free
+EVAL_CONFIRM=yes pnpm --filter app eval:drawings
+```
 
 Results print as a table and are saved to `apps/app/evals/results/partners-<shop>-<time>.json`
 (git ignores them), with the git commit, so runs can be compared over time.
