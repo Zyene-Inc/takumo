@@ -5,7 +5,9 @@ import { env } from "@/env";
 import type { Provider } from "@/lib/connectors/config";
 import { syncConnection } from "@/lib/connectors/sync";
 
-// Every connected shop's QuickBooks and Gmail (vercel.json crons, hourly).
+// Every connected shop's QuickBooks, Gmail and Outlook (vercel.json crons,
+// hourly). An Outlook check also renews its new-mail subscription when under
+// a day is left, or recreates it if Microsoft dropped it.
 export const maxDuration = 300;
 
 const authorized = (header: string | null) => {

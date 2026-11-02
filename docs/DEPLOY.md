@@ -63,10 +63,11 @@ or the service dashboards; never commit them.
 - `STRIPE_SECRET_KEY` (step 5): billing; without it the Billing page can't take payment
 - `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (step 6): product analytics
 - `CONNECTOR_ENCRYPTION_KEY` = a new value (`openssl rand -base64 32`; keep it: losing it means
-  every shop reconnects): encrypts QuickBooks and Gmail tokens
+  every shop reconnects): encrypts QuickBooks, Gmail and Outlook tokens
 - `QUICKBOOKS_CLIENT_ID`, `QUICKBOOKS_CLIENT_SECRET`, `QUICKBOOKS_ENVIRONMENT` (`sandbox` or
   `production`) (step 7)
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (step 8)
+- `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` (step 9)
 - `ADMIN_USER_IDS`: WorkOS user ids (comma separated) of Takumo staff who can open `/admin`
 - `AI_MONTHLY_BUDGET_USD` (optional): Claude spend cap per shop per calendar month; when a shop
   reaches it, Ask Takumo, quote drafting and note reading pause until the 1st. `/admin` shows each
@@ -205,18 +206,71 @@ quotes. Read only. Synced on connect and hourly.
 ## 8. Gmail connector (RFQ inbox)
 
 1. Google Cloud console → a project → enable the **Gmail API** → OAuth consent screen (external)
-   → scopes `gmail.readonly` and `email` → Credentials → OAuth client (web) with redirect URI
+   → scopes `gmail.readonly`, `gmail.compose` and `email` → Credentials → OAuth client (web) with redirect URI
    `https://<app-url>/api/connectors/gmail/callback`. Put the client id and secret in
    `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
-2. `gmail.readonly` is a **restricted scope**: until Google verifies the app (including an
-   annual third-party security assessment), only test users you list on the consent screen
-   (up to 100) can connect. Add design-partner mailboxes as test users while verification runs.
+2. `gmail.readonly` and `gmail.compose` are **restricted scopes**: until Google verifies the app
+   (including an annual third-party security assessment, CASA), only test users you list on the
+   consent screen (up to 100) can connect. Add design-partner mailboxes as test users while
+   verification runs, and start verification early (it takes weeks).
+3. `gmail.compose` lets Takumo create reply drafts in the RFQ's thread (never send). Shops that
+   connected before it was added see "Reconnect Gmail to let Takumo prepare reply drafts" on
+   Settings → Integrations; reading RFQs keeps working until they do.
 
 What it reads: new messages matching the shop's search (default: subjects like "RFQ", "request
 for quote") since the last check; each becomes an RFQ in Quotes, attachments included. Read only.
 Checked on connect and hourly; a message is never read twice.
 
-## 9. Check
+## 9. Outlook (Microsoft 365) connector
+
+One app registration serves every shop (multi-tenant). In the
+[Microsoft Entra admin center](https://entra.microsoft.com), signed in to Zyene's own tenant:
+
+1. **App registrations → New registration.** Name `Takumo`. Supported account types: **Accounts in
+   any organizational directory (Any Microsoft Entra ID tenant – Multitenant)** (no personal
+   Microsoft accounts: they have no shared mailboxes or tenant admins). Redirect URI: platform
+   **Web**, `https://<app-url>/api/connectors/outlook/callback`. Register.
+2. **Authentication → Web → Add URI:** `https://<app-url>/api/connectors/outlook/admin-consent`
+   (where a shop's IT person lands after approving Takumo for their organization). Leave implicit
+   grant off.
+3. **API permissions → Add a permission → Microsoft Graph → Delegated permissions:**
+   `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.ReadWrite.Shared`. Don't add application
+   permissions and don't click "Grant admin consent" (that only affects Zyene's tenant). None of
+   these need an admin by default; tenants that block user consent get the admin-consent link
+   (below). `Mail.ReadWrite` is for leaving reply drafts later; Takumo never sends mail.
+4. **Certificates & secrets → Client secrets → New client secret.** Expiry: 12 months or less
+   (Microsoft's maximum is 24 months). Copy the **Value** right away (it's shown once) into
+   `MICROSOFT_CLIENT_SECRET`; the **Application (client) ID** from Overview goes in
+   `MICROSOFT_CLIENT_ID`. Put a reminder in the calendar a month before the secret expires: when it
+   does, every shop's Outlook stops syncing until a new secret is deployed.
+5. **Branding & properties:** set the publisher domain to a verified custom domain (not
+   `*.onmicrosoft.com`), add the logo, home page, terms and privacy URLs.
+6. **Publisher verification** (Branding & properties → Publisher verification → add the Partner One
+   ID of Zyene's Microsoft AI Cloud Partner Program account). Needs a verified partner global
+   account whose email domain matches the publisher domain, and an Application Administrator or
+   Cloud Application Administrator signed in with MFA. Without it, many tenants won't let people
+   approve the app themselves and the consent screen shows "unverified".
+
+Environment: `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` on takumo-app, plus the existing
+`CONNECTOR_ENCRYPTION_KEY` and `NEXT_PUBLIC_APP_URL` (must be the public `https://` URL: Microsoft
+posts new-mail notifications to `https://<app-url>/api/connectors/outlook/notify`, a public route
+that checks each notification's secret). Without HTTPS (local development) Outlook still works,
+checked hourly only.
+
+How it works: the shop connects on Settings → Integrations (signing in with the account that owns
+the RFQ mailbox). Takumo reads new Inbox mail with Microsoft Graph delta queries; emails whose
+subject looks like an RFQ (same words as Gmail) become RFQs, attachments included, de-duplicated
+by message id. A Graph subscription notifies Takumo of new mail within a minute or two; it lasts
+under 7 days and the hourly cron (`/api/cron/connectors`) renews it when under a day is left, or
+recreates it. A shop can instead read a **shared mailbox** (e.g. `rfq@shop.com`) the connected
+person has Full Access to; Microsoft doesn't send notifications for shared mailboxes with delegated
+access, so those are checked hourly. Disconnecting deletes the subscription and forgets the tokens.
+
+When a shop's tenant blocks user consent, connecting shows a link
+(`https://login.microsoftonline.com/organizations/v2.0/adminconsent?...`) with instructions to send
+to their IT person; once an admin approves, the shop connects normally.
+
+## 10. Check
 
 See `docs/LAUNCH.md` for the full go-live runbook. Quick checks:
 
