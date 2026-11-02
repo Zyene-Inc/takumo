@@ -5,13 +5,16 @@ import { database, forOrg, Prisma } from "@repo/database";
 import type { OutsideProcess, QuoteOperation } from "@repo/engine-client/types";
 import { log } from "@repo/observability/log";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { authorize } from "@/lib/access";
 import { track } from "@/lib/analytics";
 import { featureProblem } from "@/lib/billing";
 import { approveRfq, type Outcome, recordOutcome } from "@/lib/quotes/approve";
-import { estimateLine, loadQuoteHistory } from "@/lib/quotes/estimate";
+import { estimateLine } from "@/lib/quotes/estimate";
+import { estimateRfqLines } from "@/lib/quotes/estimate-rfq";
 import { intakeRfq, readRfq } from "@/lib/quotes/intake";
+import { writeReplyDraft } from "@/lib/quotes/mailbox-reply";
 import { matchCustomer, matchMaterial, matchPart } from "@/lib/quotes/match";
 import { parseQtys } from "@/lib/quotes/numbers";
 import { readPasted, readRfqFile } from "@/lib/quotes/read";
@@ -26,8 +29,6 @@ import { checkToday } from "@/lib/schedule/request";
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 const WRONG_DATE = "Your computer's date looks wrong; reload and try again.";
-/** Lines estimated at once (each runs the scheduler). */
-const PARALLEL_LINES = 2;
 
 const refresh = (rfqId?: string) => {
   revalidatePath("/quotes");
@@ -403,32 +404,25 @@ export const draftQuote = async (
   if (rfq.lines.length === 0) {
     return { ok: false, error: "Add at least one line first." };
   }
-  const history = await loadQuoteHistory(access.orgId);
-  const todo = rfq.lines.filter((l) => redo || !l.draft);
-  const errors: string[] = [];
-  for (let i = 0; i < todo.length; i += PARALLEL_LINES) {
-    const batch = todo.slice(i, i + PARALLEL_LINES);
-    const results = await Promise.all(
-      batch.map((l) => estimateLine(access.orgId, l.id, start, history))
-    );
-    results.forEach((r, j) => {
-      if (!r.ok) {
-        errors.push(`Line ${batch[j].lineNo}: ${r.error}`);
-      }
-    });
-  }
+  const { drafted, total, attempted, errors } = await estimateRfqLines(
+    access.orgId,
+    rfqId,
+    start,
+    redo
+  );
   track("quote_drafted", {
     orgId: access.orgId,
-    properties: { lines: todo.length, failed: errors.length },
+    properties: { lines: attempted, failed: errors.length },
   });
-  const drafted = await forOrg(database, access.orgId).rfqLine.count({
-    where: { rfqId, draft: { not: Prisma.DbNull } },
-  });
-  // Only while it's still being drafted: someone may have approved it meanwhile.
-  await forOrg(database, access.orgId).rfq.updateMany({
-    where: { id: rfqId, status: { in: ["review", "drafted"] } },
-    data: { status: drafted === rfq.lines.length ? "drafted" : "review" },
-  });
+  if (drafted === total) {
+    // The draft reply goes in the mailbox (or the PDF is made) meanwhile.
+    const orgId = access.orgId;
+    after(() =>
+      writeReplyDraft(orgId, rfqId, "auto", { notify: false }).then(
+        () => undefined
+      )
+    );
+  }
   refresh(rfqId);
   return { ok: true, errors };
 };
@@ -529,6 +523,19 @@ export const reestimateLine = async (
     return { ok: false, error: "That line no longer exists." };
   }
   const result = await estimateLine(access.orgId, lineId, start);
+  if (result.ok) {
+    // An existing draft reply follows the new estimate (edited ones are kept).
+    const orgId = access.orgId;
+    after(async () => {
+      const current = await forOrg(database, orgId).rfq.findFirst({
+        where: { id: rfqId },
+        select: { reply: true },
+      });
+      if (current?.reply) {
+        await writeReplyDraft(orgId, rfqId, "auto", { notify: false });
+      }
+    });
+  }
   refresh(rfqId);
   return result.ok ? { ok: true } : result;
 };
@@ -691,4 +698,44 @@ export const deleteRfq = async (rfqId: string): Promise<Result> => {
   await forOrg(database, access.orgId).rfq.deleteMany({ where: { id: rfqId } });
   refresh();
   return { ok: true };
+};
+
+/**
+ * Put the reply draft in the mailbox now, or refresh it: an unedited draft is
+ * replaced, an edited one gets an "(updated)" draft beside it, and a deleted
+ * one is made again. Takumo never sends it.
+ */
+export const updateReplyDraft = async (
+  rfqId: string
+): Promise<Result<{ message: string }>> => {
+  const access = await authorize("quotes:write");
+  if (!access.ok) {
+    return access;
+  }
+  const locked = await featureProblem(access.orgId, "quotes");
+  if (locked) {
+    return { ok: false, error: locked };
+  }
+  const result = await writeReplyDraft(access.orgId, rfqId, "explicit");
+  refresh(rfqId);
+  if (!result.ok) {
+    return result;
+  }
+  const where =
+    result.reply?.provider === "gmail" ? "Gmail drafts" : "Outlook drafts";
+  const messages: Record<string, string> = {
+    created: `The draft is in your ${where}. Check it and send it from there.`,
+    replaced: `The draft in your ${where} now has the latest prices.`,
+    added: `You'd edited the draft, so a new one marked "(updated)" is beside it in your ${where}.`,
+    unchanged: "The draft is already up to date.",
+    pdf_only:
+      result.reply?.note ??
+      "The quote PDF is ready. Download it and send it with your reply.",
+    skipped: "Nothing changed.",
+  };
+  track("reply_drafted", {
+    orgId: access.orgId,
+    properties: { action: result.action },
+  });
+  return { ok: true, message: messages[result.action] };
 };

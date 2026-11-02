@@ -5,9 +5,11 @@ import type { OutsideProcess, QuoteOperation } from "@repo/engine-client/types";
 import { approvalProblems, finalFor } from "./approval";
 import { matchPart } from "./match";
 import {
+  type DrawingReading,
   type LineDraft,
   type LineFinal,
   type QuotedBreak,
+  type RfqReply,
   type RfqStatus,
   rfqLabel,
 } from "./types";
@@ -99,6 +101,7 @@ export const loadRfqView = async (orgId: string, rfqId: string) => {
           }
         : null,
       orderNo: (line.final as LineFinal | null)?.orderNo ?? null,
+      drawing: (line.drawing as DrawingReading | null) ?? null,
     };
   });
   return {
@@ -120,6 +123,9 @@ export const loadRfqView = async (orgId: string, rfqId: string) => {
     error: rfq.error,
     questions: extracted?.questions ?? [],
     problems: approvalProblems(rfq),
+    reply: (rfq.reply as RfqReply | null) ?? null,
+    draftedAt: rfq.draftedAt?.toISOString() ?? null,
+    sentAt: rfq.sentAt?.toISOString() ?? null,
     lines,
   };
 };

@@ -260,3 +260,44 @@ export interface QuoteSettings {
   /** Tightest tolerance the shop holds without a flag, inches. */
   toleranceIn: number;
 }
+
+/** A price read back from the reply the estimator sent. F2.5-R5 */
+export interface SentPrice {
+  leadTimeDays: number | null;
+  partNo: string;
+  qty: number;
+  unitPrice: number;
+}
+
+/**
+ * Rfq.reply: the draft reply Takumo left in the mailbox (F2.5). Takumo never
+ * sends it; the estimator edits and sends it from their mail app.
+ */
+export interface RfqReply {
+  /** The text Takumo wrote, normalized: unchanged in the mailbox = unedited. */
+  bodyHash: string;
+  bodyText: string;
+  createdAt: string;
+  /** Gmail draft id, or the Outlook draft message id. */
+  draftId: string | null;
+  /** Whether the draft sits in the RFQ's own thread. */
+  inThread: boolean;
+  mailbox: string | null;
+  /** The Gmail draft's message id. */
+  messageId: string | null;
+  /** Why there's no mailbox draft (PDF only), or the last problem. */
+  note: string | null;
+  /** No mailbox draft: the estimator downloads the quote PDF instead. */
+  pdfOnly: boolean;
+  provider: "gmail" | "outlook" | "none";
+  /** Quote numbers given to each line (by line id) for the draft and PDF. */
+  quoteNos: Record<string, string>;
+  /** Drafts replaced because the RFQ was estimated again. */
+  replaced: number;
+  sent: { at: string; messageId: string; prices: SentPrice[] } | null;
+  subject: string;
+  /** Gmail thread id or Outlook conversation id of the draft. */
+  threadId: string | null;
+  to: string | null;
+  updatedAt: string;
+}

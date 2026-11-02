@@ -4,7 +4,7 @@ import { database, forOrg, Prisma } from "@repo/database";
 import { approvalProblems, finalFor } from "./approval";
 import { matchCustomer } from "./match";
 import { nextNumber } from "./numbers";
-import type { LineDraft, LineFinal, QuotedBreak } from "./types";
+import type { LineDraft, LineFinal, QuotedBreak, RfqReply } from "./types";
 
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -14,6 +14,10 @@ const addDays = (isoDay: string, days: number) =>
   new Date(Date.parse(`${isoDay}T00:00:00Z`) + days * DAY_MS);
 
 const NUMBER_RETRIES = 5;
+
+/** The number the draft reply already carries, when it's still free. */
+const quoteNumber = (kept: string | undefined, taken: string[]) =>
+  kept && !taken.includes(kept) ? kept : nextNumber(taken, "Q-0001");
 
 /** Another request changed the RFQ or quote first (a double click, a colleague). */
 class AlreadyDone extends Error {}
@@ -159,6 +163,8 @@ export const approveRfq = async (
         ).id;
       }
 
+      // The numbers the draft reply and its PDF already carry, when free.
+      const reserved = (rfq.reply as RfqReply | null)?.quoteNos ?? {};
       const made: string[] = [];
       for (const line of rfq.lines) {
         const draft = line.draft as unknown as LineDraft;
@@ -185,7 +191,7 @@ export const approveRfq = async (
         const drafted = draft.response.breaks.find(
           (d) => d.qty === headline.qty
         );
-        const quoteNo = nextNumber(taken, "Q-0001");
+        const quoteNo = quoteNumber(reserved[line.id], taken);
         taken.push(quoteNo);
         const quote = await tx.quote.create({
           data: {
@@ -229,7 +235,11 @@ export const approveRfq = async (
 };
 
 /** Once every quote on an RFQ is answered, the RFQ is won (any won) or lost. */
-const closeRfqWhenAnswered = async (tx: Tx, orgId: string, rfqId: string) => {
+export const closeRfqWhenAnswered = async (
+  tx: Tx,
+  orgId: string,
+  rfqId: string
+) => {
   const quotes = await tx.quote.findMany({
     where: { orgId, rfqId },
     select: { status: true },
@@ -239,6 +249,7 @@ const closeRfqWhenAnswered = async (tx: Tx, orgId: string, rfqId: string) => {
       where: { id: rfqId },
       data: {
         status: quotes.some((q) => q.status === "won") ? "won" : "lost",
+        decidedAt: new Date(),
       },
     });
   }

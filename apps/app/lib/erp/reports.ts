@@ -13,6 +13,7 @@ import { saveRecords } from "@repo/ingest/save";
 import { log } from "@repo/observability/log";
 import type { Sheet } from "@/app/(authenticated)/onboarding/read-file";
 import { budgetProblem, recordUsage } from "../ai-usage";
+import { settleFromErp } from "../quotes/settle";
 import { headerKey } from "./sheets";
 
 // A shop's ERP emails the same reports every night (docs/PRODUCT-PLAN.md
@@ -140,6 +141,15 @@ export const importReportRows = async (
     closed,
     notes,
   };
+  if (mapping.entity === "orders") {
+    // New orders may answer open quotes (won within 60 days).
+    const settled = await settleFromErp(orgId);
+    if (settled.won || settled.lost) {
+      result.notes.push(
+        `${settled.won} quote${settled.won === 1 ? "" : "s"} marked won and ${settled.lost} lost from these orders`
+      );
+    }
+  }
   const label = ENTITIES[mapping.entity].label.toLowerCase();
   await db.source.updateMany({
     where: { id: source.id },

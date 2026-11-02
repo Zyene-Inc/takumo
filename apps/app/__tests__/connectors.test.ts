@@ -325,7 +325,7 @@ describe("Gmail", () => {
       },
       "<p>Thanks — quote attached.</p>"
     );
-    expect(draft).toEqual({ id: "d1", messageId: "m9" });
+    expect(draft).toEqual({ id: "d1", messageId: "m9", threadId: "t1" });
     const [url, init] = fetcher.mock.calls[0] as unknown as [
       string,
       RequestInit,

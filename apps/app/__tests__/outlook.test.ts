@@ -392,6 +392,7 @@ describe("Outlook mail", () => {
     expect(draft).toEqual({
       id: "draft-1",
       webLink: "https://outlook.office.com/draft-1",
+      conversationId: null,
     });
     const [create, update] = calls(fetcher);
     expect(create[0]).toBe(
