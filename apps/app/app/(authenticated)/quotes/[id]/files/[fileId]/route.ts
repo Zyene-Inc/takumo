@@ -30,7 +30,11 @@ export const GET = async (
       "Content-Type": view ? file.mediaType : "application/octet-stream",
       "Content-Disposition": `${view ? "inline" : "attachment"}; filename="${name}"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
       "Content-Length": String(file.data.length),
-      "Content-Security-Policy": "sandbox",
+      // Chrome won't show a PDF in a sandboxed page; its PDF viewer runs no
+      // document scripts anyway. Everything else is sandboxed.
+      ...(view && file.mediaType === "application/pdf"
+        ? {}
+        : { "Content-Security-Policy": "sandbox" }),
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, no-store",
     },
