@@ -24,7 +24,6 @@
     "@repo/design-system": "workspace:*",
     "@repo/email": "workspace:*",
     "@repo/engine-client": "workspace:*",
-    "@repo/feature-flags": "workspace:*",
     "@repo/ingest": "workspace:*",
     "@repo/next-config": "workspace:*",
     "@repo/observability": "workspace:*",

@@ -3,7 +3,6 @@ import { keys as auth } from "@repo/auth/keys";
 import { keys as database } from "@repo/database/keys";
 import { keys as email } from "@repo/email/keys";
 import { keys as engine } from "@repo/engine-client/keys";
-import { keys as flags } from "@repo/feature-flags/keys";
 import { keys as core } from "@repo/next-config/keys";
 import { keys as observability } from "@repo/observability/keys";
 import { keys as security } from "@repo/security/keys";
@@ -20,7 +19,6 @@ export const env = createEnv({
     database(),
     email(),
     engine(),
-    flags(),
     observability(),
     security(),
   ],
@@ -44,7 +42,10 @@ export const env = createEnv({
     // Takumo staff (WorkOS user ids, comma separated) who can see /admin.
     ADMIN_USER_IDS: z.string().optional(),
     // Claude spend cap per shop per month, in USD (unset = no cap).
-    AI_MONTHLY_BUDGET_USD: z.string().regex(/^\d+(\.\d+)?$/).optional(),
+    AI_MONTHLY_BUDGET_USD: z
+      .string()
+      .regex(/^\d+(\.\d+)?$/)
+      .optional(),
   },
   client: {},
   runtimeEnv: {
