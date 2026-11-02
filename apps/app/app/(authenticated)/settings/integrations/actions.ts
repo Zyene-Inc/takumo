@@ -1,7 +1,6 @@
 "use server";
 
 import { auth } from "@repo/auth/server";
-import { database, forOrg } from "@repo/database";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { authorize } from "@/lib/access";
@@ -18,16 +17,26 @@ import {
   DEFAULT_RFQ_QUERY,
   authorizeUrl as gmailAuthorizeUrl,
 } from "@/lib/connectors/gmail";
+import type { MailFolder } from "@/lib/connectors/outlook";
 import {
   authorizeUrl as outlookAuthorizeUrl,
   pkceVerifier,
 } from "@/lib/connectors/outlook";
 import { authorizeUrl as quickBooksAuthorizeUrl } from "@/lib/connectors/quickbooks";
-import type { PreviewMessage } from "@/lib/connectors/rfq-rules";
+import {
+  cleanTerm,
+  MAX_EXTRA_TERMS,
+  MAX_SENDERS,
+  type PreviewMessage,
+} from "@/lib/connectors/rfq-rules";
 import {
   disconnect,
+  outlookFolders,
   previewConnection,
+  setGmailQuery,
+  setOutlookFolder,
   setOutlookMailbox,
+  setRfqRules,
   syncConnection,
 } from "@/lib/connectors/sync";
 
@@ -131,14 +140,142 @@ export const saveGmailQuery = async (query: string): Promise<Result> => {
   if (!parsed.success) {
     return { ok: false, error: "Keep the search under 500 characters." };
   }
-  const updated = await forOrg(database, access.orgId).connection.updateMany({
-    where: { provider: "gmail" },
-    data: { settings: { query: parsed.data || DEFAULT_RFQ_QUERY } },
+  // Merged in, so the shop's RFQ rules stay.
+  const saved = await setGmailQuery(
+    access.orgId,
+    parsed.data || DEFAULT_RFQ_QUERY
+  );
+  revalidatePath("/settings/integrations");
+  return saved ? { ok: true } : { ok: false, error: "Gmail isn't connected." };
+};
+
+const LINES = /[\n,;]+/;
+const SENDER = /^(@?[a-z0-9.-]+\.[a-z]{2,}|[^\s@]+@[a-z0-9.-]+\.[a-z]{2,})$/;
+
+const Rules = z.object({
+  provider: z.enum(["gmail", "outlook"]),
+  extraTerms: z.string().max(1000),
+  senders: z.string().max(5000),
+  requireAttachments: z.boolean(),
+  knownCustomersOnly: z.boolean(),
+});
+
+/** Which emails count as RFQs for this mailbox, on top of Takumo's rules. */
+export const saveRfqRules = async (
+  input: z.input<typeof Rules>
+): Promise<Result> => {
+  const access = await manager();
+  if (!access.ok) {
+    return access;
+  }
+  const parsed = Rules.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Those rules are too long." };
+  }
+  const { provider, requireAttachments, knownCustomersOnly } = parsed.data;
+  const extraTerms = [
+    ...new Set(parsed.data.extraTerms.split(LINES).map(cleanTerm)),
+  ].filter(Boolean);
+  if (extraTerms.length > MAX_EXTRA_TERMS) {
+    return {
+      ok: false,
+      error: `Keep it to ${MAX_EXTRA_TERMS} extra subject words.`,
+    };
+  }
+  const senders = [
+    ...new Set(
+      parsed.data.senders
+        .split(LINES)
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
+  const bad = senders.find((x) => !SENDER.test(x));
+  if (bad) {
+    return {
+      ok: false,
+      error: `"${bad}" isn't an email address or @domain.`,
+    };
+  }
+  if (senders.length > MAX_SENDERS) {
+    return { ok: false, error: `Keep it to ${MAX_SENDERS} senders.` };
+  }
+  const saved = await setRfqRules(access.orgId, provider, {
+    extraTerms,
+    senders,
+    requireAttachments,
+    knownCustomersOnly,
   });
   revalidatePath("/settings/integrations");
-  return updated.count
+  return saved
     ? { ok: true }
-    : { ok: false, error: "Gmail isn't connected." };
+    : { ok: false, error: `${PROVIDER_NAME[provider]} isn't connected.` };
+};
+
+/** The Outlook mailbox's folders, to choose where RFQs land. */
+export const listOutlookFolders = async (): Promise<
+  Result<{ folders: MailFolder[]; inboxId: string | null }>
+> => {
+  const access = await manager();
+  if (!access.ok) {
+    return access;
+  }
+  try {
+    return { ok: true, ...(await outlookFolders(access.orgId)) };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : "Couldn't read the folders.",
+    };
+  }
+};
+
+const Folder = z.union([
+  z.null(),
+  z.object({ id: z.string().min(1).max(500) }),
+]);
+
+/** Read RFQs from this Outlook folder (null: the Inbox). */
+export const saveOutlookFolder = async (
+  folder: z.input<typeof Folder>
+): Promise<Result<{ summary: string }>> => {
+  const access = await manager();
+  if (!access.ok) {
+    return access;
+  }
+  const parsed = Folder.safeParse(folder);
+  if (!parsed.success) {
+    return { ok: false, error: "Choose a folder." };
+  }
+  let chosen: MailFolder | null = null;
+  if (parsed.data) {
+    // Only a folder that's really in the mailbox, under its own name.
+    const listed = await outlookFolders(access.orgId).catch(() => null);
+    const id = parsed.data.id;
+    chosen = listed?.folders.find((f) => f.id === id) ?? null;
+    if (!chosen) {
+      return { ok: false, error: "That folder isn't in the mailbox anymore." };
+    }
+    if (chosen.id === listed?.inboxId) {
+      chosen = null;
+    }
+  }
+  if (!(await setOutlookFolder(access.orgId, chosen))) {
+    return { ok: false, error: "Outlook isn't connected." };
+  }
+  const r = await syncConnection(access.orgId, "outlook");
+  revalidatePath("/settings/integrations");
+  revalidatePath("/quotes");
+  if (!r.ok) {
+    return r;
+  }
+  return {
+    ok: true,
+    summary: chosen
+      ? `Saved. Reading RFQs from ${chosen.name}.`
+      : "Saved. Reading RFQs from the Inbox.",
+  };
 };
 
 const Mailbox = z.union([z.literal(""), z.email().max(254)]);

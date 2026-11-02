@@ -4,15 +4,20 @@ import { Badge } from "@repo/design-system/components/ui/badge";
 import { Button } from "@repo/design-system/components/ui/button";
 import { Input } from "@repo/design-system/components/ui/input";
 import { Spinner } from "@repo/design-system/components/ui/spinner";
+import { Textarea } from "@repo/design-system/components/ui/textarea";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import type { PreviewMessage } from "@/lib/connectors/rfq-rules";
+import type { MailFolder } from "@/lib/connectors/outlook";
+import type { PreviewMessage, RfqRules } from "@/lib/connectors/rfq-rules";
 import {
   connect,
   disconnectProvider,
+  listOutlookFolders,
   previewRfqs,
   saveGmailQuery,
+  saveOutlookFolder,
   saveOutlookMailbox,
+  saveRfqRules,
   syncNow,
 } from "./actions";
 
@@ -20,6 +25,8 @@ export interface ConnectorView {
   account: string | null;
   configured: boolean;
   description: string;
+  /** Outlook: the folder RFQs are read from (null: the Inbox). */
+  folderName: string | null;
   /** Outlook: new-mail notifications are on (else hourly checks only). */
   instant: boolean;
   lastError: string | null;
@@ -30,6 +37,8 @@ export interface ConnectorView {
   needsDraftAccess: boolean;
   provider: "quickbooks" | "gmail" | "outlook";
   query: string | null;
+  /** Which emails count as RFQs, on top of Takumo's own rules. */
+  rules: RfqRules;
   sharedMailbox: string | null;
   status: string | null;
 }
@@ -140,6 +149,214 @@ const OutlookMailbox = ({ initial }: { initial: string }) => {
   );
 };
 
+const SELECT_CLASS =
+  "h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm disabled:opacity-50";
+
+/** Which Outlook folder RFQs are read from: the Inbox unless one's chosen. */
+const OutlookFolder = ({ current }: { current: string | null }) => {
+  const [folders, setFolders] = useState<{
+    inboxId: string | null;
+    list: MailFolder[];
+  } | null>(null);
+  const [chosen, setChosen] = useState("");
+  const { message, pending, run, start, setMessage } = useAction();
+  const load = () =>
+    start(async () => {
+      const r = await listOutlookFolders();
+      if (r.ok) {
+        setFolders({ list: r.folders, inboxId: r.inboxId });
+        const match = r.folders.find((f) => f.name === current);
+        setChosen(match?.id ?? r.inboxId ?? "");
+        setMessage(null);
+      } else {
+        setMessage({ error: true, text: r.error });
+      }
+    });
+  return (
+    <div className="grid gap-1">
+      <p className="text-muted-foreground text-xs">
+        RFQ folder: {current ?? "Inbox"}. Choose another if a mail rule files
+        RFQs into their own folder.
+      </p>
+      {folders ? (
+        <div className="flex gap-2">
+          <select
+            aria-label="RFQ folder"
+            className={SELECT_CLASS}
+            disabled={pending}
+            onChange={(e) => setChosen(e.target.value)}
+            value={chosen}
+          >
+            {folders.list.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+          <Button
+            disabled={pending || !chosen}
+            onClick={() =>
+              run(
+                () =>
+                  saveOutlookFolder(
+                    chosen === folders.inboxId ? null : { id: chosen }
+                  ),
+                (r) => String(r.summary ?? "Saved.")
+              )
+            }
+            size="sm"
+            variant="outline"
+          >
+            {pending && <Spinner />} Save
+          </Button>
+        </div>
+      ) : (
+        <div>
+          <Button disabled={pending} onClick={load} size="sm" variant="outline">
+            {pending && <Spinner />} Choose folder
+          </Button>
+        </div>
+      )}
+      {message && (
+        <p className={message.error ? "text-destructive text-xs" : "text-xs"}>
+          {message.text}
+        </p>
+      )}
+    </div>
+  );
+};
+
+/** Which emails count as RFQs: extra subject words, and what to leave out. */
+const RfqRulesEditor = ({
+  provider,
+  rules,
+}: {
+  provider: "gmail" | "outlook";
+  rules: RfqRules;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [terms, setTerms] = useState(rules.extraTerms.join("\n"));
+  const [senders, setSenders] = useState(rules.senders.join("\n"));
+  const [attachments, setAttachments] = useState(rules.requireAttachments);
+  const [known, setKnown] = useState(rules.knownCustomersOnly);
+  const { message, pending, run } = useAction();
+  const active =
+    rules.extraTerms.length +
+    rules.senders.length +
+    Number(rules.requireAttachments) +
+    Number(rules.knownCustomersOnly);
+  const id = `rules-${provider}`;
+  return (
+    <div className="grid gap-2">
+      <div>
+        <Button
+          onClick={() => setOpen(!open)}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          RFQ rules{active ? ` (${active} set)` : ""}
+        </Button>
+      </div>
+      {open && (
+        <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 text-sm">
+          <p className="text-muted-foreground text-xs">
+            Takumo picks out emails whose subject says RFQ, request for quote,
+            quote request or please quote. Add your own words, or narrow it
+            down. The test below uses these rules.
+          </p>
+          <label className="grid gap-1" htmlFor={`${id}-terms`}>
+            <span className="font-medium text-xs">
+              More subject words, one per line
+            </span>
+            <Textarea
+              disabled={pending}
+              id={`${id}-terms`}
+              onChange={(e) => setTerms(e.target.value)}
+              placeholder={"quotation\nbid request"}
+              rows={2}
+              value={terms}
+            />
+          </label>
+          {provider === "gmail" && (
+            <p className="text-muted-foreground text-xs">
+              These are added to Takumo's search. If you've written your own
+              Gmail search above, that's used instead.
+            </p>
+          )}
+          <label className="flex items-start gap-2">
+            <input
+              checked={attachments}
+              className="mt-1"
+              disabled={pending}
+              onChange={(e) => setAttachments(e.target.checked)}
+              type="checkbox"
+            />
+            <span>Only emails with an attachment (a drawing or PDF)</span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input
+              checked={known}
+              className="mt-1"
+              disabled={pending}
+              onChange={(e) => setKnown(e.target.checked)}
+              type="checkbox"
+            />
+            <span>
+              Only from known customers{" "}
+              <span className="text-muted-foreground">
+                (companies that sent an RFQ you linked to a customer, plus the
+                senders below)
+              </span>
+            </span>
+          </label>
+          <label className="grid gap-1" htmlFor={`${id}-senders`}>
+            <span className="font-medium text-xs">
+              Only from these senders, one per line (blank: anyone)
+            </span>
+            <Textarea
+              disabled={pending}
+              id={`${id}-senders`}
+              onChange={(e) => setSenders(e.target.value)}
+              placeholder={"buyer@customer.com\n@customer.com"}
+              rows={2}
+              value={senders}
+            />
+          </label>
+          <div className="flex items-center gap-2">
+            <Button
+              disabled={pending}
+              onClick={() =>
+                run(
+                  () =>
+                    saveRfqRules({
+                      provider,
+                      extraTerms: terms,
+                      senders,
+                      requireAttachments: attachments,
+                      knownCustomersOnly: known,
+                    }),
+                  () => "Saved. New mail is checked with these rules."
+                )
+              }
+              size="sm"
+            >
+              {pending && <Spinner />} Save rules
+            </Button>
+          </div>
+          {message && (
+            <p
+              className={message.error ? "text-destructive text-xs" : "text-xs"}
+            >
+              {message.text}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /** The last 20 emails and which would become RFQs; imports nothing. */
 const RfqPreview = ({ provider }: { provider: string }) => {
   const [messages, setMessages] = useState<PreviewMessage[] | null>(null);
@@ -221,6 +438,7 @@ const ConnectorStatus = ({ c }: { c: ConnectorView }) => {
         <p className="text-sm">
           {c.account}
           {c.sharedMailbox ? ` · reading ${c.sharedMailbox}` : ""}
+          {c.folderName ? ` · folder ${c.folderName}` : ""}
           {checked}
         </p>
       )}
@@ -276,6 +494,12 @@ export const ConnectorCard = ({
       )}
       {connected && c.provider === "outlook" && canManage && (
         <OutlookMailbox initial={c.sharedMailbox ?? ""} />
+      )}
+      {c.status === "connected" && c.provider === "outlook" && canManage && (
+        <OutlookFolder current={c.folderName} />
+      )}
+      {connected && c.provider !== "quickbooks" && canManage && (
+        <RfqRulesEditor provider={c.provider} rules={c.rules} />
       )}
       {c.status === "connected" && c.provider !== "quickbooks" && canManage && (
         <RfqPreview provider={c.provider} />

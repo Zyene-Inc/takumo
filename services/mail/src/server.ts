@@ -16,6 +16,9 @@ import { acceptRecipient, MAX_RECIPIENTS } from "./recipients.js";
 import type { KeyPair } from "./tls.js";
 import { deliver, type SmtpReply } from "./webhook.js";
 
+/** Longest one SMTP session may last, however busy it looks. */
+const MAX_SESSION_MS = 10 * 60_000;
+
 export interface ServerDeps {
   now?: () => number;
   /** DNS resolver for SPF/DKIM/DMARC (tests use a fake one). */
@@ -255,6 +258,16 @@ export function createMailServer(
   const smtp = new SMTPServer(options);
   smtp.on("error", (error) => {
     log("smtp_error", { message: error.message });
+  });
+  // socketTimeout only catches idle sockets; a sender trickling one byte at a
+  // time would hold a slot forever. Cap every session's total length.
+  smtp.server.on("connection", (socket) => {
+    const cap = setTimeout(() => {
+      log("connection_closed", { reason: "max_session" });
+      socket.destroy();
+    }, MAX_SESSION_MS);
+    cap.unref();
+    socket.once("close", () => clearTimeout(cap));
   });
 
   return {

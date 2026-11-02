@@ -6,7 +6,13 @@
 // HTTP calls take `fetch`, so tested without the network.
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { isRfqSubject, type PreviewMessage } from "./rfq-rules";
+import {
+  DEFAULT_RULES,
+  isRfqSubject,
+  type PreviewMessage,
+  type RfqRules,
+  senderPasses,
+} from "./rfq-rules";
 
 const LOGIN = "https://login.microsoftonline.com";
 // "common" picks the person's own tenant; the app registration allows work or
@@ -111,6 +117,7 @@ const ADMIN_CODES = /AADSTS(65001|90094|90095|90008)\b/;
 const ADMIN_WORDS = /admin(istrator)? (approval|consent)/i;
 const SPACES = /\s+/;
 const MILLISECONDS = /\.\d{3}Z$/;
+const SINGLE_QUOTE = /'/g;
 
 /** Whether a sign-in error means an administrator has to approve Takumo. */
 export const needsAdminConsent = (
@@ -276,15 +283,23 @@ const query = (params: Record<string, string>) =>
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join("&");
 
+/** The folder RFQs are read from unless the shop picks another. */
+export const DEFAULT_FOLDER = "inbox";
+
+const folderPath = (folder: string | null | undefined) =>
+  `/mailFolders/${encodeURIComponent(folder || DEFAULT_FOLDER)}`;
+
 /**
- * The first delta request for the Inbox: only newly created mail from here
- * on, starting with what arrived since `since`.
+ * The first delta request for the RFQ folder (the Inbox unless the shop chose
+ * another): only newly created mail from here on, starting with what arrived
+ * since `since`.
  */
 export const firstDeltaUrl = (
   sharedMailbox: string | null | undefined,
-  since: Date
+  since: Date,
+  folder?: string | null
 ) =>
-  `${GRAPH_API}${mailboxPath(sharedMailbox)}/mailFolders/inbox/messages/delta?${query(
+  `${GRAPH_API}${mailboxPath(sharedMailbox)}${folderPath(folder)}/messages/delta?${query(
     {
       changeType: "created",
       $select: SELECT,
@@ -329,18 +344,28 @@ export const readDelta = async (
 };
 
 /**
- * The messages to read into RFQs, oldest first: RFQ subjects only, no drafts,
- * nothing the mailbox itself sent.
+ * The messages to read into RFQs, oldest first: RFQ subjects only (with the
+ * shop's extra words), no drafts, nothing the mailbox itself sent, and only
+ * what the shop's rules let through (attachments, senders).
  */
-export const rfqMessages = (messages: GraphMessage[], ownAddress: string) =>
+export const rfqMessages = (
+  messages: GraphMessage[],
+  ownAddress: string,
+  rules: RfqRules = DEFAULT_RULES,
+  /** The rules' sender filter (null: anyone). */
+  allowed: string[] | null = null
+) =>
   messages
-    .filter(
-      (m) =>
+    .filter((m) => {
+      const from = m.from?.emailAddress?.address ?? null;
+      return (
         !m.isDraft &&
-        isRfqSubject(m.subject) &&
-        m.from?.emailAddress?.address?.toLowerCase() !==
-          ownAddress.toLowerCase()
-    )
+        isRfqSubject(m.subject, rules.extraTerms) &&
+        from?.toLowerCase() !== ownAddress.toLowerCase() &&
+        !(rules.requireAttachments && !m.hasAttachments) &&
+        senderPasses(from, allowed)
+      );
+    })
     .sort((a, b) =>
       (a.receivedDateTime ?? "").localeCompare(b.receivedDateTime ?? "")
     );
@@ -363,26 +388,40 @@ export const rawMessage = async (
   return new Uint8Array(await response.arrayBuffer());
 };
 
-/** The last 20 Inbox emails, each marked whether it would become an RFQ. */
+/** The last 20 emails in the RFQ folder, each marked whether it would become an RFQ. */
 export const previewMessages = async (
   fetcher: Fetch,
   accessToken: string,
   ownAddress: string,
-  sharedMailbox?: string | null
+  sharedMailbox?: string | null,
+  options: {
+    allowed?: string[] | null;
+    folder?: string | null;
+    rules?: RfqRules;
+  } = {}
 ): Promise<PreviewMessage[]> => {
   const { value } = await json<{ value?: GraphMessage[] }>(
     await graph(
       fetcher,
       accessToken,
-      `${mailboxPath(sharedMailbox)}/mailFolders/inbox/messages?${query({
-        $select: SELECT,
-        $orderby: "receivedDateTime desc",
-        $top: String(MAX_MESSAGES),
-      })}`,
+      `${mailboxPath(sharedMailbox)}${folderPath(options.folder)}/messages?${query(
+        {
+          $select: SELECT,
+          $orderby: "receivedDateTime desc",
+          $top: String(MAX_MESSAGES),
+        }
+      )}`,
       { sharedMailbox }
     )
   );
-  const rfqs = new Set(rfqMessages(value ?? [], ownAddress).map((m) => m.id));
+  const rfqs = new Set(
+    rfqMessages(
+      value ?? [],
+      ownAddress,
+      options.rules,
+      options.allowed ?? null
+    ).map((m) => m.id)
+  );
   return (value ?? []).map((m) => ({
     id: m.id,
     subject: m.subject ?? null,
@@ -390,6 +429,69 @@ export const previewMessages = async (
     receivedAt: m.receivedDateTime ?? null,
     isRfq: rfqs.has(m.id),
   }));
+};
+
+export interface MailFolder {
+  id: string;
+  /** "Inbox", or "Inbox / RFQs" for a folder inside another. */
+  name: string;
+}
+
+interface GraphFolder {
+  childFolderCount?: number;
+  displayName?: string;
+  id: string;
+}
+
+const FOLDER_FIELDS = "id,displayName,childFolderCount";
+/** Folders listed per level; more than this is unusual for an RFQ mailbox. */
+const MAX_FOLDERS = 100;
+
+/**
+ * The mailbox's folders and the folders one level inside them, for choosing
+ * where RFQs land, plus which one is the Inbox (its id, not its name, which
+ * depends on the mailbox's language).
+ */
+export const listFolders = async (
+  fetcher: Fetch,
+  accessToken: string,
+  sharedMailbox?: string | null
+): Promise<{ folders: MailFolder[]; inboxId: string | null }> => {
+  const base = mailboxPath(sharedMailbox);
+  const list = async (path: string) =>
+    (
+      await json<{ value?: GraphFolder[] }>(
+        await graph(
+          fetcher,
+          accessToken,
+          `${base}${path}?${query({ $select: FOLDER_FIELDS, $top: String(MAX_FOLDERS) })}`,
+          { sharedMailbox }
+        )
+      )
+    ).value ?? [];
+  const [top, inbox] = await Promise.all([
+    list("/mailFolders"),
+    graph(fetcher, accessToken, `${base}/mailFolders/inbox?$select=id`, {
+      sharedMailbox,
+    }).then((r) => (r.ok ? (r.json() as Promise<{ id?: string }>) : null)),
+  ]);
+  const folders: MailFolder[] = [];
+  for (const folder of top) {
+    const name = folder.displayName || "(unnamed)";
+    folders.push({ id: folder.id, name });
+    if (folder.childFolderCount) {
+      const children = await list(
+        `/mailFolders/${encodeURIComponent(folder.id)}/childFolders`
+      );
+      for (const child of children) {
+        folders.push({
+          id: child.id,
+          name: `${name} / ${child.displayName || "(unnamed)"}`,
+        });
+      }
+    }
+  }
+  return { folders, inboxId: inbox?.id ?? null };
 };
 
 const escapeHtml = (text: string) =>
@@ -449,11 +551,19 @@ export interface OutlookSubscription {
   /** AES-GCM sealed (see crypto.ts): proves a notification is from Graph. */
   clientState: string;
   expiresAt: string;
+  /** The folder it watches (missing on older ones: the Inbox). */
+  folder?: string | null;
   id: string;
 }
 
 /** Subscriptions belong to the signed-in mailbox only (a Graph rule). */
 export const SUBSCRIPTION_RESOURCE = "/me/mailFolders('inbox')/messages";
+
+/** What a subscription watches: the RFQ folder of the signed-in mailbox. */
+export const subscriptionResource = (folder?: string | null) =>
+  !folder || folder === DEFAULT_FOLDER
+    ? SUBSCRIPTION_RESOURCE
+    : `/me/mailFolders('${folder.replace(SINGLE_QUOTE, "''")}')/messages`;
 
 export const subscriptionExpiry = (now = Date.now()) =>
   new Date(now + SUBSCRIPTION_MINUTES * 60_000).toISOString();
@@ -489,7 +599,8 @@ export const createSubscription = async (
   accessToken: string,
   notificationUrl: string,
   clientState: string,
-  now = Date.now()
+  now = Date.now(),
+  folder?: string | null
 ) => {
   const created = await json<{ expirationDateTime: string; id: string }>(
     await graph(fetcher, accessToken, "/subscriptions", {
@@ -497,7 +608,7 @@ export const createSubscription = async (
       body: JSON.stringify({
         changeType: "created",
         notificationUrl,
-        resource: SUBSCRIPTION_RESOURCE,
+        resource: subscriptionResource(folder),
         expirationDateTime: subscriptionExpiry(now),
         clientState,
       }),

@@ -19,16 +19,18 @@ import {
   GmailAuthError,
   listMessages,
   previewMessages as previewGmail,
-  rawMessage,
+  rawMessageAndThread,
   refreshTokens as refreshGmail,
   revokeToken as revokeGmail,
   searchFor,
 } from "./gmail";
 import {
   createSubscription,
+  DEFAULT_FOLDER,
   deleteSubscription,
   firstDeltaUrl,
   type GraphMessage,
+  listFolders,
   type MicrosoftTokens,
   MAX_MESSAGES as OUTLOOK_MAX_MESSAGES,
   OutlookAuthError,
@@ -55,12 +57,23 @@ import {
   refreshTokens as refreshQuickBooks,
   revokeToken as revokeQuickBooks,
 } from "./quickbooks";
+import {
+  allowedSenders,
+  gmailQuery,
+  knownSenderRules,
+  type RfqRules,
+  readRules,
+  senderPasses,
+} from "./rfq-rules";
+import { fingerprint, type MailThread } from "./thread";
 
 /** Refresh access tokens this long before they expire. */
 const REFRESH_EARLY_MS = 5 * 60_000;
 const DAY_MS = 86_400_000;
 /** On a first mailbox check, look back this far for RFQs. */
 const FIRST_LOOK_BACK_DAYS = 3;
+/** Earlier customer RFQs looked at for "known customers only". */
+const KNOWN_SENDER_RFQS = 500;
 
 export interface SyncResult {
   created: number;
@@ -86,7 +99,10 @@ export const saveConnection = async (
     expiresIn: number;
     refreshToken: string | null;
     scope?: string | null;
+    /** Replaces the settings. */
     settings?: object;
+    /** Settings for a first connection only; a reconnect keeps the old ones. */
+    initialSettings?: object;
   }
 ) => {
   const key = encryptionKey();
@@ -104,7 +120,14 @@ export const saveConnection = async (
   };
   await database.connection.upsert({
     where: { orgId_provider: { orgId, provider } },
-    create: { orgId, provider, ...fields },
+    create: {
+      orgId,
+      provider,
+      ...fields,
+      ...(data.initialSettings && !data.settings
+        ? { settings: data.initialSettings }
+        : {}),
+    },
     update: { ...fields, lastSyncAt: null, lastResult: Prisma.DbNull },
   });
 };
@@ -198,6 +221,66 @@ const syncQuickBooks = async (
   };
 };
 
+/**
+ * Who may send RFQs under the shop's rules (null: anyone). "Known customers"
+ * are the senders of earlier RFQs that were linked to a customer.
+ */
+const senderFilter = async (orgId: string, rules: RfqRules) => {
+  if (!rules.knownCustomersOnly) {
+    return allowedSenders(rules, []);
+  }
+  const earlier = await forOrg(database, orgId).rfq.findMany({
+    where: { customerId: { not: null }, sender: { not: null } },
+    orderBy: { receivedAt: "desc" },
+    take: KNOWN_SENDER_RFQS,
+    select: { sender: true },
+  });
+  return allowedSenders(rules, knownSenderRules(earlier.map((r) => r.sender)));
+};
+
+/**
+ * The same RFQ coming round again in a reply chain: an RFQ from the same
+ * conversation with the same attachments is already in Takumo. Its number,
+ * or null.
+ */
+const alreadyHave = async (orgId: string, mail: MailThread) => {
+  if (!mail.threadId) {
+    return null;
+  }
+  const found = await forOrg(database, orgId).rfq.findFirst({
+    where: {
+      source: "email",
+      AND: [
+        { extracted: { path: ["mail", "threadId"], equals: mail.threadId } },
+        {
+          extracted: {
+            path: ["mail", "attachmentsHash"],
+            equals: mail.attachmentsHash,
+          },
+        },
+      ],
+    },
+    select: { number: true },
+  });
+  return found?.number ?? null;
+};
+
+/** Why a fetched message isn't read into an RFQ, or null to read it. */
+const skipReason = async (
+  orgId: string,
+  from: string | null,
+  allowed: string[] | null,
+  mail: MailThread
+) => {
+  if (!senderPasses(from, allowed)) {
+    return `Skipped mail from ${from ?? "an unknown sender"}: not a sender your RFQ rules allow.`;
+  }
+  const number = await alreadyHave(orgId, mail);
+  return number === null
+    ? null
+    : `Skipped a reply in the thread of RFQ #${number}: same attachments, so the same request.`;
+};
+
 /** New RFQ emails since the last check, each read into an RFQ once. */
 const syncGmail = async (
   orgId: string,
@@ -205,6 +288,8 @@ const syncGmail = async (
 ): Promise<SyncResult> => {
   const token = await accessToken(connection);
   const settings = (connection.settings as { query?: string } | null) ?? {};
+  const rules = readRules(connection.settings);
+  const allowed = await senderFilter(orgId, rules);
   const since =
     connection.lastSyncAt ??
     new Date(Date.now() - FIRST_LOOK_BACK_DAYS * DAY_MS);
@@ -212,7 +297,7 @@ const syncGmail = async (
   const ids = await listMessages(
     fetch,
     token,
-    searchFor(settings.query, since)
+    searchFor(gmailQuery(settings.query, rules), since)
   );
   const seen = new Set(
     (
@@ -237,11 +322,24 @@ const syncGmail = async (
       break;
     }
     try {
-      const text = await readRfqFile(
-        "message.eml",
-        await rawMessage(fetch, token, id)
+      const { bytes, threadId } = await rawMessageAndThread(fetch, token, id);
+      const { from, attachmentsHash } = fingerprint(bytes);
+      const mail: MailThread = { provider: "gmail", threadId, attachmentsHash };
+      const skip = await skipReason(orgId, from, allowed, mail);
+      if (skip) {
+        result.skipped += 1;
+        result.notes.push(skip);
+        continue;
+      }
+      const text = await readRfqFile("message.eml", bytes);
+      const rfq = await intakeRfq(
+        orgId,
+        connection.createdBy,
+        text,
+        null,
+        id,
+        mail
       );
-      const rfq = await intakeRfq(orgId, connection.createdBy, text, null, id);
       track("rfq_received", { orgId, properties: { source: "gmail" } });
       result.created += 1;
       result.notes.push(
@@ -271,10 +369,14 @@ interface OutlookSettings {
   /** Where the next delta round starts, and which mailbox it belongs to. */
   deltaFor?: string | null;
   deltaLink?: string | null;
+  /** Read RFQs from this folder (null: the Inbox), and its name to show. */
+  folderId?: string | null;
+  folderName?: string | null;
   /** Lock against two checks reading the same mail at once (epoch ms). */
   lockedUntil?: number;
   /** A notification arrived while a check was running: check again. */
   pending?: boolean;
+  rfqRules?: RfqRules;
   /** Read RFQs from this shared mailbox instead of the person's own. */
   sharedMailbox?: string | null;
   subscription?: OutlookSubscription | null;
@@ -319,7 +421,14 @@ const keepSubscription = async (
   token: string
 ): Promise<string | null> => {
   const url = outlookNotificationUrl();
-  const current = settings.subscription ?? null;
+  let current = settings.subscription ?? null;
+  const folder = settings.folderId || DEFAULT_FOLDER;
+  if (current && (current.folder || DEFAULT_FOLDER) !== folder) {
+    // Watching the old folder: replace it with one on the chosen folder.
+    await deleteSubscription(fetch, token, current.id).catch(() => null);
+    await mergeSettings(connection.id, { subscription: null });
+    current = null;
+  }
   const action = subscriptionAction(current, {
     canNotify: url !== null,
     sharedMailbox: settings.sharedMailbox,
@@ -346,15 +455,29 @@ const keepSubscription = async (
   }
   // Random per subscription; stored sealed, compared on every notification.
   const clientState = randomBytes(32).toString("base64url");
-  const created = await createSubscription(fetch, token, url, clientState);
+  const created = await createSubscription(
+    fetch,
+    token,
+    url,
+    clientState,
+    Date.now(),
+    folder
+  );
   await mergeSettings(connection.id, {
     subscription: {
       id: created.id,
       expiresAt: created.expiresAt,
       clientState: encrypt(encryptionKey(), clientState),
+      folder,
     },
   });
   return null;
+};
+
+/** Which mailbox and folder a saved delta position belongs to. */
+const deltaKey = (settings: OutlookSettings) => {
+  const mailbox = settings.sharedMailbox || "me";
+  return settings.folderId ? `${mailbox}#${settings.folderId}` : mailbox;
 };
 
 /**
@@ -370,9 +493,9 @@ const outlookRound = async (
   const since =
     connection.lastSyncAt ??
     new Date(Date.now() - FIRST_LOOK_BACK_DAYS * DAY_MS);
-  const first = firstDeltaUrl(shared, since);
+  const first = firstDeltaUrl(shared, since, settings.folderId);
   const saved =
-    settings.deltaLink && settings.deltaFor === (shared ?? "me")
+    settings.deltaLink && settings.deltaFor === deltaKey(settings)
       ? settings.deltaLink
       : null;
   try {
@@ -406,16 +529,27 @@ const readOutlookRfqs = async (
       return true;
     }
     try {
-      const text = await readRfqFile(
-        "message.eml",
-        await outlookRawMessage(fetch, token, message.id, shared)
-      );
+      const bytes = await outlookRawMessage(fetch, token, message.id, shared);
+      const mail: MailThread = {
+        provider: "outlook",
+        threadId: message.conversationId ?? null,
+        attachmentsHash: fingerprint(bytes).attachmentsHash,
+      };
+      // Senders were already checked on the message list (rfqMessages).
+      const skip = await skipReason(orgId, null, null, mail);
+      if (skip) {
+        result.skipped += 1;
+        result.notes.push(skip);
+        continue;
+      }
+      const text = await readRfqFile("message.eml", bytes);
       const rfq = await intakeRfq(
         orgId,
         connection.createdBy,
         text,
         null,
-        message.id
+        message.id,
+        mail
       );
       track("rfq_received", { orgId, properties: { source: "outlook" } });
       result.created += 1;
@@ -432,7 +566,7 @@ const readOutlookRfqs = async (
   return false;
 };
 
-/** New RFQ emails in the Outlook Inbox since the last delta round. */
+/** New RFQ emails in the Outlook RFQ folder since the last delta round. */
 const syncOutlook = async (
   orgId: string,
   connection: ConnectionRow
@@ -452,7 +586,13 @@ const syncOutlook = async (
   const shared = settings.sharedMailbox || null;
   const started = new Date();
   const round = await outlookRound(connection, settings, token);
-  const candidates = rfqMessages(round.messages, shared ?? connection.account);
+  const rules = readRules(connection.settings);
+  const candidates = rfqMessages(
+    round.messages,
+    shared ?? connection.account,
+    rules,
+    await senderFilter(orgId, rules)
+  );
   const seen = new Set(
     (
       await forOrg(database, orgId).rfq.findMany({
@@ -481,7 +621,7 @@ const syncOutlook = async (
   }
   await mergeSettings(connection.id, {
     deltaLink: round.deltaLink,
-    deltaFor: shared ?? "me",
+    deltaFor: deltaKey(settings),
   });
   await database.connection.update({
     where: { id: connection.id },
@@ -609,10 +749,17 @@ export const connectOutlook = async (
     expiresIn: tokens.expires_in,
     scope: tokens.scope ?? null,
     createdBy: userId,
-    // The same person reconnecting keeps their shared-mailbox choice.
+    // The same person reconnecting keeps their mailbox and folder choice;
+    // the shop's RFQ rules stay whoever connects.
     settings: {
-      sharedMailbox:
-        old?.account === account ? (settings.sharedMailbox ?? null) : null,
+      ...(old?.account === account
+        ? {
+            sharedMailbox: settings.sharedMailbox ?? null,
+            folderId: settings.folderId ?? null,
+            folderName: settings.folderName ?? null,
+          }
+        : { sharedMailbox: null }),
+      ...(settings.rfqRules ? { rfqRules: settings.rfqRules } : {}),
     },
   });
 };
@@ -631,6 +778,9 @@ export const setOutlookMailbox = async (
   }
   await mergeSettings(connection.id, {
     sharedMailbox,
+    // Folders belong to a mailbox: back to its Inbox.
+    folderId: null,
+    folderName: null,
     deltaLink: null,
     deltaFor: null,
   });
@@ -638,6 +788,65 @@ export const setOutlookMailbox = async (
     where: { id: connection.id },
     data: { lastSyncAt: null },
   });
+  return true;
+};
+
+/** The connected mailbox's folders, for choosing where RFQs land. */
+export const outlookFolders = async (orgId: string) => {
+  const connection = await loadConnection(orgId, "outlook");
+  if (!connection || connection.status === "disconnected") {
+    throw new Error("Outlook isn't connected.");
+  }
+  const shared = outlookSettings(connection.settings).sharedMailbox || null;
+  return listFolders(fetch, await accessToken(connection), shared);
+};
+
+/**
+ * Read RFQs from another folder (null: the Inbox), starting fresh there; the
+ * next check moves the new-mail notifications to it as well.
+ */
+export const setOutlookFolder = async (
+  orgId: string,
+  folder: { id: string; name: string } | null
+) => {
+  const connection = await loadConnection(orgId, "outlook");
+  if (!connection) {
+    return false;
+  }
+  await mergeSettings(connection.id, {
+    folderId: folder?.id ?? null,
+    folderName: folder?.name ?? null,
+    deltaLink: null,
+    deltaFor: null,
+  });
+  await database.connection.update({
+    where: { id: connection.id },
+    data: { lastSyncAt: null },
+  });
+  return true;
+};
+
+/** Save a mailbox connection's RFQ rules, keeping its other settings. */
+export const setRfqRules = async (
+  orgId: string,
+  provider: "gmail" | "outlook",
+  rules: RfqRules
+) => {
+  const connection = await loadConnection(orgId, provider);
+  if (!connection) {
+    return false;
+  }
+  await mergeSettings(connection.id, { rfqRules: rules });
+  return true;
+};
+
+/** Save Gmail's own RFQ search, keeping its other settings (the rules). */
+export const setGmailQuery = async (orgId: string, query: string) => {
+  const connection = await loadConnection(orgId, "gmail");
+  if (!connection) {
+    return false;
+  }
+  await database.$executeRaw`UPDATE "Connection" SET settings = ${SETTINGS} || jsonb_build_object('query', ${query}::text), "updatedAt" = now() WHERE id = ${connection.id}`;
   return true;
 };
 
@@ -676,12 +885,19 @@ export const previewConnection = async (
     throw new Error("Not connected.");
   }
   const token = await accessToken(connection);
+  const rules = readRules(connection.settings);
+  const allowed = await senderFilter(orgId, rules);
   if (provider === "gmail") {
     const { query } = (connection.settings as { query?: string } | null) ?? {};
-    return previewGmail(fetch, token, query);
+    return previewGmail(fetch, token, gmailQuery(query, rules), allowed);
   }
-  const shared = outlookSettings(connection.settings).sharedMailbox || null;
-  return previewOutlook(fetch, token, shared ?? connection.account, shared);
+  const settings = outlookSettings(connection.settings);
+  const shared = settings.sharedMailbox || null;
+  return previewOutlook(fetch, token, shared ?? connection.account, shared, {
+    folder: settings.folderId,
+    rules,
+    allowed,
+  });
 };
 
 /** Disconnect: revoke the tokens with the provider and forget them. */

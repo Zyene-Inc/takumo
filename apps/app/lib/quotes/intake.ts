@@ -3,6 +3,7 @@ import "server-only";
 import { database, forOrg, Prisma } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { recordFailedUsage, recordUsage } from "../ai-usage";
+import type { MailThread } from "../connectors/thread";
 import { extractRfq } from "./extract";
 import { partsMentioned } from "./match";
 import type { RfqText } from "./read";
@@ -15,7 +16,8 @@ const createRfq = async (
   userId: string | null,
   text: RfqText,
   fileName: string | null,
-  sourceId: string | null = null
+  sourceId: string | null = null,
+  mail: MailThread | null = null
 ) => {
   for (let attempt = 0; ; attempt += 1) {
     const last = await forOrg(database, orgId).rfq.findFirst({
@@ -34,6 +36,8 @@ const createRfq = async (
           sender: text.sender,
           body: text.body,
           createdBy: userId,
+          // Kept through every reading (see readRfq).
+          ...(mail ? { extracted: { mail } as object } : {}),
         },
         select: { id: true, number: true, receivedAt: true },
       });
@@ -58,6 +62,14 @@ const readingProblem = (read: { isRfq: boolean; lines: unknown[] }) => {
     : "Takumo didn't find any parts to quote in this RFQ. Add the lines yourself.";
 };
 
+const mailKey = (extracted: unknown) => {
+  const mail =
+    extracted && typeof extracted === "object"
+      ? (extracted as { mail?: unknown }).mail
+      : undefined;
+  return mail ? { mail } : {};
+};
+
 /**
  * Read an RFQ's text into lines (Claude, checked against the shop's records)
  * and save them. The RFQ ends up "review", or "failed" with the reason.
@@ -66,7 +78,7 @@ export const readRfq = async (orgId: string, rfqId: string) => {
   const db = forOrg(database, orgId);
   const rfq = await db.rfq.findFirst({
     where: { id: rfqId },
-    select: { id: true, body: true, receivedAt: true },
+    select: { id: true, body: true, receivedAt: true, extracted: true },
   });
   if (!rfq) {
     return;
@@ -103,7 +115,11 @@ export const readRfq = async (orgId: string, rfqId: string) => {
             ? new Date(read.requestedDate)
             : null,
           notes: read.notes,
-          extracted: read.reading as object,
+          // The mail thread it came from stays beside the new reading.
+          extracted: {
+            ...(read.reading as object),
+            ...mailKey(rfq.extracted),
+          },
           status: read.isRfq && read.lines.length ? "review" : "failed",
           error: readingProblem(read),
         },
@@ -147,9 +163,11 @@ export const intakeRfq = async (
   text: RfqText,
   fileName: string | null,
   /** The message id, for RFQs from a connected mailbox (never read twice). */
-  sourceId: string | null = null
+  sourceId: string | null = null,
+  /** The mail thread, for replying in it and spotting the same RFQ again. */
+  mail: MailThread | null = null
 ) => {
-  const rfq = await createRfq(orgId, userId, text, fileName, sourceId);
+  const rfq = await createRfq(orgId, userId, text, fileName, sourceId, mail);
   await readRfq(orgId, rfq.id);
   return rfq;
 };

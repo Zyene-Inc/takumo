@@ -4,7 +4,11 @@
 // in the RFQ's thread; it never sends. HTTP calls take `fetch`, so tested
 // without the network.
 
-import { type PreviewMessage, RFQ_SUBJECT_TERMS } from "./rfq-rules";
+import {
+  gmailSubjectQuery,
+  type PreviewMessage,
+  senderPasses,
+} from "./rfq-rules";
 
 export const GOOGLE_AUTHORIZE_URL =
   "https://accounts.google.com/o/oauth2/v2/auth";
@@ -17,7 +21,7 @@ export const GMAIL_COMPOSE_SCOPE =
 const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
 
 /** What counts as an RFQ unless the shop sets its own Gmail search. */
-export const DEFAULT_RFQ_QUERY = `subject:(${RFQ_SUBJECT_TERMS.map((t) => (t.includes(" ") ? `"${t}"` : t)).join(" OR ")}) -in:sent -in:chats`;
+export const DEFAULT_RFQ_QUERY = gmailSubjectQuery();
 /** Messages read per check (the rest wait for the next one). */
 export const MAX_MESSAGES = 20;
 
@@ -153,19 +157,29 @@ export const listMessages = async (
     ).messages ?? []
   ).map((m) => m.id);
 
+/** The message as an .eml file (RFC 822 bytes), and its Gmail thread. */
+export const rawMessageAndThread = async (
+  fetcher: Fetch,
+  accessToken: string,
+  id: string
+) => {
+  const { raw, threadId } = await get<{ raw: string; threadId?: string }>(
+    fetcher,
+    accessToken,
+    `/messages/${encodeURIComponent(id)}?format=raw`
+  );
+  return {
+    bytes: new Uint8Array(Buffer.from(raw, "base64url")),
+    threadId: threadId ?? null,
+  };
+};
+
 /** The message as an .eml file (RFC 822 bytes). */
 export const rawMessage = async (
   fetcher: Fetch,
   accessToken: string,
   id: string
-) => {
-  const { raw } = await get<{ raw: string }>(
-    fetcher,
-    accessToken,
-    `/messages/${encodeURIComponent(id)}?format=raw`
-  );
-  return new Uint8Array(Buffer.from(raw, "base64url"));
-};
+) => (await rawMessageAndThread(fetcher, accessToken, id)).bytes;
 
 interface GmailHeaders {
   payload?: { headers?: { name: string; value: string }[] };
@@ -178,12 +192,14 @@ const header = (message: GmailHeaders, name: string) =>
 
 /**
  * The last 20 emails in the mailbox, each marked whether the shop's RFQ
- * search picks it up. Reads headers only; nothing is imported.
+ * search and sender rules pick it up. Reads headers only; nothing is imported.
  */
 export const previewMessages = async (
   fetcher: Fetch,
   accessToken: string,
-  query: string | null | undefined
+  query: string | null | undefined,
+  /** The rules' sender filter (null: anyone). */
+  allowed: string[] | null = null
 ): Promise<PreviewMessage[]> => {
   const [recent, matching] = await Promise.all([
     listMessages(fetcher, accessToken, "-in:sent -in:chats -in:drafts"),
@@ -204,15 +220,16 @@ export const previewMessages = async (
       );
       const date = header(message, "Date");
       const received = date ? new Date(date) : null;
+      const from = header(message, "From");
       return {
         id,
         subject: header(message, "Subject"),
-        from: header(message, "From"),
+        from,
         receivedAt:
           received && !Number.isNaN(received.getTime())
             ? received.toISOString()
             : null,
-        isRfq: rfqs.has(id),
+        isRfq: rfqs.has(id) && senderPasses(from, allowed),
       };
     })
   );

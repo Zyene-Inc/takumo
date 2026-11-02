@@ -7,6 +7,7 @@ import { getBilling } from "@/lib/billing";
 import { adminConsentRedirectUri, credentials } from "@/lib/connectors/config";
 import { canDraft } from "@/lib/connectors/gmail";
 import { adminConsentUrl } from "@/lib/connectors/outlook";
+import { readRules } from "@/lib/connectors/rfq-rules";
 import { Header } from "../../components/header";
 import { ConnectorCard, type ConnectorView } from "./connector-card";
 
@@ -49,6 +50,7 @@ const IntegrationsPage = async ({
   ): ConnectorView => {
     const c = connections.find((x) => x.provider === provider);
     const settings = (c?.settings ?? null) as {
+      folderName?: string | null;
       query?: string;
       sharedMailbox?: string | null;
       subscription?: object | null;
@@ -67,6 +69,8 @@ const IntegrationsPage = async ({
       ).slice(0, 6),
       query: settings?.query ?? null,
       sharedMailbox: settings?.sharedMailbox ?? null,
+      folderName: settings?.folderName ?? null,
+      rules: readRules(c?.settings),
       instant: Boolean(settings?.subscription),
       // Connected before Takumo asked to write drafts: reconnect once.
       needsDraftAccess:

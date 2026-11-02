@@ -125,7 +125,8 @@ const CONNECT: Record<Provider, (c: Callback) => Promise<Response | null>> = {
       expiresIn: tokens.expires_in,
       scope: tokens.scope,
       createdBy: userId,
-      settings: { query: DEFAULT_RFQ_QUERY },
+      // Reconnecting (e.g. to allow drafts) keeps the shop's search and rules.
+      initialSettings: { query: DEFAULT_RFQ_QUERY },
     });
     return null;
   },
