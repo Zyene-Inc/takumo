@@ -10,6 +10,7 @@ import { changesForErp } from "@/lib/erp/changes";
 import type { ReportResult } from "@/lib/erp/reports";
 import { ensureAddresses } from "@/lib/inbound/process";
 import { addressFor, type InboundKind } from "@/lib/inbound/verify";
+import { poLabel } from "@/lib/orders/types";
 import { rfqLabel } from "@/lib/quotes/types";
 import { Header } from "../../../components/header";
 import { AddressCard } from "./address-card";
@@ -68,6 +69,8 @@ const detailText = (detail: unknown) => {
   const d = detail as {
     duplicateOf?: number;
     error?: string;
+    po?: number;
+    poRepeat?: boolean;
     reports?: string[];
     rfq?: number;
     skipped?: string[];
@@ -77,6 +80,11 @@ const detailText = (detail: unknown) => {
   }
   if (d.error) {
     return d.error;
+  }
+  if (d.po) {
+    return d.poRepeat
+      ? `Same files as customer PO ${poLabel(d.po)}, so nothing new.`
+      : `Customer PO ${poLabel(d.po)}, ready to check and enter in your ERP.`;
   }
   if (d.duplicateOf) {
     return `Same as ${rfqLabel(d.duplicateOf)}: same sender and files this week, so no new RFQ.`;

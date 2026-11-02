@@ -32,7 +32,8 @@ export type PoCheckKind =
   | "due_before_lead_time"
   | "quote_expired"
   | "customer_unknown"
-  | "missing_field";
+  | "missing_field"
+  | "duplicate_po";
 
 /** Something for the person entering the order to look at. */
 export interface PoCheck {

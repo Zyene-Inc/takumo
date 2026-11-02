@@ -10,8 +10,9 @@ import type { RfqText } from "../quotes/read";
 import { quoteSettings } from "../quotes/settings";
 import type { QuotedBreak } from "../quotes/types";
 import { acceptedQuotes, checkPo, type QuoteRow } from "./check";
+import { poKey } from "./entered";
 import { extractPo } from "./extract";
-import type { PoLine } from "./types";
+import { type PoLine, poLabel } from "./types";
 
 // A customer's purchase order coming in: kept, read, checked against the
 // quotes, and left "to enter" for a person. Takumo never creates the order;
@@ -213,6 +214,21 @@ export const readPo = async (orgId: string, poId: string) => {
       validityDays: settings.quoteValidityDays,
     });
     const customerId = checked.customerId ?? po.customerId;
+    // The same PO number again: a resend or a change order. Flag it, and
+    // don't mark quotes won a second time.
+    const earlier = await earlierSamePo(
+      orgId,
+      poId,
+      read.header.poNo,
+      customerId ?? null
+    );
+    if (earlier) {
+      checked.checks.push({
+        kind: "duplicate_po",
+        severity: "warn",
+        message: `Same PO number as ${poLabel(earlier.number)}, received ${earlier.receivedAt.toISOString().slice(0, 10)}: a resend or a change to it. Check before entering it again.`,
+      });
+    }
     const customer = customerId
       ? customers.find((c) => c.id === customerId)
       : undefined;
@@ -233,7 +249,9 @@ export const readPo = async (orgId: string, poId: string) => {
         } as object,
       },
     });
-    await acceptQuotes(orgId, checked.lines);
+    if (!earlier) {
+      await acceptQuotes(orgId, checked.lines);
+    }
   } catch (error) {
     log.warn("Reading a customer PO failed", { poId, error: String(error) });
     await fail(
@@ -263,6 +281,69 @@ export type PoIntakeResult =
     };
 
 /** A new customer PO from any channel, read and checked straight away. */
+/** POs with exactly these files, from the last 60 days. */
+const SAME_FILES_DAYS = 60;
+
+const sameFiles = async (orgId: string, files: PreparedFile[]) => {
+  if (files.length === 0) {
+    return null;
+  }
+  const hashes = new Set(files.map((f) => f.sha256));
+  const hits = await forOrg(database, orgId).customerPoFile.findMany({
+    where: {
+      sha256: { in: [...hashes] },
+      createdAt: { gte: new Date(Date.now() - SAME_FILES_DAYS * 86_400_000) },
+    },
+    select: {
+      po: { select: { id: true, number: true, status: true } },
+      sha256: true,
+    },
+  });
+  const byPo = new Map<
+    string,
+    { id: string; number: number; got: Set<string> }
+  >();
+  for (const h of hits) {
+    if (h.po.status === "rejected") {
+      continue;
+    }
+    const entry = byPo.get(h.po.id) ?? {
+      id: h.po.id,
+      number: h.po.number,
+      got: new Set(),
+    };
+    entry.got.add(h.sha256);
+    byPo.set(h.po.id, entry);
+  }
+  const match = [...byPo.values()].find((p) => p.got.size === hashes.size);
+  return match ? { id: match.id, number: match.number } : null;
+};
+
+/** An earlier PO with the same PO number from the same customer. */
+const earlierSamePo = async (
+  orgId: string,
+  poId: string,
+  poNo: string | null,
+  customerId: string | null
+) => {
+  const key = poKey(poNo);
+  if (!key) {
+    return null;
+  }
+  const others = await forOrg(database, orgId).customerPo.findMany({
+    where: {
+      id: { not: poId },
+      status: { not: "rejected" },
+      poNo: { not: null },
+      ...(customerId ? { customerId } : {}),
+    },
+    orderBy: { receivedAt: "desc" },
+    take: 500,
+    select: { number: true, poNo: true, receivedAt: true },
+  });
+  return others.find((o) => poKey(o.poNo) === key) ?? null;
+};
+
 export const intakePo = async (
   orgId: string,
   userId: string | null,
@@ -279,6 +360,12 @@ export const intakePo = async (
     }
   }
   const { files, skipped } = await prepareFiles(text.files);
+  // The same PO file sent again (a resend, an upload of what came by email):
+  // nothing new to read or enter.
+  const same = await sameFiles(orgId, files);
+  if (same) {
+    return { duplicate: true, ...same };
+  }
   const po = await createPo(orgId, userId, text, options);
   await saveFiles(orgId, po.id, files);
   await readPo(orgId, po.id);
