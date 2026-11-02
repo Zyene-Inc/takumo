@@ -60,7 +60,7 @@
     "@types/papaparse": "^5.5.2",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "^5.1.4",
+    "@vitejs/plugin-react": "^6.1.2",
     "dotenv": "16.6.1",
     "jsdom": "^28.1.0",
     "tailwindcss": "^4.2.1",
