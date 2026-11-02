@@ -768,6 +768,26 @@ const purchaseOrders: EntityDef = {
       synonyms: ["unit", "uom"],
     },
     {
+      key: "unitPrice",
+      label: "Unit price",
+      kind: "number",
+      synonyms: [
+        "unit price",
+        "price",
+        "unit cost",
+        "cost",
+        "price per unit",
+        "po price",
+      ],
+      hint: "Price per unit on the PO; used to price material on quotes.",
+    },
+    {
+      key: "orderedAt",
+      label: "Order date",
+      kind: "date",
+      synonyms: ["order date", "po date", "ordered", "date ordered", "issued"],
+    },
+    {
       key: "dueDate",
       label: "Due date",
       kind: "date",

@@ -57,11 +57,115 @@ export interface DraftInputs {
 
 /** RfqLine.draft */
 export interface LineDraft {
+  /** Where every number came from, one per quantity (F2.4-R6). */
+  buildUp?: PriceBuildUp[];
   estimatedAt: string;
   inputs: DraftInputs;
   response: QuoteResponse;
   /** Why the operations look the way they do (new parts). */
   routingNotes: string[];
+}
+
+/** Where one number in a price came from. F2.3-R4, F2.4-R6 */
+export interface CostSource {
+  /** ISO date the number is from (a PO's date, a fact's approval). */
+  date?: string;
+  kind:
+    | "po"
+    | "material"
+    | "routing"
+    | "erp"
+    | "actuals"
+    | "fact"
+    | "similar_part"
+    | "default"
+    | "estimator"
+    | "rate"
+    | "setting"
+    | "supplier"
+    | "history"
+    | "stock"
+    | "lead_time"
+    | "floor";
+  /** Plain words, e.g. "PO 4512, Mar 3" or "Shop labor rate". */
+  label: string;
+  /** A record to link to, e.g. a part number or quote number. */
+  ref?: string;
+}
+
+/** One operation in a price, with the basis of its times and rate. */
+export interface BuildUpOperation {
+  alternates: string[];
+  /** Where the times came from. A default is an estimate with nothing behind it. */
+  basis: CostSource;
+  cost: number | null;
+  /** Shop-floor hours for the whole quantity (after efficiency). */
+  hours: number | null;
+  isDefault: boolean;
+  rate: number | null;
+  rateSource: CostSource;
+  reason: string | null;
+  runMinPerUnit: number;
+  seq: number;
+  setupMin: number;
+  /** Setup minutes carried by each part at this quantity. */
+  setupPerPart: number;
+  workCenter: string;
+}
+
+/** An outside process (anodize, heat treat…) in a price. F2.3-R3 */
+export interface BuildUpOutside {
+  /** No price or lead time known: ask the supplier. */
+  askSupplier: boolean;
+  cost: number | null;
+  leadTimeDays: number | null;
+  process: string;
+  source: CostSource;
+  supplier: string | null;
+}
+
+/** A price for one quantity, every component with its source. F2.4-R6 */
+export interface PriceBuildUp {
+  cost: number | null;
+  lead: {
+    /** What the engine's schedule gave (material wait included). */
+    leadTimeDays: number | null;
+    /** Days before the material is in the shop for this quantity. */
+    materialWaitDays: number | null;
+    materialSource: CostSource;
+    /** Added for outside processes after machining. */
+    outsideDays: number;
+  };
+  leadTimeDays: number | null;
+  margin: {
+    /** The customer's floor, when the owner set one. */
+    floor: number | null;
+    high: number | null;
+    low: number | null;
+    pct: number | null;
+    /** The floor lifted the price above the suggested margin. */
+    raisedByFloor: boolean;
+    source: CostSource;
+    target: number | null;
+  };
+  material: {
+    basis: string;
+    cost: number | null;
+    markup: number | null;
+    perPart: number | null;
+    source: CostSource;
+    /** Stock size and form per part, from the drawing. */
+    stock: string | null;
+    unit: string | null;
+    unitPrice: number | null;
+    usagePerPart: number | null;
+  };
+  operations: BuildUpOperation[];
+  outside: BuildUpOutside[];
+  price: number | null;
+  qty: number;
+  unitCost: number | null;
+  unitPrice: number | null;
 }
 
 /** RfqLine.final: what the estimator approved. */
