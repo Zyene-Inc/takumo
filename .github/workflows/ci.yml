@@ -109,3 +109,41 @@ jobs:
           done
           docker logs engine
           exit 1
+
+  mail:
+    name: Test inbound mail (services/mail)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/mail
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/mail/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  mail-image:
+    name: Build inbound mail Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: docker build -t takumo-mail services/mail
+      - name: Start and check /health
+        run: |
+          docker run -d --name mail -p 2525:2525 -p 2526:2526 \
+            -e INBOUND_EMAIL_SECRET=ci-secret-0123456789abcdef0123456789 \
+            -e WEBHOOK_URL=https://example.invalid/api/inbound/email \
+            -e MAIL_DOMAINS=in.takumo.test -e MAIL_HOSTNAME=mx.takumo.test \
+            takumo-mail
+          for i in $(seq 1 30); do
+            curl -fsS localhost:2526/health && exit 0
+            sleep 1
+          done
+          docker logs mail
+          exit 1

@@ -40,3 +40,17 @@ updates:
     groups:
       python:
         patterns: ["*"]
+
+  # Inbound mail receiver (standalone npm package, outside the pnpm workspace).
+  - package-ecosystem: "npm"
+    directory: "/services/mail"
+    schedule:
+      interval: "monthly"
+    groups:
+      mail:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
