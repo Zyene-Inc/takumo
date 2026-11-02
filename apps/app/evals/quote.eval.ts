@@ -262,7 +262,8 @@ describe("reading RFQs", () => {
   });
 });
 
-describe.sequential("drafting, approving and winning a quote", () => {
+// Tests in a suite run one after another by default.
+describe("drafting, approving and winning a quote", () => {
   test("a part the shop makes: priced from its routing and history", async () => {
     const view = await lineView("northwind-brackets.eml");
     const result = await estimateLine(ORG_ID, view.lines[0].id, EVAL_TODAY);
