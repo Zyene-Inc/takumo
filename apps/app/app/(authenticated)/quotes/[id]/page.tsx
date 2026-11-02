@@ -65,6 +65,12 @@ const RfqPage = async ({ params }: { params: Promise<{ id: string }> }) => {
       <Workspace
         canEdit={canEditQuotes}
         customers={customers.map((c) => c.name)}
+        files={files.map((f) => ({
+          id: f.id,
+          name: f.name,
+          mediaType: f.mediaType,
+          pages: f.pages,
+        }))}
         machines={machines.map((m) => m.name)}
         materials={materials.map((m) => m.name)}
         reply={reply ? { subject: reply.subject, body: reply.text } : null}

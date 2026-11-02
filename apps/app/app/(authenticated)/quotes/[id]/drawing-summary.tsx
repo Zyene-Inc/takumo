@@ -8,6 +8,7 @@ import { useState, useTransition } from "react";
 import { tightestTolerance } from "@/lib/quotes/drawing-check";
 import type { DrawingReading, DrawingValue } from "@/lib/quotes/types";
 import { mergeRfqLines, splitRfqLine } from "../drawing-actions";
+import { useReviewFocus } from "./review-focus";
 
 export interface OtherLine {
   id: string;
@@ -17,20 +18,47 @@ export interface OtherLine {
 const where = (v: { sheet: number | null }) =>
   v.sheet ? ` (sheet ${v.sheet})` : "";
 
-/** A value read from the drawing, marked when it was hard to read. */
-const Read = ({ v }: { v: DrawingValue<unknown> | null | undefined }) => {
+const PICK =
+  "rounded text-left underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/**
+ * A value read from the drawing, marked when it was hard to read. Click it
+ * to see where on the drawing it was read (F2.6-R2).
+ */
+const Read = ({
+  v,
+  label,
+  lineId,
+}: {
+  label: string;
+  lineId: string;
+  v: DrawingValue<unknown> | null | undefined;
+}) => {
+  const { show } = useReviewFocus();
   if (!v) {
     return null;
   }
   return (
-    <span title={`As printed on sheet ${v.sheet}: ${v.text}`}>
+    <button
+      className={PICK}
+      onClick={() =>
+        show({
+          lineId,
+          sheet: v.sheet,
+          box: v.box,
+          label: `${label}: ${v.text}`,
+        })
+      }
+      title={`As printed on sheet ${v.sheet}: ${v.text}. Click to see it on the drawing.`}
+      type="button"
+    >
       {v.text}
       {v.confidence !== "high" && (
         <Badge className="ml-1.5" variant="outline">
           {v.confidence === "low" ? "unclear" : "check"}
         </Badge>
       )}
-    </span>
+    </button>
   );
 };
 
@@ -49,6 +77,7 @@ export const DrawingSummary = ({
   rfqId: string;
 }) => {
   const router = useRouter();
+  const { show } = useReviewFocus();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [mergeWith, setMergeWith] = useState("");
@@ -91,7 +120,7 @@ export const DrawingSummary = ({
               <div className="flex gap-1.5" key={label}>
                 <dt className="text-muted-foreground">{label}</dt>
                 <dd>
-                  <Read v={v} />
+                  <Read label={label} lineId={lineId} v={v} />
                 </dd>
               </div>
             ))}
@@ -100,7 +129,12 @@ export const DrawingSummary = ({
               <dt className="text-muted-foreground">Finish</dt>
               <dd className="flex flex-wrap gap-x-2">
                 {drawing.finishes.map((f) => (
-                  <Read key={`${f.sheet}-${f.text}`} v={f} />
+                  <Read
+                    key={`${f.sheet}-${f.text}`}
+                    label="Finish"
+                    lineId={lineId}
+                    v={f}
+                  />
                 ))}
               </dd>
             </div>
@@ -108,10 +142,18 @@ export const DrawingSummary = ({
           {drawing.features.length > 0 && (
             <div className="flex gap-1.5">
               <dt className="text-muted-foreground">Features</dt>
-              <dd>
-                {drawing.features
-                  .map((f) => `${f.count > 1 ? `${f.count}× ` : ""}${f.text}`)
-                  .join(", ")}
+              <dd className="flex flex-wrap gap-x-2">
+                {drawing.features.map((f) => (
+                  <Read
+                    key={`${f.sheet}-${f.kind}-${f.text}`}
+                    label="Feature"
+                    lineId={lineId}
+                    v={{
+                      ...f,
+                      text: `${f.count > 1 ? `${f.count}× ` : ""}${f.text}`,
+                    }}
+                  />
+                ))}
               </dd>
             </div>
           )}
@@ -123,16 +165,20 @@ export const DrawingSummary = ({
             Check this
           </p>
           {drawing.flags.map((f) => (
-            <div
-              className="flex gap-2 text-amber-700 dark:text-amber-400"
+            <button
+              className={`flex gap-2 text-amber-700 dark:text-amber-400 ${PICK} no-underline`}
               key={`${f.kind}-${f.message}`}
+              onClick={() =>
+                show({ lineId, sheet: f.sheet, box: f.box, label: f.message })
+              }
+              type="button"
             >
               <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
               <span>
                 {f.message}
                 <span className="text-muted-foreground">{where(f)}</span>
               </span>
-            </div>
+            </button>
           ))}
         </div>
       )}
