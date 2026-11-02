@@ -13,9 +13,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { formatHours, percent, quoteMetrics } from "@/lib/quotes/metrics";
 import {
   ACCEPTANCE_TARGET,
-  acceptance,
   SMALL_LEAD_TIME_EDIT_DAYS,
   SMALL_PRICE_EDIT,
 } from "@/lib/quotes/numbers";
@@ -51,6 +51,34 @@ const channelLabel = (source: string) =>
 const num = (value: { toString(): string } | null) =>
   value === null ? null : Number(value.toString());
 
+/** Timing metrics look at RFQs from this far back. */
+const METRIC_DAYS = 90;
+
+const Metric = ({
+  label,
+  value,
+  detail,
+  hint,
+}: {
+  detail?: string;
+  hint?: string;
+  label: string;
+  value: string;
+}) => (
+  <div className="rounded-xl border p-4">
+    <p className="text-muted-foreground text-sm">{label}</p>
+    <p className="mt-1 font-semibold text-2xl">
+      {value}
+      {detail && (
+        <span className="ml-2 font-normal text-muted-foreground text-sm">
+          {detail}
+        </span>
+      )}
+    </p>
+    {hint && <p className="mt-1 text-muted-foreground text-xs">{hint}</p>}
+  </div>
+);
+
 const RfqInboxPage = async ({
   searchParams,
 }: {
@@ -63,7 +91,8 @@ const RfqInboxPage = async ({
   const { tab: tabKey } = await searchParams;
   const tab = TABS.find((t) => t.key === tabKey) ?? TABS[0];
   const db = forOrg(database, orgId);
-  const [rfqs, counts, drafted] = await Promise.all([
+  const metricsSince = new Date(Date.now() - METRIC_DAYS * 86_400_000);
+  const [rfqs, counts, drafted, timings] = await Promise.all([
     db.rfq.findMany({
       where: tab.statuses ? { status: { in: [...tab.statuses] } } : {},
       orderBy: [{ receivedAt: "desc" }],
@@ -94,24 +123,31 @@ const RfqInboxPage = async ({
         draftPrice: true,
         leadTimeDays: true,
         draftLeadTimeDays: true,
+        estCost: true,
         status: true,
       },
+    }),
+    db.rfq.findMany({
+      where: { receivedAt: { gte: metricsSince } },
+      select: { receivedAt: true, draftedAt: true, sentAt: true },
     }),
   ]);
   const countOf = (statuses: readonly RfqStatus[] | null) =>
     counts
       .filter((c) => !statuses || statuses.includes(c.status as RfqStatus))
       .reduce((sum, c) => sum + c._count, 0);
-  const measure = acceptance(
+  const metrics = quoteMetrics(
+    timings,
     drafted.map((q) => ({
       price: num(q.price),
       draftPrice: num(q.draftPrice),
       leadTimeDays: q.leadTimeDays,
       draftLeadTimeDays: q.draftLeadTimeDays,
+      estCost: num(q.estCost),
+      status: q.status,
     }))
   );
-  const decided = drafted.filter((q) => q.status !== "open");
-  const won = decided.filter((q) => q.status === "won").length;
+  const measure = metrics.smallEdits;
 
   return (
     <>
@@ -122,44 +158,54 @@ const RfqInboxPage = async ({
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border p-4">
-            <p className="text-muted-foreground text-sm">To quote</p>
-            <p className="mt-1 font-semibold text-2xl">{countOf(OPEN)}</p>
-          </div>
-          <div className="rounded-xl border p-4">
-            <p className="text-muted-foreground text-sm">
-              Drafts sent with small edits
-            </p>
-            <p className="mt-1 font-semibold text-2xl">
-              {measure.rate === null
-                ? "—"
-                : `${Math.round(measure.rate * 100)}%`}
-              <span className="ml-2 font-normal text-muted-foreground text-sm">
-                {measure.drafted
-                  ? `${measure.accepted} of ${measure.drafted} · goal ${Math.round(ACCEPTANCE_TARGET * 100)}%`
-                  : `goal ${Math.round(ACCEPTANCE_TARGET * 100)}%`}
-              </span>
-            </p>
-            <p className="mt-1 text-muted-foreground text-xs">
-              Price within {Math.round(SMALL_PRICE_EDIT * 100)}% and lead time
-              within {SMALL_LEAD_TIME_EDIT_DAYS} days of Takumo's draft.
-            </p>
-          </div>
-          <div className="rounded-xl border p-4">
-            <p className="text-muted-foreground text-sm">
-              Win rate on drafted quotes
-            </p>
-            <p className="mt-1 font-semibold text-2xl">
-              {decided.length
-                ? `${Math.round((won / decided.length) * 100)}%`
-                : "—"}
-              <span className="ml-2 font-normal text-muted-foreground text-sm">
-                {decided.length
-                  ? `${won} of ${decided.length} decided`
-                  : "none decided yet"}
-              </span>
-            </p>
-          </div>
+          <Metric label="To quote" value={String(countOf(OPEN))} />
+          <Metric
+            detail={
+              metrics.rfqsDrafted
+                ? `median of ${metrics.rfqsDrafted}`
+                : undefined
+            }
+            hint={`RFQ arriving to the draft reply being ready, last ${METRIC_DAYS} days.`}
+            label="Time to draft"
+            value={formatHours(metrics.hoursToDraft)}
+          />
+          <Metric
+            detail={
+              metrics.rfqsSent ? `median of ${metrics.rfqsSent}` : undefined
+            }
+            hint={`RFQ arriving to the reply going out, last ${METRIC_DAYS} days.`}
+            label="Time to send"
+            value={formatHours(metrics.hoursToSent)}
+          />
+          <Metric
+            detail={
+              measure.drafted
+                ? `${measure.accepted} of ${measure.drafted} · goal ${Math.round(ACCEPTANCE_TARGET * 100)}%`
+                : `goal ${Math.round(ACCEPTANCE_TARGET * 100)}%`
+            }
+            hint={`Price within ${Math.round(SMALL_PRICE_EDIT * 100)}% and lead time within ${SMALL_LEAD_TIME_EDIT_DAYS} days of Takumo's draft.`}
+            label="Drafts sent with small edits"
+            value={percent(measure.rate)}
+          />
+          <Metric
+            detail={
+              metrics.win.decided
+                ? `${metrics.win.won} of ${metrics.win.decided} decided`
+                : "none decided yet"
+            }
+            label="Win rate on drafted quotes"
+            value={percent(metrics.win.rate)}
+          />
+          <Metric
+            detail={
+              metrics.marginQuotes
+                ? `over ${metrics.marginQuotes} quotes`
+                : undefined
+            }
+            hint="Price less estimated cost, as a share of price."
+            label="Average margin"
+            value={percent(metrics.margin)}
+          />
         </div>
 
         <nav className="flex gap-2">

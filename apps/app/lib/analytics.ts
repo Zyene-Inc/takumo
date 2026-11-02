@@ -15,6 +15,8 @@ export const EVENTS = [
   "quote_drafted",
   "quote_approved",
   "quote_outcome",
+  "reply_drafted",
+  "reply_sent",
   "fact_proposed",
   "fact_reviewed",
   "note_saved",

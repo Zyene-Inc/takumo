@@ -9,6 +9,7 @@ import {
   type LineDraft,
   type LineFinal,
   type QuotedBreak,
+  type RfqReply,
   type RfqStatus,
   rfqLabel,
 } from "./types";
@@ -122,6 +123,9 @@ export const loadRfqView = async (orgId: string, rfqId: string) => {
     error: rfq.error,
     questions: extracted?.questions ?? [],
     problems: approvalProblems(rfq),
+    reply: (rfq.reply as RfqReply | null) ?? null,
+    draftedAt: rfq.draftedAt?.toISOString() ?? null,
+    sentAt: rfq.sentAt?.toISOString() ?? null,
     lines,
   };
 };

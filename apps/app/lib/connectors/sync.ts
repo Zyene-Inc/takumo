@@ -8,6 +8,7 @@ import { budgetProblem } from "../ai-usage";
 import { track } from "../analytics";
 import { intakeRfq } from "../quotes/intake";
 import { readRfqFile } from "../quotes/read";
+import { checkSentReplies } from "../quotes/sent";
 import { rfqLabel } from "../quotes/types";
 import {
   credentials,
@@ -166,6 +167,21 @@ const accessToken = async (connection: ConnectionRow) => {
     },
   });
   return tokens.access_token;
+};
+
+/**
+ * A connected mailbox and a usable token, for writing reply drafts (F2.5).
+ * Null when the shop hasn't connected it (or disconnected it).
+ */
+export const mailboxAccess = async (
+  orgId: string,
+  provider: "gmail" | "outlook"
+) => {
+  const connection = await loadConnection(orgId, provider);
+  if (!connection || connection.status === "disconnected") {
+    return null;
+  }
+  return { connection, token: await accessToken(connection) };
 };
 
 /** Customers and estimates from QuickBooks, through the shop data import. */
@@ -656,6 +672,16 @@ const runSync = async (
       outlook: syncOutlook,
     }[provider];
     const result = await sync(orgId, connection);
+    if (provider !== "quickbooks") {
+      // Replies the estimator sent from this mailbox since the last check.
+      result.notes.push(
+        ...(await checkSentReplies(orgId, provider, connection, async () => {
+          // Reloaded: the sync may have refreshed (and rotated) the tokens.
+          const current = await loadConnection(orgId, provider);
+          return accessToken(current ?? connection);
+        }))
+      );
+    }
     await database.connection.update({
       where: { id: connection.id },
       data: {

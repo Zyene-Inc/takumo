@@ -2,6 +2,7 @@ import "server-only";
 
 import { database, forOrg, Prisma } from "@repo/database";
 import { log } from "@repo/observability/log";
+import { after } from "next/server";
 import { recordFailedUsage, recordUsage } from "../ai-usage";
 import type { MailThread } from "../connectors/thread";
 import { readDrawings } from "./drawing";
@@ -251,6 +252,11 @@ export const intakeRfq = async (
   const rfq = await createRfq(orgId, userId, text, options, kept);
   await keepFiles(orgId, rfq.id, files, kept);
   await readRfq(orgId, rfq.id);
+  if (options.sourceId) {
+    // Arrived by email (a mailbox or the RFQ address): price it and put the
+    // draft reply in the thread without anyone clicking (F2.5).
+    draftLater(orgId, rfq.id);
+  }
   return { duplicate: false, skipped, ...rfq };
 };
 
@@ -279,5 +285,19 @@ const keepFiles = async (
         } as object,
       },
     });
+  }
+};
+
+/** After the response (or the sync) finishes: estimate and draft the reply. */
+const draftLater = (orgId: string, rfqId: string) => {
+  const run = async () => {
+    const { draftWhenReady } = await import("./mailbox-reply");
+    await draftWhenReady(orgId, rfqId);
+  };
+  try {
+    after(run);
+  } catch {
+    // Outside a request (a script): the estimator drafts it from the RFQ page.
+    log.info("RFQ not drafted automatically (no request)", { rfqId });
   }
 };
