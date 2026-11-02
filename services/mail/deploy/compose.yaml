@@ -35,8 +35,50 @@ services:
       TLS_KEY_FILE: ${TLS_KEY_FILE:-}
       PORT: "2525"
       HEALTH_HOST: 0.0.0.0
+      # Malware scanning (the clamd service below). Unset it to turn scanning off.
+      CLAMD_HOST: clamd
+      CLAMD_PORT: "3310"
+    depends_on:
+      clamd:
+        condition: service_healthy
+    networks: [default, scan]
     logging:
       driver: json-file
       options:
         max-size: 10m
         max-file: "5"
+
+  # ClamAV: every message is scanned before it reaches the app (src/scan.ts).
+  # Only the mail service talks to it; no ports are published on the host. It
+  # still needs outbound internet for freshclam's signature updates, so the
+  # network isn't "internal". Multi-arch image (amd64 and arm64, the VM's).
+  # Needs about 1-1.5 GB of RAM once the signatures are loaded.
+  clamd:
+    image: clamav/clamav:1.4.3
+    restart: unless-stopped
+    networks: [scan]
+    volumes:
+      # Signatures survive restarts, so a restart doesn't re-download them.
+      - clamav-db:/var/lib/clamav
+    environment:
+      # Room for the largest message (MAX_MESSAGE_BYTES, 25 MB) plus framing.
+      CLAMD_CONF_StreamMaxLength: 30M
+    healthcheck:
+      # Ships with the image: pings clamd.
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      # The first start downloads the signatures (a few hundred MB).
+      start_period: 10m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  scan: {}
+
+volumes:
+  clamav-db: {}

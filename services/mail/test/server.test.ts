@@ -306,6 +306,6 @@ test("health endpoint", async () => {
   const { port } = health.address() as AddressInfo;
   const res = await fetch(`http://127.0.0.1:${port}/health`);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { status: "ok" });
+  assert.deepEqual(await res.json(), { status: "ok", scanner: "off" });
   assert.equal((await fetch(`http://127.0.0.1:${port}/`)).status, 404);
 });

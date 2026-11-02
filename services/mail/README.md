@@ -23,6 +23,10 @@ standalone npm package (its own `package-lock.json`), outside the pnpm workspace
 - Messages up to `MAX_MESSAGE_BYTES` (default 25 MB), counted while streaming: `552` above it.
 - Per-IP limits: new connections per minute (`421`), messages per minute (`450`), open
   connections; plus a global connection cap and idle timeouts.
+- Malware scan (ClamAV, when `CLAMD_HOST` is set): every message is scanned before the app sees
+  it. Malware → `554` (rejected, the sender is told). Scanner down or slow → `451`, so the
+  sending server keeps the message and retries; nothing is let through unscanned and nothing
+  is lost. Only the signature name is logged, never the content.
 
 One JSON line per message on stdout (time, ip, helo, envelope from, header From, recipients, size,
 TLS, auth results, webhook status, SMTP result, duration). Bodies and the secret are never logged.
@@ -83,7 +87,10 @@ Response handling:
 | `TLS_CERT_FILE`, `TLS_KEY_FILE` | no | | PEM files; STARTTLS is offered once they load. Polled every minute and reloaded when they change (Caddy renews them). The deploy script sets these. |
 | `MAX_MESSAGE_BYTES` | no | `26214400` (25 MB) | Size limit |
 | `PORT` | no | `25` | SMTP port (the container listens on 2525; compose maps host 25 to it) |
-| `HEALTH_PORT`, `HEALTH_HOST` | no | `2526`, `127.0.0.1` | `GET /health` → `{"status":"ok"}` |
+| `HEALTH_PORT`, `HEALTH_HOST` | no | `2526`, `127.0.0.1` | `GET /health` → `{"status":"ok","scanner":"ok"\|"off"}`; `503` with `"scanner":"unreachable"` when clamd is down |
+| `CLAMD_HOST` | no (set in compose) | | clamd host. Unset: messages aren't scanned (logged once at startup) |
+| `CLAMD_PORT` | no | `3310` | clamd TCP port |
+| `SCAN_TIMEOUT_MS` | no | `30000` | Time clamd has to scan one message; after it, `451` |
 | `MAX_CONNECTIONS` | no | `100` | Concurrent connections, all clients |
 | `MAX_CONNECTIONS_PER_IP` | no | `10` | Concurrent connections per IP |
 | `CONNECTIONS_PER_IP_PER_MINUTE` | no | `60` | New connections per IP per minute |
@@ -92,6 +99,25 @@ Response handling:
 | `WEBHOOK_TIMEOUT_MS` | no | `60000` | Time the app has to answer |
 
 The service refuses to start when a required value is missing or invalid; compose refuses too.
+
+## Malware scanning (ClamAV)
+
+Compose runs `clamav/clamav` (pinned, multi-arch: works on the VM's arm64) as a `clamd` service
+next to the receiver. It publishes no ports; only the receiver reaches it, on its own network.
+It does need outbound internet: freshclam inside the container updates the signatures.
+
+- **RAM:** about 1–1.5 GB once the signatures are loaded (more briefly while they reload).
+  Check the VM has it free next to the engine: `free -h`.
+- **First start:** downloads the signatures (a few hundred MB) before it's healthy; the receiver
+  waits for it (`depends_on: service_healthy`, up to 10 minutes). They're kept in the
+  `clamav-db` volume, so restarts are quick.
+- **Before upgrading the image tag,** confirm the new tag still has an arm64 build:
+  `docker manifest inspect clamav/clamav:<tag> | grep arm64`.
+- **Check it's working:** `curl -s 127.0.0.1:2526/health` shows `"scanner":"ok"`. Then send a
+  message whose body is the standard EICAR antivirus test string (a harmless 68-character text
+  every scanner treats as a virus; see eicar.org). The receiver answers `554 ... malware` and the
+  log shows `"malware":"Eicar-Test-Signature"`. The test suite builds that string from parts
+  (`test/scan.test.ts`) and uses a fake clamd, so tests never need ClamAV installed.
 
 ## Deploying (Oracle Cloud VM, next to the engine)
 
