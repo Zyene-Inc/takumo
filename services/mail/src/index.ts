@@ -1,6 +1,7 @@
 import { loadConfig } from "./config.js";
 import { createHealthServer } from "./health.js";
 import { log } from "./log.js";
+import { pingScanner } from "./scan.js";
 import { createMailServer } from "./server.js";
 import { CertificateWatcher } from "./tls.js";
 
@@ -28,7 +29,18 @@ if (config.tlsCertFile && config.tlsKeyFile) {
   watcher.start();
 }
 
-const health = createHealthServer();
+const scan = config.scan;
+if (!scan) {
+  log("scan_off", {
+    message: "CLAMD_HOST is not set: messages are not scanned for malware",
+  });
+}
+const health = createHealthServer(async () => {
+  if (!scan) {
+    return "off";
+  }
+  return (await pingScanner(scan)) ? "ok" : "unreachable";
+});
 health.listen(config.healthPort, config.healthHost);
 
 const port = await mail.listen();
@@ -38,6 +50,7 @@ log("started", {
   domains: config.domains,
   tls: Boolean(watcher?.current),
   maxMessageBytes: config.maxMessageBytes,
+  scanner: scan ? `${scan.host}:${scan.port}` : "off",
 });
 
 let stopping = false;

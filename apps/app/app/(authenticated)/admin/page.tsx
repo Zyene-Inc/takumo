@@ -100,7 +100,10 @@ const AdminPage = async () => {
   const quotingSince = new Date(Date.now() - QUOTING_DAYS * 86_400_000);
   const [rfqTimes, quoteFigures] = await Promise.all([
     database.rfq.findMany({
-      where: { receivedAt: { gte: quotingSince } },
+      where: {
+        receivedAt: { gte: quotingSince },
+        status: { notIn: ["new_sender", "filtered"] },
+      },
       select: { orgId: true, receivedAt: true, draftedAt: true, sentAt: true },
     }),
     database.quote.findMany({

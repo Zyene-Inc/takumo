@@ -200,6 +200,10 @@ model Customer {
   paymentTermDays Int?
   // Lowest margin the owner accepts for this customer (0.25 = 25%).
   marginFloor     Float?
+  // How to recognise their email: contact addresses and company domains,
+  // from the ERP's customer report (no typing).
+  emails          String[]  @default([])
+  domains         String[]  @default([])
   createdAt       DateTime  @default(now())
   // Last time the shop's ERP report updated it; read-only in Takumo then.
   syncedAt        DateTime?
@@ -522,6 +526,10 @@ model ShopSettings {
   outsideProcesses  Json?
   signature         String?
   replyIntro        String?
+  // Learned from the RFQ inbox: senders an estimator quoted ("Quote it") and
+  // senders they blocked. An address, or @domain for a company domain.
+  knownSenders      String[] @default([])
+  blockedSenders    String[] @default([])
   updatedAt         DateTime @updatedAt
 }
 

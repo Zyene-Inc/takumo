@@ -13,7 +13,7 @@ import { featureProblem } from "@/lib/billing";
 import { approveRfq, type Outcome, recordOutcome } from "@/lib/quotes/approve";
 import { estimateLine } from "@/lib/quotes/estimate";
 import { estimateRfqLines } from "@/lib/quotes/estimate-rfq";
-import { intakeRfq, readRfq } from "@/lib/quotes/intake";
+import { intakeRfq, readRfq, startFullWork } from "@/lib/quotes/intake";
 import { writeReplyDraft } from "@/lib/quotes/mailbox-reply";
 import { matchCustomer, matchMaterial, matchPart } from "@/lib/quotes/match";
 import { parseQtys } from "@/lib/quotes/numbers";
@@ -23,6 +23,7 @@ import {
   readPasted,
   readRfqUpload,
 } from "@/lib/quotes/read";
+import { learnSender } from "@/lib/quotes/screening";
 import { type LineFinal, MAX_QTY_BREAKS, rfqLabel } from "@/lib/quotes/types";
 import { isUploadId, MAX_UPLOAD_BYTES } from "@/lib/quotes/upload-limits";
 import { keepUploadPart, takeUpload } from "@/lib/quotes/upload-parts";
@@ -204,6 +205,83 @@ export const rereadRfq = async (rfqId: string): Promise<Result> => {
     return { ok: false, error: "This RFQ can't be read again." };
   }
   await readRfq(access.orgId, rfqId);
+  refresh(rfqId);
+  return { ok: true };
+};
+
+const WAITING = ["new_sender", "filtered"];
+
+/** Rfq.extracted with its screening note updated (the inbox shows it). */
+const withScreen = (extracted: unknown, lane: string, reason: string) => ({
+  ...((extracted as object | null) ?? {}),
+  screen: {
+    ...((extracted as { screen?: object } | null)?.screen ?? {}),
+    lane,
+    reason,
+  },
+});
+
+/**
+ * Screening's three answers for an RFQ waiting in the inbox: quote it
+ * (Takumo reads, prices and drafts it, and knows the sender next time), not
+ * an RFQ, or block the sender for good.
+ */
+export const screenRfq = async (
+  rfqId: string,
+  answer: "quote" | "not_rfq" | "block"
+): Promise<Result> => {
+  const access = await authorize("quotes:write");
+  if (!access.ok) {
+    return access;
+  }
+  const db = forOrg(database, access.orgId);
+  const rfq = await db.rfq.findFirst({
+    where: { id: rfqId },
+    select: { status: true, sender: true, extracted: true },
+  });
+  if (!(rfq && WAITING.includes(rfq.status))) {
+    return { ok: false, error: "This RFQ isn't waiting for a decision." };
+  }
+  if (answer === "quote") {
+    const locked = await featureProblem(access.orgId, "quotes");
+    if (locked) {
+      return { ok: false, error: locked };
+    }
+    const claimed = await db.rfq.updateMany({
+      where: { id: rfqId, status: { in: WAITING } },
+      data: {
+        status: "reading",
+        error: null,
+        extracted: withScreen(
+          rfq.extracted,
+          "full",
+          "Someone chose to quote it."
+        ),
+      },
+    });
+    if (claimed.count === 0) {
+      return { ok: false, error: "This RFQ isn't waiting for a decision." };
+    }
+    await learnSender(access.orgId, rfq.sender, "knownSenders");
+    await startFullWork(access.orgId, rfqId);
+  } else {
+    if (answer === "block") {
+      await learnSender(access.orgId, rfq.sender, "blockedSenders");
+    }
+    await db.rfq.updateMany({
+      where: { id: rfqId, status: { in: WAITING } },
+      data: {
+        status: "filtered",
+        extracted: withScreen(
+          rfq.extracted,
+          "filtered",
+          answer === "block"
+            ? "You blocked this sender."
+            : "Marked as not a request for quote."
+        ),
+      },
+    });
+  }
   refresh(rfqId);
   return { ok: true };
 };

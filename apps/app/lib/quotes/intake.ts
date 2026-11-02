@@ -15,6 +15,12 @@ import {
 } from "./files";
 import { partsMentioned } from "./match";
 import type { RfqText } from "./read";
+import type { Lane } from "./screen";
+import {
+  type MailboxContext,
+  type ScreenNote,
+  screenMailboxRfq,
+} from "./screening";
 
 const NUMBER_RETRIES = 5;
 
@@ -24,8 +30,13 @@ const createRfq = async (
   userId: string | null,
   text: RfqText,
   options: IntakeOptions,
-  /** Kept on Rfq.extracted beside the reading: { mail, intake }. */
-  kept: object
+  /** Kept on Rfq.extracted beside the reading: { mail, intake, screen }. */
+  kept: object,
+  /** Where screening put it: reading now, or waiting for a person. */
+  lane: { status: string; customerId: string | null } = {
+    status: "reading",
+    customerId: null,
+  }
 ) => {
   for (let attempt = 0; ; attempt += 1) {
     const last = await forOrg(database, orgId).rfq.findFirst({
@@ -44,6 +55,8 @@ const createRfq = async (
           sender: text.sender,
           body: text.body,
           createdBy: userId,
+          status: lane.status,
+          customerId: lane.customerId,
           // Kept through every reading (see readRfq).
           ...(Object.keys(kept).length ? { extracted: kept } : {}),
         },
@@ -74,11 +87,12 @@ const readingProblem = (read: { isRfq: boolean; lines: unknown[] }) => {
 const keptKeys = (extracted: unknown) => {
   const e =
     extracted && typeof extracted === "object"
-      ? (extracted as { intake?: unknown; mail?: unknown })
+      ? (extracted as { intake?: unknown; mail?: unknown; screen?: unknown })
       : {};
   return {
     ...(e.mail ? { mail: e.mail } : {}),
     ...(e.intake ? { intake: e.intake } : {}),
+    ...(e.screen ? { screen: e.screen } : {}),
   };
 };
 
@@ -113,7 +127,13 @@ export const readRfq = async (orgId: string, rfqId: string) => {
   const db = forOrg(database, orgId);
   const rfq = await db.rfq.findFirst({
     where: { id: rfqId },
-    select: { id: true, body: true, receivedAt: true, extracted: true },
+    select: {
+      id: true,
+      body: true,
+      receivedAt: true,
+      extracted: true,
+      customerId: true,
+    },
   });
   if (!rfq) {
     return;
@@ -144,7 +164,8 @@ export const readRfq = async (orgId: string, rfqId: string) => {
         where: { id: rfqId },
         data: {
           customerName: read.customerName,
-          customerId: read.customerId,
+          // The sender may already be matched to a customer (screening).
+          customerId: read.customerId ?? rfq.customerId,
           contact: read.contact,
           requestedDate: read.requestedDate
             ? new Date(read.requestedDate)
@@ -210,6 +231,12 @@ export interface IntakeOptions {
   fileName?: string | null;
   /** The mail thread, for replying in it and spotting the same RFQ again. */
   mail?: MailThread | null;
+  /**
+   * Read by Takumo from a connected mailbox: screen it first, so only real
+   * RFQs from known senders get the full (paid) work. Unset for RFQs a person
+   * uploaded, pasted, dictated or forwarded: they already judged it.
+   */
+  screen?: MailboxContext;
   /** The message id, for RFQs from a mailbox (never read twice). */
   sourceId?: string | null;
 }
@@ -220,6 +247,8 @@ export type IntakeResult =
       id: string;
       number: number;
       receivedAt: Date;
+      /** full: read and drafted; otherwise waiting in the inbox. */
+      lane: Lane;
       /** Files left out (too large, too many). */
       skipped: string[];
     }
@@ -245,19 +274,39 @@ export const intakeRfq = async (
   if (earlier) {
     return { duplicate: true, id: earlier.id, number: earlier.number };
   }
+  const screening = options.screen
+    ? await screenMailboxRfq(orgId, text, options.screen)
+    : null;
+  const lane: Lane = screening?.lane ?? "full";
   const kept = {
     ...(options.mail ? { mail: options.mail } : {}),
     ...(skipped.length ? { intake: { skipped } satisfies IntakeNote } : {}),
+    ...(screening
+      ? {
+          screen: {
+            lane,
+            reason: screening.reason,
+            summary: screening.summary,
+          } satisfies ScreenNote,
+        }
+      : {}),
   };
-  const rfq = await createRfq(orgId, userId, text, options, kept);
+  const rfq = await createRfq(orgId, userId, text, options, kept, {
+    status: lane === "full" ? "reading" : lane,
+    customerId: screening?.customerId ?? null,
+  });
   await keepFiles(orgId, rfq.id, files, kept);
+  if (lane !== "full") {
+    // Waits in the inbox for a person: nothing is read or priced yet.
+    return { duplicate: false, lane, skipped, ...rfq };
+  }
   await readRfq(orgId, rfq.id);
   if (options.sourceId) {
     // Arrived by email (a mailbox or the RFQ address): price it and put the
     // draft reply in the thread without anyone clicking (F2.5).
     draftLater(orgId, rfq.id);
   }
-  return { duplicate: false, skipped, ...rfq };
+  return { duplicate: false, lane, skipped, ...rfq };
 };
 
 /** Saving the files must not lose the RFQ: a failure is logged and noted. */
@@ -300,4 +349,13 @@ const draftLater = (orgId: string, rfqId: string) => {
     // Outside a request (a script): the estimator drafts it from the RFQ page.
     log.info("RFQ not drafted automatically (no request)", { rfqId });
   }
+};
+
+/**
+ * Someone said "quote it" to an RFQ that waited in the inbox (new sender, or
+ * filtered by mistake): read it now, then price it and draft the reply.
+ */
+export const startFullWork = async (orgId: string, rfqId: string) => {
+  await readRfq(orgId, rfqId);
+  draftLater(orgId, rfqId);
 };

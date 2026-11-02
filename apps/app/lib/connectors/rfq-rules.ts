@@ -4,6 +4,7 @@
 // subject words and narrow it down (attachments only, known senders only),
 // saved in `Connection.settings.rfqRules`. Pure, so tested without a mailbox.
 
+import { SHARED_DOMAINS } from "@repo/ingest";
 import { domainOf, emailAddress, senderAllowed } from "../inbound/verify";
 
 /** Subject words and phrases that mark a request for quote. */
@@ -123,25 +124,6 @@ export const gmailQuery = (
       : gmailSubjectQuery(rules.extraTerms);
   return `${base.slice(0, 500)}${rules.requireAttachments ? " has:attachment" : ""}`;
 };
-
-// Shared domains: a customer writing from one doesn't vouch for everyone else
-// there, so those are matched by full address.
-const SHARED_DOMAINS = new Set([
-  "gmail.com",
-  "googlemail.com",
-  "outlook.com",
-  "hotmail.com",
-  "live.com",
-  "msn.com",
-  "yahoo.com",
-  "icloud.com",
-  "me.com",
-  "aol.com",
-  "proton.me",
-  "protonmail.com",
-  "gmx.com",
-  "mail.com",
-]);
 
 /**
  * Sender rules from the "From" of earlier RFQs that were linked to a

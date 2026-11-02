@@ -10,6 +10,8 @@ export interface ParsedEmail {
   attachments: EmailAttachment[];
   body: string;
   from: string | null;
+  /** The top-level headers, lower-cased names (the first of each). */
+  headers: ReadonlyMap<string, string>;
   subject: string | null;
 }
 
@@ -177,5 +179,6 @@ export const parseEmail = (raw: string): ParsedEmail => {
     from: from ? decodeWords(from) : null,
     body: (found.plain.length ? found.plain : found.html).join("\n\n").trim(),
     attachments: found.attachments,
+    headers: top.headers,
   };
 };
