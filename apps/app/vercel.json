@@ -9,6 +9,10 @@
     {
       "path": "/api/cron/connectors",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/erp-health",
+      "schedule": "0 15 * * *"
     }
   ]
 }

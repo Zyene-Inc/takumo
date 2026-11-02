@@ -13,6 +13,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/admin";
 import { monthlyBudget } from "@/lib/ai-usage";
+import { lateReports } from "@/lib/erp/health";
 import { Header } from "../components/header";
 import { ExtendTrial } from "./extend-trial";
 
@@ -67,6 +68,43 @@ const AdminPage = async () => {
       _sum: { costUsd: true },
     }),
   ]);
+  // Shops whose data from their systems is failing (F1.6).
+  const [staleReports, brokenConnections, needsMapping] = await Promise.all([
+    database.erpReport.findMany({
+      where: { status: "active" },
+      select: {
+        orgId: true,
+        name: true,
+        status: true,
+        lastReceivedAt: true,
+        updatedAt: true,
+      },
+    }),
+    database.connection.findMany({
+      where: { status: "error" },
+      select: { orgId: true, provider: true, lastError: true },
+    }),
+    database.erpReport.groupBy({
+      by: ["orgId"],
+      where: { status: "needs_mapping" },
+      _count: true,
+    }),
+  ]);
+  const orgName = new Map(orgs.map((o) => [o.id, o.name]));
+  const syncProblems = [
+    ...lateReports(staleReports, now).map((r) => ({
+      org: orgName.get(r.orgId) ?? r.orgId,
+      problem: `ERP report "${r.name}" late (last ${r.lastReceivedAt ? r.lastReceivedAt.toISOString().slice(0, 10) : "never"})`,
+    })),
+    ...brokenConnections.map((c) => ({
+      org: orgName.get(c.orgId) ?? c.orgId,
+      problem: `${c.provider} connection error${c.lastError ? `: ${c.lastError.slice(0, 120)}` : ""}`,
+    })),
+    ...needsMapping.map((n) => ({
+      org: orgName.get(n.orgId) ?? n.orgId,
+      problem: `${n._count} ERP report${n._count === 1 ? "" : "s"} waiting for column check`,
+    })),
+  ];
   const aiSpend = (id: string) =>
     Number(ai.find((r) => r.orgId === id)?._sum.costUsd ?? 0);
   const aiTotal = ai.reduce((sum, r) => sum + Number(r._sum.costUsd ?? 0), 0);
@@ -214,6 +252,22 @@ const AdminPage = async () => {
             </TableBody>
           </Table>
         </div>
+        <section className="grid gap-2">
+          <h2 className="font-semibold text-lg">Sync problems</h2>
+          {syncProblems.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              Every shop's ERP reports and connections are working.
+            </p>
+          ) : (
+            <ul className="grid gap-1 text-sm">
+              {syncProblems.map((p) => (
+                <li key={`${p.org}-${p.problem}`}>
+                  <span className="font-medium">{p.org}</span>: {p.problem}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
     </>
   );

@@ -17,6 +17,7 @@ import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
 import {
   EmptyState,
+  ErpBadge,
   FilterNote,
   formValue,
   textFilter,
@@ -85,7 +86,12 @@ const CustomersPage = async ({
               <TableBody>
                 {customers.map((c) => (
                   <TableRow key={c.id}>
-                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {c.name}
+                        <ErpBadge syncedAt={c.syncedAt} />
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right">
                       {c.paymentTermDays === null
                         ? "—"
@@ -103,7 +109,7 @@ const CustomersPage = async ({
                     <TableCell>
                       <div className="flex justify-end">
                         <RecordDialog
-                          canEdit={canEditShop}
+                          canEdit={canEditShop && !c.syncedAt}
                           entity="customers"
                           initial={{
                             name: c.name,
@@ -122,7 +128,7 @@ const CustomersPage = async ({
                           }
                         />
                         <DeleteButton
-                          canEdit={canEditShop}
+                          canEdit={canEditShop && !c.syncedAt}
                           entity="customers"
                           id={c.id}
                           name={c.name}

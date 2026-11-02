@@ -15,7 +15,15 @@ const securityHeaders = env.FLAGS_SECRET
 // requires a signed-in user. Cron routes check CRON_SECRET themselves; the
 // health check reveals only up/down.
 export default authMiddleware(() => securityHeaders(), {
-  publicPaths: ["/sign-in", "/sign-up", "/callback", "/.well-known", "/api/cron", "/api/health"],
+  publicPaths: [
+    "/sign-in",
+    "/sign-up",
+    "/callback",
+    "/.well-known",
+    "/api/cron",
+    "/api/health",
+    "/api/inbound",
+  ],
 }) as unknown as NextProxy;
 
 export const config = {

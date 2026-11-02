@@ -33,6 +33,9 @@ export const ENTITY_KEYS = [
   "orders",
   "quotes",
   "jobs",
+  "stock",
+  "purchaseOrders",
+  "operators",
 ] as const;
 
 export type EntityKey = (typeof ENTITY_KEYS)[number];
@@ -649,6 +652,175 @@ const jobs: EntityDef = {
   ],
 };
 
+const stock: EntityDef = {
+  key: "stock",
+  label: "Stock on hand",
+  description: "How much of each material is in stock, by location.",
+  identity: ["material", "location"],
+  fields: [
+    {
+      key: "material",
+      label: "Material",
+      kind: "text",
+      required: true,
+      synonyms: [
+        "material",
+        "item",
+        "part",
+        "stock item",
+        "raw material",
+        "description",
+      ],
+    },
+    {
+      key: "location",
+      label: "Location",
+      kind: "text",
+      synonyms: ["location", "warehouse", "bin", "site", "loc"],
+    },
+    {
+      key: "qtyOnHand",
+      label: "On hand",
+      kind: "number",
+      required: true,
+      synonyms: [
+        "on hand",
+        "qty on hand",
+        "quantity on hand",
+        "onhand",
+        "available",
+        "qty",
+        "quantity",
+        "in stock",
+      ],
+    },
+    {
+      key: "qtyAllocated",
+      label: "Allocated",
+      kind: "number",
+      synonyms: ["allocated", "committed", "reserved", "qty allocated"],
+    },
+    {
+      key: "unit",
+      label: "Unit",
+      kind: "text",
+      synonyms: ["unit", "uom", "unit of measure"],
+    },
+  ],
+};
+
+const purchaseOrders: EntityDef = {
+  key: "purchaseOrders",
+  label: "Open purchase orders",
+  description: "Material on order: PO lines with quantity and due date.",
+  identity: ["poNo", "lineNo"],
+  fields: [
+    {
+      key: "poNo",
+      label: "PO number",
+      kind: "text",
+      required: true,
+      synonyms: ["po", "po number", "po no", "purchase order", "po #"],
+    },
+    {
+      key: "lineNo",
+      label: "Line",
+      kind: "integer",
+      synonyms: ["line", "line no", "line number", "po line"],
+    },
+    {
+      key: "material",
+      label: "Material",
+      kind: "text",
+      required: true,
+      synonyms: ["material", "item", "part", "description"],
+    },
+    {
+      key: "supplier",
+      label: "Supplier",
+      kind: "text",
+      synonyms: ["supplier", "vendor", "vendor name"],
+    },
+    {
+      key: "qtyOrdered",
+      label: "Quantity ordered",
+      kind: "number",
+      required: true,
+      positive: true,
+      synonyms: [
+        "qty ordered",
+        "quantity ordered",
+        "order qty",
+        "qty",
+        "quantity",
+      ],
+    },
+    {
+      key: "qtyReceived",
+      label: "Quantity received",
+      kind: "number",
+      synonyms: ["qty received", "received", "quantity received"],
+    },
+    {
+      key: "unit",
+      label: "Unit",
+      kind: "text",
+      synonyms: ["unit", "uom"],
+    },
+    {
+      key: "dueDate",
+      label: "Due date",
+      kind: "date",
+      required: true,
+      synonyms: [
+        "due date",
+        "due",
+        "promise date",
+        "expected",
+        "eta",
+        "delivery date",
+        "need by",
+      ],
+    },
+  ],
+};
+
+const operators: EntityDef = {
+  key: "operators",
+  label: "Operators",
+  description:
+    "The people who run the machines, and which machines they can run.",
+  identity: ["name"],
+  fields: [
+    {
+      key: "name",
+      label: "Name",
+      kind: "text",
+      required: true,
+      synonyms: ["name", "employee", "employee name", "operator", "machinist"],
+    },
+    {
+      key: "skills",
+      label: "Machines / skills",
+      kind: "list",
+      synonyms: [
+        "machines",
+        "skills",
+        "work centers",
+        "qualified on",
+        "certifications",
+      ],
+      hint: "Comma-separated machine names",
+    },
+    {
+      key: "hourlyRate",
+      label: "Hourly rate",
+      kind: "number",
+      synonyms: ["rate", "hourly rate", "labor rate", "wage"],
+    },
+  ],
+};
+
 export const ENTITIES: Readonly<Record<EntityKey, EntityDef>> = {
   workCenters,
   customers,
@@ -658,6 +830,9 @@ export const ENTITIES: Readonly<Record<EntityKey, EntityDef>> = {
   orders,
   quotes,
   jobs,
+  stock,
+  purchaseOrders,
+  operators,
 };
 
 // A CSV header row users can download and fill in.

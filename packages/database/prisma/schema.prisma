@@ -66,28 +66,33 @@ model Org {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  members       Member[]
-  workCenters   WorkCenter[]
-  calendarDays  CalendarDay[]
-  operators     Operator[]
-  materials     Material[]
-  customers     Customer[]
-  parts         Part[]
-  routings      Routing[]
-  bomLines      BomLine[]
-  orders        Order[]
-  jobs          Job[]
-  quotes        Quote[]
-  rfqs          Rfq[]
-  rfqLines      RfqLine[]
-  sources       Source[]
-  docChunks     DocChunk[]
-  facts         Fact[]
-  notes         Note[]
-  connections   Connection[]
-  aiUsage       AiUsage[]
-  conversations Conversation[]
-  scheduleRuns  ScheduleRun[]
+  members            Member[]
+  workCenters        WorkCenter[]
+  calendarDays       CalendarDay[]
+  operators          Operator[]
+  materials          Material[]
+  customers          Customer[]
+  parts              Part[]
+  routings           Routing[]
+  bomLines           BomLine[]
+  orders             Order[]
+  jobs               Job[]
+  quotes             Quote[]
+  rfqs               Rfq[]
+  rfqLines           RfqLine[]
+  sources            Source[]
+  docChunks          DocChunk[]
+  facts              Fact[]
+  notes              Note[]
+  connections        Connection[]
+  aiUsage            AiUsage[]
+  conversations      Conversation[]
+  scheduleRuns       ScheduleRun[]
+  inboundAddresses   InboundAddress[]
+  inboundMessages    InboundMessage[]
+  erpReports         ErpReport[]
+  stockLevels        StockLevel[]
+  purchaseOrderLines PurchaseOrderLine[]
 }
 
 model Member {
@@ -119,6 +124,8 @@ model WorkCenter {
   sourceId   String?
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
+  // Last time the shop's ERP report updated it; read-only in Takumo then.
+  syncedAt   DateTime?
 
   calendar CalendarDay[]
   routings Routing[]
@@ -143,13 +150,15 @@ model CalendarDay {
 }
 
 model Operator {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   orgId      String
-  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name       String
   skills     String[]
-  hourlyRate Decimal? @db.Decimal(10, 2)
-  createdAt  DateTime @default(now())
+  hourlyRate Decimal?  @db.Decimal(10, 2)
+  createdAt  DateTime  @default(now())
+  // Last time the shop's ERP report updated it; read-only in Takumo then.
+  syncedAt   DateTime?
 
   @@index([orgId])
 }
@@ -164,21 +173,27 @@ model Material {
   unit         String     @default("ea")
   leadTimeDays Int?
   provenance   Provenance @default(data)
+  // Last time the shop's ERP report updated it; read-only in Takumo then.
+  syncedAt     DateTime?
 
-  parts    Part[]
-  rfqLines RfqLine[]
+  parts              Part[]
+  rfqLines           RfqLine[]
+  stock              StockLevel[]
+  purchaseOrderLines PurchaseOrderLine[]
 
   @@unique([orgId, name])
   @@index([orgId])
 }
 
 model Customer {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   orgId           String
-  org             Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org             Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name            String
   paymentTermDays Int?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
+  // Last time the shop's ERP report updated it; read-only in Takumo then.
+  syncedAt        DateTime?
 
   parts  Part[]
   orders Order[]
@@ -190,16 +205,21 @@ model Customer {
 }
 
 model Part {
-  id          String   @id @default(uuid())
-  orgId       String
-  org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  partNo      String
-  rev         String   @default("A")
-  description String?
-  customerId  String?
-  materialId  String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String    @id @default(uuid())
+  orgId              String
+  org                Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  partNo             String
+  rev                String    @default("A")
+  description        String?
+  customerId         String?
+  materialId         String?
+  // Stock one part uses (e.g. 0.5 ft of bar), for material availability.
+  materialQtyPerUnit Float?
+  materialUnit       String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  // Last time the shop's ERP report updated it; read-only in Takumo then.
+  syncedAt           DateTime?
 
   customer  Customer? @relation(fields: [customerId], references: [id])
   material  Material? @relation(fields: [materialId], references: [id])
@@ -226,6 +246,8 @@ model Routing {
   altWorkCenterIds String[]
   provenance       Provenance @default(data)
   confidence       Float      @default(1.0)
+  // Last time the shop's ERP report updated it; read-only in Takumo then.
+  syncedAt         DateTime?
 
   part       Part       @relation(fields: [partId], references: [id], onDelete: Cascade)
   workCenter WorkCenter @relation(fields: [workCenterId], references: [id])
@@ -266,6 +288,8 @@ model Order {
   status     OrderStatus @default(open)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
+  // Last time the shop's ERP report updated it; read-only in Takumo then.
+  syncedAt   DateTime?
 
   customer Customer? @relation(fields: [customerId], references: [id])
   part     Part      @relation(fields: [partId], references: [id])
@@ -299,6 +323,8 @@ model Job {
   // A planner fixed this operation to workCenterId and plannedStart's day on
   // the schedule board; re-planning keeps it there.
   pinned               Boolean   @default(false)
+  // Last time the shop's ERP report updated it; read-only in Takumo then.
+  syncedAt             DateTime?
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -618,4 +644,107 @@ model AiUsage {
   createdAt        DateTime @default(now())
 
   @@index([orgId, createdAt])
+}
+
+// A shop's email addresses on the inbound domain: erp-<token>@ for nightly
+// ERP reports, rfq-<token>@ for forwarded RFQs (services/mail delivers them).
+model InboundAddress {
+  id             String    @id @default(uuid())
+  orgId          String
+  org            Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  kind           String // erp | rfq
+  token          String    @unique
+  // Who may send to it: addresses ("reports@shop.com") or domains ("@shop.com").
+  allowedSenders String[]  @default([])
+  createdAt      DateTime  @default(now())
+  rotatedAt      DateTime?
+
+  @@unique([orgId, kind])
+}
+
+// Every message received, once (by content hash): what happened to it.
+model InboundMessage {
+  id          String   @id @default(uuid())
+  orgId       String
+  org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  kind        String // erp | rfq
+  sha256      String
+  fromAddress String?
+  subject     String?
+  // received | processed | rejected | failed | needs_mapping
+  status      String   @default("received")
+  // What was done or why not, for the integrations page.
+  detail      Json?
+  receivedAt  DateTime @default(now())
+
+  @@unique([orgId, sha256])
+  @@index([orgId, receivedAt])
+}
+
+// One recurring ERP report (recognised by its header row) and how its
+// columns map to Takumo's data, confirmed once by the shop.
+model ErpReport {
+  id             String    @id @default(uuid())
+  orgId          String
+  org            Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name           String // the attachment's name, e.g. "Open Jobs.xlsx"
+  headerKey      String // hash of its normalised header row
+  headers        String[]
+  entity         String // an ingest EntityKey
+  mapping        Json? // ColumnMapping, once confirmed
+  // full: the report lists everything (open orders missing from it are done);
+  // changes: only what changed.
+  mode           String    @default("full")
+  // needs_mapping | active | paused
+  status         String    @default("needs_mapping")
+  // The rows waiting for the mapping to be confirmed (latest file only).
+  pending        Json?
+  lastReceivedAt DateTime?
+  lastImportAt   DateTime?
+  lastResult     Json?
+  lastAlertAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([orgId, headerKey])
+}
+
+// Stock on hand per material and location, from the ERP.
+model StockLevel {
+  id           String    @id @default(uuid())
+  orgId        String
+  org          Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  materialId   String
+  material     Material  @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  location     String    @default("")
+  qtyOnHand    Float
+  qtyAllocated Float     @default(0)
+  unit         String?
+  asOf         DateTime  @default(now())
+  syncedAt     DateTime?
+
+  @@unique([orgId, materialId, location])
+  @@index([orgId])
+}
+
+// Open purchase-order lines for material, from the ERP.
+model PurchaseOrderLine {
+  id          String    @id @default(uuid())
+  orgId       String
+  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  poNo        String
+  lineNo      Int       @default(1)
+  materialId  String?
+  material    Material? @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  supplier    String?
+  qtyOrdered  Float
+  qtyReceived Float     @default(0)
+  unit        String?
+  dueDate     DateTime  @db.Date
+  // open | partial | received | cancelled
+  status      String    @default("open")
+  syncedAt    DateTime?
+
+  @@unique([orgId, poNo, lineNo])
+  @@index([orgId, dueDate])
 }

@@ -15,7 +15,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { Header } from "../../components/header";
-import { EmptyState, FilterNote, textFilter } from "../components/format";
+import {
+  EmptyState,
+  ErpBadge,
+  FilterNote,
+  textFilter,
+} from "../components/format";
 import { RecordDialog } from "../components/record-dialog";
 
 export const metadata: Metadata = { title: "Parts & routings · Takumo" };
@@ -106,6 +111,7 @@ const PartsPage = async ({
                       >
                         {p.partNo}
                       </Link>
+                      <ErpBadge syncedAt={p.syncedAt} />
                     </TableCell>
                     <TableCell>{p.rev}</TableCell>
                     <TableCell className="max-w-64 truncate">

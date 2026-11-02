@@ -18,6 +18,7 @@ import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
 import {
   EmptyState,
+  ErpBadge,
   FilterNote,
   formValue,
   isoDate,
@@ -146,7 +147,12 @@ const OrdersPage = async ({
                     (o.status === "open" || o.status === "in_progress");
                   return (
                     <TableRow key={o.id}>
-                      <TableCell className="font-medium">{o.orderNo}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {o.orderNo}
+                          <ErpBadge syncedAt={o.syncedAt} />
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Link
@@ -177,7 +183,7 @@ const OrdersPage = async ({
                       <TableCell>
                         <div className="flex justify-end">
                           <RecordDialog
-                            canEdit={canEditShop}
+                            canEdit={canEditShop && !o.syncedAt}
                             entity="orders"
                             initial={{
                               orderNo: o.orderNo,
@@ -203,7 +209,7 @@ const OrdersPage = async ({
                             }
                           />
                           <DeleteButton
-                            canEdit={canEditShop}
+                            canEdit={canEditShop && !o.syncedAt}
                             entity="orders"
                             id={o.id}
                             name={o.orderNo}
