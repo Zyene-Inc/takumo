@@ -18,8 +18,18 @@ import {
   DEFAULT_RFQ_QUERY,
   authorizeUrl as gmailAuthorizeUrl,
 } from "@/lib/connectors/gmail";
+import {
+  authorizeUrl as outlookAuthorizeUrl,
+  pkceVerifier,
+} from "@/lib/connectors/outlook";
 import { authorizeUrl as quickBooksAuthorizeUrl } from "@/lib/connectors/quickbooks";
-import { disconnect, syncConnection } from "@/lib/connectors/sync";
+import type { PreviewMessage } from "@/lib/connectors/rfq-rules";
+import {
+  disconnect,
+  previewConnection,
+  setOutlookMailbox,
+  syncConnection,
+} from "@/lib/connectors/sync";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -35,7 +45,7 @@ const manager = async () => {
   return locked ? { ok: false as const, error: locked } : access;
 };
 
-/** Where to send the person to allow access (QuickBooks or Google). */
+/** Where to send the person to allow access (QuickBooks, Google or Microsoft). */
 export const connect = async (
   provider: string
 ): Promise<Result<{ url: string }>> => {
@@ -59,10 +69,18 @@ export const connect = async (
     userId: userId ?? "",
     provider,
   });
-  const url =
-    provider === "quickbooks"
-      ? quickBooksAuthorizeUrl(creds.clientId, creds.redirectUri, state)
-      : gmailAuthorizeUrl(creds.clientId, creds.redirectUri, state);
+  const url = {
+    quickbooks: () =>
+      quickBooksAuthorizeUrl(creds.clientId, creds.redirectUri, state),
+    gmail: () => gmailAuthorizeUrl(creds.clientId, creds.redirectUri, state),
+    outlook: () =>
+      outlookAuthorizeUrl(
+        creds.clientId,
+        creds.redirectUri,
+        state,
+        pkceVerifier(encryptionKey(), state)
+      ),
+  }[provider]();
   return { ok: true, url };
 };
 
@@ -121,4 +139,61 @@ export const saveGmailQuery = async (query: string): Promise<Result> => {
   return updated.count
     ? { ok: true }
     : { ok: false, error: "Gmail isn't connected." };
+};
+
+const Mailbox = z.union([z.literal(""), z.email().max(254)]);
+
+/** Read RFQs from a shared mailbox (blank = the connected person's own). */
+export const saveOutlookMailbox = async (
+  address: string
+): Promise<Result<{ summary: string }>> => {
+  const access = await manager();
+  if (!access.ok) {
+    return access;
+  }
+  const parsed = Mailbox.safeParse(address.trim().toLowerCase());
+  if (!parsed.success) {
+    return { ok: false, error: "Enter the shared mailbox's email address." };
+  }
+  if (!(await setOutlookMailbox(access.orgId, parsed.data || null))) {
+    return { ok: false, error: "Outlook isn't connected." };
+  }
+  // Check right away, so a mailbox the person can't open shows up now.
+  const r = await syncConnection(access.orgId, "outlook");
+  revalidatePath("/settings/integrations");
+  revalidatePath("/quotes");
+  if (!r.ok) {
+    return r;
+  }
+  return {
+    ok: true,
+    summary: parsed.data
+      ? `Saved. Reading RFQs from ${parsed.data}.`
+      : "Saved. Reading RFQs from your own inbox.",
+  };
+};
+
+/** The last 20 emails and which would count as RFQs; imports nothing. */
+export const previewRfqs = async (
+  provider: string
+): Promise<Result<{ messages: PreviewMessage[] }>> => {
+  const access = await manager();
+  if (!access.ok) {
+    return access;
+  }
+  if (provider !== "gmail" && provider !== "outlook") {
+    return { ok: false, error: "Unknown connector." };
+  }
+  try {
+    return {
+      ok: true,
+      messages: await previewConnection(access.orgId, provider),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : "Couldn't read the mailbox.",
+    };
+  }
 };

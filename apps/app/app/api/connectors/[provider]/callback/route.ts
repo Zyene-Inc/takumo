@@ -18,11 +18,23 @@ import {
   mailbox,
 } from "@/lib/connectors/gmail";
 import {
+  canReadMail,
+  exchangeCode as exchangeOutlookCode,
+  needsAdminConsent,
+  OutlookConsentError,
+  mailbox as outlookMailbox,
+  pkceVerifier,
+} from "@/lib/connectors/outlook";
+import {
   companyName,
   exchangeCode as exchangeQuickBooksCode,
   type QbEnvironment,
 } from "@/lib/connectors/quickbooks";
-import { saveConnection, syncConnection } from "@/lib/connectors/sync";
+import {
+  connectOutlook,
+  saveConnection,
+  syncConnection,
+} from "@/lib/connectors/sync";
 
 // The first sync can read a mailbox's worth of RFQs.
 export const maxDuration = 300;
@@ -32,7 +44,108 @@ const back = (params: Record<string, string>) =>
     `${env.NEXT_PUBLIC_APP_URL}/settings/integrations?${new URLSearchParams(params)}`
   );
 
-/** Where QuickBooks and Google send the person back after they allow access. */
+// The tenant blocks people from approving apps: the settings page shows the
+// link and steps for the shop's IT person.
+const adminNeeded = () =>
+  back({
+    error:
+      "Your organization's Microsoft 365 settings need an administrator to approve Takumo before anyone can connect Outlook.",
+    adminConsent: "outlook",
+  });
+
+const NO_MAIL_ACCESS =
+  "Takumo needs permission to read mail to find RFQs. Try again and allow it.";
+
+/** The person (or their organization) didn't allow access. */
+const refused = (provider: Provider, url: URL) => {
+  if (provider !== "outlook") {
+    return back({ error: "Access wasn't granted, so nothing was connected." });
+  }
+  if (
+    needsAdminConsent(
+      url.searchParams.get("error"),
+      url.searchParams.get("error_description")
+    )
+  ) {
+    return adminNeeded();
+  }
+  // Declining and "ask your admin" screens can look alike: offer both.
+  return back({
+    error:
+      "Access wasn't granted, so nothing was connected. If Microsoft said an administrator has to approve Takumo, send your IT person the link below.",
+    adminConsent: "outlook",
+  });
+};
+
+interface Callback {
+  code: string;
+  creds: NonNullable<ReturnType<typeof credentials>>;
+  orgId: string;
+  url: URL;
+  userId: string;
+}
+
+/** Each provider's code exchange and save; a response when it can't finish. */
+const CONNECT: Record<Provider, (c: Callback) => Promise<Response | null>> = {
+  quickbooks: async ({ code, creds, orgId, url, userId }) => {
+    const realmId = url.searchParams.get("realmId");
+    if (!realmId) {
+      return back({
+        error: "QuickBooks didn't say which company to connect.",
+      });
+    }
+    const tokens = await exchangeQuickBooksCode(fetch, creds, code);
+    const name = await companyName(
+      fetch,
+      creds.environment as QbEnvironment,
+      realmId,
+      tokens.access_token
+    );
+    await saveConnection(orgId, "quickbooks", {
+      account: realmId,
+      accountLabel: name,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      createdBy: userId,
+    });
+    return null;
+  },
+  gmail: async ({ code, creds, orgId, userId }) => {
+    const tokens = await exchangeGmailCode(fetch, creds, code);
+    if (!tokens.scope?.includes(GMAIL_SCOPE)) {
+      return back({ error: NO_MAIL_ACCESS });
+    }
+    const email = await mailbox(fetch, tokens.access_token);
+    await saveConnection(orgId, "gmail", {
+      account: email,
+      accountLabel: email,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token ?? null,
+      expiresIn: tokens.expires_in,
+      scope: tokens.scope,
+      createdBy: userId,
+      settings: { query: DEFAULT_RFQ_QUERY },
+    });
+    return null;
+  },
+  outlook: async ({ code, creds, orgId, url, userId }) => {
+    const tokens = await exchangeOutlookCode(
+      fetch,
+      creds,
+      code,
+      pkceVerifier(encryptionKey(), url.searchParams.get("state") ?? "")
+    );
+    if (!canReadMail(tokens.scope)) {
+      return back({ error: NO_MAIL_ACCESS });
+    }
+    const email = await outlookMailbox(fetch, tokens.access_token);
+    await connectOutlook(orgId, userId, email, tokens);
+    return null;
+  },
+};
+
+/** Where QuickBooks, Google and Microsoft send the person back after they allow access. */
 export const GET = async (
   request: Request,
   { params }: { params: Promise<{ provider: string }> }
@@ -67,7 +180,7 @@ export const GET = async (
     });
   }
   if (url.searchParams.get("error")) {
-    return back({ error: "Access wasn't granted, so nothing was connected." });
+    return refused(provider, url);
   }
   const code = url.searchParams.get("code");
   if (!code) {
@@ -80,50 +193,21 @@ export const GET = async (
     return back({ error: locked });
   }
   try {
-    if (provider === "quickbooks") {
-      const realmId = url.searchParams.get("realmId");
-      if (!realmId) {
-        return back({
-          error: "QuickBooks didn't say which company to connect.",
-        });
-      }
-      const tokens = await exchangeQuickBooksCode(fetch, creds, code);
-      const name = await companyName(
-        fetch,
-        creds.environment as QbEnvironment,
-        realmId,
-        tokens.access_token
-      );
-      await saveConnection(orgId, provider, {
-        account: realmId,
-        accountLabel: name,
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        expiresIn: tokens.expires_in,
-        createdBy: userId,
-      });
-    } else {
-      const tokens = await exchangeGmailCode(fetch, creds, code);
-      if (!tokens.scope?.includes(GMAIL_SCOPE)) {
-        return back({
-          error:
-            "Takumo needs permission to read mail to find RFQs. Try again and allow it.",
-        });
-      }
-      const email = await mailbox(fetch, tokens.access_token);
-      await saveConnection(orgId, provider, {
-        account: email,
-        accountLabel: email,
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token ?? null,
-        expiresIn: tokens.expires_in,
-        scope: tokens.scope,
-        createdBy: userId,
-        settings: { query: DEFAULT_RFQ_QUERY },
-      });
+    const problem = await CONNECT[provider]({
+      code,
+      creds,
+      orgId,
+      url,
+      userId,
+    });
+    if (problem) {
+      return problem;
     }
-  } catch (error) {
-    log.warn("Connecting failed", { orgId, provider, error: String(error) });
+  } catch (failure) {
+    if (failure instanceof OutlookConsentError) {
+      return adminNeeded();
+    }
+    log.warn("Connecting failed", { orgId, provider, error: String(failure) });
     return back({ error: "Connecting failed. Try again in a minute." });
   }
   track("connector_connected", { orgId, userId, properties: { provider } });

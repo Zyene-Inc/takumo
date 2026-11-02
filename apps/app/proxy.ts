@@ -13,9 +13,20 @@ const securityHeaders = env.FLAGS_SECRET
 
 // WorkOS AuthKit manages the session; everything except these paths
 // requires a signed-in user. Cron routes check CRON_SECRET themselves; the
-// health check reveals only up/down.
+// health check reveals only up/down. Microsoft Graph posts Outlook
+// notifications (checked by their secret clientState), and a shop's IT person
+// lands on the admin-consent page without a Takumo account.
 export default authMiddleware(() => securityHeaders(), {
-  publicPaths: ["/sign-in", "/sign-up", "/callback", "/.well-known", "/api/cron", "/api/health"],
+  publicPaths: [
+    "/sign-in",
+    "/sign-up",
+    "/callback",
+    "/.well-known",
+    "/api/cron",
+    "/api/health",
+    "/api/connectors/outlook/notify",
+    "/api/connectors/outlook/admin-consent",
+  ],
 }) as unknown as NextProxy;
 
 export const config = {

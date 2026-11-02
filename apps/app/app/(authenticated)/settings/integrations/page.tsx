@@ -3,7 +3,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { getBilling } from "@/lib/billing";
-import { credentials } from "@/lib/connectors/config";
+import { adminConsentRedirectUri, credentials } from "@/lib/connectors/config";
+import { canDraft } from "@/lib/connectors/gmail";
+import { adminConsentUrl } from "@/lib/connectors/outlook";
 import { Header } from "../../components/header";
 import { ConnectorCard, type ConnectorView } from "./connector-card";
 
@@ -12,13 +14,17 @@ export const metadata: Metadata = { title: "Integrations · Takumo" };
 const IntegrationsPage = async ({
   searchParams,
 }: {
-  searchParams: Promise<{ connected?: string; error?: string }>;
+  searchParams: Promise<{
+    adminConsent?: string;
+    connected?: string;
+    error?: string;
+  }>;
 }) => {
   const { orgId, canManageConnectors } = await getAccess();
   if (!orgId) {
     notFound();
   }
-  const { connected, error } = await searchParams;
+  const { adminConsent, connected, error } = await searchParams;
   const [connections, { entitlements }] = await Promise.all([
     forOrg(database, orgId).connection.findMany({
       select: {
@@ -29,17 +35,23 @@ const IntegrationsPage = async ({
         lastSyncAt: true,
         lastError: true,
         lastResult: true,
+        scope: true,
         settings: true,
       },
     }),
     getBilling(orgId),
   ]);
   const view = (
-    provider: "quickbooks" | "gmail",
+    provider: ConnectorView["provider"],
     name: string,
     description: string
   ): ConnectorView => {
     const c = connections.find((x) => x.provider === provider);
+    const settings = (c?.settings ?? null) as {
+      query?: string;
+      sharedMailbox?: string | null;
+      subscription?: object | null;
+    } | null;
     return {
       provider,
       name,
@@ -52,9 +64,19 @@ const IntegrationsPage = async ({
       lastNotes: (
         (c?.lastResult as { notes?: string[] } | null)?.notes ?? []
       ).slice(0, 6),
-      query: (c?.settings as { query?: string } | null)?.query ?? null,
+      query: settings?.query ?? null,
+      sharedMailbox: settings?.sharedMailbox ?? null,
+      instant: Boolean(settings?.subscription),
+      // Connected before Takumo asked to write drafts: reconnect once.
+      needsDraftAccess:
+        provider === "gmail" && c?.status === "connected" && !canDraft(c.scope),
     };
   };
+  const outlookCreds = credentials("outlook");
+  const consentUrl =
+    adminConsent === "outlook" && outlookCreds
+      ? adminConsentUrl(outlookCreds.clientId, adminConsentRedirectUri())
+      : null;
   const locked = !entitlements.features.has("connectors");
 
   return (
@@ -71,6 +93,26 @@ const IntegrationsPage = async ({
           <p className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-sm">
             {error}
           </p>
+        )}
+        {consentUrl && (
+          <div className="grid gap-2 rounded-lg border px-3 py-3 text-sm">
+            <p className="font-medium">
+              Ask your IT person to approve Takumo for Outlook
+            </p>
+            <p className="text-muted-foreground">
+              Your company's Microsoft 365 only lets an administrator approve
+              new apps. Send this link to whoever manages Microsoft 365 for you.
+              They sign in as an administrator (for example a Global
+              Administrator), review the permissions (sign in and read your
+              profile, read and write mail including shared mailboxes you can
+              open, keep access when you're away) and click Accept. Takumo reads
+              RFQ emails and can leave reply drafts; it never sends email. Once
+              they've approved, come back here and connect Outlook again.
+            </p>
+            <p className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">
+              {consentUrl}
+            </p>
+          </div>
         )}
         {locked && (
           <p className="text-muted-foreground text-sm">
@@ -90,7 +132,15 @@ const IntegrationsPage = async ({
             c={view(
               "gmail",
               "Gmail",
-              "Your RFQ inbox: new emails that look like requests for quote (attachments included) become RFQs in Quotes, read and ready to draft. Read only; checked every hour."
+              "Your RFQ inbox: new emails that look like requests for quote (attachments included) become RFQs in Quotes, read and ready to draft. Checked every hour. Takumo can leave reply drafts in the RFQ's thread for you to send; it never sends email itself."
+            )}
+            canManage={canManageConnectors && !locked}
+          />
+          <ConnectorCard
+            c={view(
+              "outlook",
+              "Outlook",
+              "Your Microsoft 365 RFQ inbox, or a shared RFQ mailbox: new emails that look like requests for quote (attachments included) become RFQs in Quotes within a couple of minutes. Takumo can leave reply drafts for you to send; it never sends email itself."
             )}
             canManage={canManageConnectors && !locked}
           />
