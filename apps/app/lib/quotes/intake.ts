@@ -177,6 +177,17 @@ export const readRfq = async (orgId: string, rfqId: string) => {
       }),
     ]);
     await readDrawings(orgId, rfqId);
+    // A package that is only drawings (scans, no RFQ text) has its parts on
+    // the drawings: once they made lines, it's ready for review after all.
+    if (!(read.isRfq && read.lines.length)) {
+      const lines = await db.rfqLine.count({ where: { rfqId } });
+      if (lines > 0) {
+        await db.rfq.updateMany({
+          where: { id: rfqId },
+          data: { status: "review", error: null },
+        });
+      }
+    }
   } catch (error) {
     log.warn("Reading an RFQ failed", { rfqId, error: String(error) });
     await recordFailedUsage(orgId, "rfq_read", error);
