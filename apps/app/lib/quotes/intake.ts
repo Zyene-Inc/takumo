@@ -4,6 +4,7 @@ import { database, forOrg, Prisma } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { recordFailedUsage, recordUsage } from "../ai-usage";
 import type { MailThread } from "../connectors/thread";
+import { readDrawings } from "./drawing";
 import { extractRfq } from "./extract";
 import {
   findDuplicate,
@@ -175,6 +176,7 @@ export const readRfq = async (orgId: string, rfqId: string) => {
         })),
       }),
     ]);
+    await readDrawings(orgId, rfqId);
   } catch (error) {
     log.warn("Reading an RFQ failed", { rfqId, error: String(error) });
     await recordFailedUsage(orgId, "rfq_read", error);

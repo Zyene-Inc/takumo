@@ -61,6 +61,7 @@ import {
   saveLine,
 } from "../actions";
 import { Confirm } from "./confirm";
+import { DrawingSummary, type OtherLine } from "./drawing-summary";
 import type { WorkspaceOptions } from "./workspace";
 
 const usd = (value: number | null | undefined, cents = true) =>
@@ -1283,11 +1284,14 @@ export const LineCard = ({
   status,
   editable,
   options,
+  otherLines = [],
   requestedDate,
 }: {
   editable: boolean;
   line: LineView;
   options: WorkspaceOptions;
+  /** The RFQ's other lines, to merge one into this one. */
+  otherLines?: OtherLine[];
   requestedDate: string | null;
   rfqId: string;
   status: RfqStatus;
@@ -1376,6 +1380,15 @@ export const LineCard = ({
                 ))}
             </dl>
           </>
+        )}
+        {line.drawing && !editing && (
+          <DrawingSummary
+            drawing={line.drawing}
+            editable={editable && !line.quote}
+            lineId={line.id}
+            otherLines={otherLines}
+            rfqId={rfqId}
+          />
         )}
         {line.quote ? (
           <Outcome canEdit={options.canEdit} line={line} rfqId={rfqId} />
