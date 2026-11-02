@@ -40,7 +40,7 @@ const understood = (card: CardMeta | undefined) => {
 };
 
 const KnowledgePage = async () => {
-  const { orgId, canEditKnowledge } = await getAccess();
+  const { orgId, canEditKnowledge, canShareKnowledge } = await getAccess();
   if (!orgId) {
     notFound();
   }
@@ -79,15 +79,10 @@ const KnowledgePage = async () => {
       <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
         <p className="max-w-3xl text-muted-foreground text-sm">
           Documents Ask Takumo can search and cite: how jobs are set up, quality
-          rules, customer requirements. Answers link to the page they came from.
+          rules, customer requirements, company policies. Anyone in the company
+          can add what they know. Answers link to the page they came from.
         </p>
-        {canEditKnowledge ? (
-          <UploadDocuments />
-        ) : (
-          <p className="text-muted-foreground text-sm">
-            Ask an admin, planner or estimator to add documents.
-          </p>
-        )}
+        {canShareKnowledge && <UploadDocuments />}
         {sources.length === 0 ? (
           <EmptyState>No documents yet.</EmptyState>
         ) : (

@@ -13,7 +13,8 @@ import {
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { DOCUMENT_TYPES } from "@/lib/knowledge/types";
-import { deleteDocument } from "./actions";
+import { MAX_PART_BYTES, pieces } from "@/lib/quotes/upload-limits";
+import { deleteDocument, uploadKnowledgePart } from "./actions";
 
 interface FileLog {
   done: boolean;
@@ -82,12 +83,37 @@ const followSteps = async (
   show();
 };
 
+/** Large files go up in pieces first (each request is capped at 4.5 MB). */
+const sendPieces = async (file: File) => {
+  const uploadId = crypto.randomUUID();
+  for (const [partIndex, [start, end]] of pieces(
+    file.size,
+    MAX_PART_BYTES
+  ).entries()) {
+    const form = new FormData();
+    form.set("uploadId", uploadId);
+    form.set("partIndex", String(partIndex));
+    form.set("name", file.name);
+    form.set("part", file.slice(start, end));
+    const result = await uploadKnowledgePart(form);
+    if (!result.ok) {
+      return Response.json({ error: result.error }, { status: 400 });
+    }
+  }
+  const form = new FormData();
+  form.set("uploadId", uploadId);
+  return fetch("/api/knowledge/upload", { method: "POST", body: form });
+};
+
 /** Send one file and follow its steps. */
 const uploadOne = (file: File, update: (log: FileLog) => void) => {
   const form = new FormData();
   form.set("file", file);
   return followSteps(
-    () => fetch("/api/knowledge/upload", { method: "POST", body: form }),
+    () =>
+      file.size > MAX_PART_BYTES
+        ? sendPieces(file)
+        : fetch("/api/knowledge/upload", { method: "POST", body: form }),
     {
       file: file.name,
       steps: [`Uploading ${file.name} (${kilobytes(file.size)})`],
