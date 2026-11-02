@@ -142,6 +142,19 @@ simplest paid host (Fly.io or Cloud Run work the same way).
 
 Check: `curl https://<engine-url>/health` returns `{"status":"ok"}`.
 
+### Inbound email (services/mail)
+
+The ERP report inbox (`erp-<token>@…`, F1.3) and RFQ forwarding (`rfq-<token>@…`, F2.1) use our
+own MX: `services/mail`, an SMTP receiver on the same Oracle VM that checks SPF/DKIM/DMARC and
+posts each message to `takumo-app`'s `/api/inbound/email` with an HMAC signature
+(`INBOUND_EMAIL_SECRET`, the same value on the VM and on `takumo-app`). It needs an MX record, TCP
+25 open in the OCI security list, and `/etc/takumo/mail.env` on the VM; then
+`MAIL_HOST=ubuntu@<ip> scripts/deploy-mail.sh`. Everything (webhook contract, env vars, DNS,
+testing with swaks) is in [services/mail/README.md](../services/mail/README.md).
+
+Both deploy scripts keep one Caddy site per file in `/etc/caddy/sites/*.caddy`, imported by
+`/etc/caddy/Caddyfile`, so the engine's site and the mail host's certificate coexist.
+
 ## 5. Stripe (billing)
 
 Plans: Shop $499/month (5 users), Pro $1,499/month (Quote Copilot, connectors, unlimited users),

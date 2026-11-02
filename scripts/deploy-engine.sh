@@ -27,7 +27,11 @@ echo "Building and starting it..."
   cd /opt/takumo/services/engine/deploy
   sudo docker compose --env-file /etc/takumo/engine.env up -d --build
   sudo docker image prune -f >/dev/null
-  printf '%s {\n\treverse_proxy 127.0.0.1:8000\n}\n' '$ENGINE_DOMAIN' | sudo tee /etc/caddy/Caddyfile >/dev/null
+  # One file per site, imported by the main Caddyfile, so other services
+  # (scripts/deploy-mail.sh) can add their own sites next to the engine's.
+  sudo mkdir -p /etc/caddy/sites
+  printf '%s {\n\treverse_proxy 127.0.0.1:8000\n}\n' '$ENGINE_DOMAIN' | sudo tee /etc/caddy/sites/engine.caddy >/dev/null
+  printf 'import /etc/caddy/sites/*.caddy\n' | sudo tee /etc/caddy/Caddyfile >/dev/null
   sudo systemctl reload caddy"
 
 echo "Checking https://$ENGINE_DOMAIN/health..."

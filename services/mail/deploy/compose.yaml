@@ -1,0 +1,42 @@
+# Inbound mail on the VM, next to the engine. scripts/deploy-mail.sh copies
+# services/mail and runs `docker compose up` with two env files:
+#   /etc/takumo/mail.env          you write it once (secret, webhook, domains)
+#   /etc/takumo/mail-runtime.env  the deploy script writes it (uid, cert paths)
+# Own project name: the engine's compose also lives in a deploy/ directory.
+name: takumo-mail
+services:
+  mail:
+    build:
+      context: ..
+    image: takumo-mail
+    restart: unless-stopped
+    # The caddy user's uid/gid, so the container can read Caddy's private key
+    # (Caddy keeps it mode 0600). Never root.
+    user: "${MAIL_UID:-1000}:${MAIL_GID:-1000}"
+    ports:
+      # IPv4 only: Docker's IPv6 proxy would hide the sender's address, and
+      # SPF needs it. The MX host has an A record only.
+      - "0.0.0.0:25:2525"
+      - "127.0.0.1:2526:2526"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      # Caddy's certificates (it obtains and renews the MX host's), read-only.
+      - "${CADDY_CERTS_DIR:-/var/lib/caddy/.local/share/caddy/certificates}:/certs:ro"
+    environment:
+      # Required: compose refuses to start without them. Set in /etc/takumo/mail.env.
+      INBOUND_EMAIL_SECRET: ${INBOUND_EMAIL_SECRET:?Set INBOUND_EMAIL_SECRET in /etc/takumo/mail.env}
+      WEBHOOK_URL: ${WEBHOOK_URL:?Set WEBHOOK_URL in /etc/takumo/mail.env}
+      MAIL_DOMAINS: ${MAIL_DOMAINS:?Set MAIL_DOMAINS in /etc/takumo/mail.env}
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:?Set MAIL_HOSTNAME in /etc/takumo/mail.env}
+      MAX_MESSAGE_BYTES: ${MAX_MESSAGE_BYTES:-26214400}
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-}
+      PORT: "2525"
+      HEALTH_HOST: 0.0.0.0
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
