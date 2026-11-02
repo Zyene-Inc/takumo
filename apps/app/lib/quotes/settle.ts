@@ -4,7 +4,7 @@ import { database, forOrg } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { closeRfqWhenAnswered } from "./approve";
 import { settleQuotes, WIN_WINDOW_DAYS } from "./outcomes";
-import type { LineFinal, QuotedBreak } from "./types";
+import type { QuotedBreak } from "./types";
 
 const DAY_MS = 86_400_000;
 
@@ -106,7 +106,7 @@ export const settleFromErp = async (orgId: string, now = new Date()) => {
             where: { id: line.id },
             data: {
               final: {
-                ...((line.final as LineFinal | null) ?? {}),
+                ...((line.final as object | null) ?? {}),
                 orderNo: w.orderNo,
               },
             },

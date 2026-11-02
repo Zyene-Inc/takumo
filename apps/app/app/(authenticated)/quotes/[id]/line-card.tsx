@@ -64,6 +64,7 @@ import {
 import { Confirm } from "./confirm";
 import { DrawingSummary, type OtherLine } from "./drawing-summary";
 import { DrawingViewer, type ViewerFile } from "./drawing-viewer";
+import { ErpOrder } from "./erp-order";
 import { lineAnchor } from "./review-focus";
 import { SourceChip as CostSourceChip } from "./source-chip";
 import type { WorkspaceOptions } from "./workspace";
@@ -1323,7 +1324,7 @@ const Outcome = ({
         <Badge variant={OUTCOME_VARIANT[quote.status] ?? "secondary"}>
           {quote.status === "open" ? "awaiting answer" : quote.status}
         </Badge>
-        {line.orderNo && (
+        {line.orderNo && !line.erpOrder && (
           <span>
             · order{" "}
             <Link
@@ -1340,6 +1341,9 @@ const Outcome = ({
           </span>
         )}
       </div>
+      {line.erpOrder && (
+        <ErpOrder entry={line.erpOrder} orderNo={line.orderNo} />
+      )}
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
         {quote.breaks.map((b) => (
           <span key={b.qty}>

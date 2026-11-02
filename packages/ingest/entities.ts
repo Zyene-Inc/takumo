@@ -422,6 +422,21 @@ const orders: EntityDef = {
       ],
     },
     {
+      key: "customerPo",
+      label: "Customer PO",
+      kind: "text",
+      synonyms: [
+        "customer po",
+        "cust po",
+        "po",
+        "po number",
+        "po #",
+        "purchase order",
+        "customer po number",
+      ],
+      hint: "The customer's purchase order number",
+    },
+    {
       key: "priority",
       label: "Priority",
       kind: "integer",
