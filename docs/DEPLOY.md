@@ -68,8 +68,14 @@ or the service dashboards; never commit them.
   `production`) (step 7)
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (step 8)
 - `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` (step 9)
+- `INBOUND_EMAIL_DOMAIN` (e.g. `in.takumo.ai`) and `INBOUND_EMAIL_SECRET` (`openssl rand -hex 32`;
+  the same value as in `/etc/takumo/mail.env` on the mail server, step 4): shops' addresses for
+  nightly ERP reports and forwarded RFQs (Settings → Integrations → Email & ERP reports)
+- `RESEND_TOKEN`, `RESEND_FROM` (optional): emails shop admins when an ERP report needs a check,
+  stops arriving, or a mailbox disconnects (the daily `/api/cron/erp-health`); without them the
+  problems still show in the app and on `/admin`
 - `ADMIN_USER_IDS`: WorkOS user ids (comma separated) of Takumo staff who can open `/admin`
-- `AI_MONTHLY_BUDGET_USD` (optional): Claude spend cap per shop per calendar month; when a shop
+- `AI_MONTHLY_BUDGET_USD` (optional): AI spend cap per shop per calendar month; when a shop
   reaches it, Ask Takumo, quote drafting and note reading pause until the 1st. `/admin` shows each
   shop's spend.
 

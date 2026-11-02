@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft for review |
+| Status | Phase 0 built; Phase 1 built (see §5 status column notes) |
 | Owner | Product (Ashish) |
 | Last updated | 2026-11-02 |
 | Supersedes | Nothing; changes priorities in [TAKUMO.md](TAKUMO.md) from Phase 7 onward |

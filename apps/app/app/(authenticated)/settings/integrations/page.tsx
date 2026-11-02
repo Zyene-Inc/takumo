@@ -1,5 +1,6 @@
 import { database, forOrg } from "@repo/database";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { getBilling } from "@/lib/billing";
@@ -119,6 +120,17 @@ const IntegrationsPage = async ({
             Connectors are on the Pro plan. See Settings → Billing.
           </p>
         )}
+        <Link
+          className="flex flex-col gap-1 rounded-xl border p-4 transition-colors hover:bg-muted/50"
+          href="/settings/integrations/email"
+        >
+          <span className="font-medium">Email &amp; ERP reports →</span>
+          <span className="text-muted-foreground text-sm">
+            Your shop's addresses for nightly ERP reports (Epicor, JobBOSS²,
+            ProShop, NetSuite, SAP: any ERP that can email a CSV or Excel
+            report) and for RFQs from portals and forms.
+          </span>
+        </Link>
         <div className="grid gap-4 lg:grid-cols-2">
           <ConnectorCard
             c={view(
