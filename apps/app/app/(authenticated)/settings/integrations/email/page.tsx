@@ -1,6 +1,8 @@
 import { database, forOrg } from "@repo/database";
 import { Badge } from "@repo/design-system/components/ui/badge";
+import { Button } from "@repo/design-system/components/ui/button";
 import type { ColumnMapping, EntityKey } from "@repo/ingest";
+import { DownloadIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -8,8 +10,7 @@ import { env } from "@/env";
 import { getAccess } from "@/lib/access";
 import { changesForErp } from "@/lib/erp/changes";
 import { describeRenamed } from "@/lib/erp/renamed";
-import type { Replaces } from "@/lib/erp/reports";
-import type { ReportResult } from "@/lib/erp/reports";
+import type { Replaces, ReportResult } from "@/lib/erp/reports";
 import { ensureAddresses } from "@/lib/inbound/process";
 import { addressFor, type InboundKind } from "@/lib/inbound/verify";
 import { poLabel } from "@/lib/orders/types";
@@ -243,20 +244,31 @@ const EmailIntegrationsPage = async ({
 
         {changes.length > 0 && (
           <section className="grid gap-3">
-            <h2 className="font-semibold text-lg">
-              Changes to copy into your ERP
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-semibold text-lg">
+                Changes to copy into your ERP
+              </h2>
+              <Button asChild size="sm" variant="outline">
+                <a download href="/settings/integrations/email/erp-changes">
+                  <DownloadIcon /> Download as a spreadsheet
+                </a>
+              </Button>
+            </div>
             <p className="max-w-3xl text-muted-foreground text-sm">
               These approved facts changed records that come from your ERP. Make
               the same change there, or the next report will put the old value
-              back.
+              back. The spreadsheet lists each one with its old value, new value
+              and why, for whoever keeps your ERP.
             </p>
             <ul className="grid gap-1 text-sm">
               {changes.map((c) => (
                 <li className="flex flex-wrap gap-2" key={c.fact}>
                   <Badge variant="outline">{c.fact}</Badge>
                   <span className="font-medium">{c.label}</span>
-                  <span>{c.what}</span>
+                  <span>
+                    {c.field}: {c.was === "—" ? "" : `${c.was} → `}
+                    {c.now}
+                  </span>
                   <span className="text-muted-foreground">
                     approved {when(new Date(c.reviewedAt))}
                   </span>

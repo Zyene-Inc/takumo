@@ -159,3 +159,44 @@ describe("a resent report", () => {
     expect(sheetHash(a)).not.toBe(sheetHash(c));
   });
 });
+
+describe("changes to make in the ERP, as a file", async () => {
+  const { changesCsv, changesFileName } = await import(
+    "../lib/erp/changes-csv"
+  );
+  const change = {
+    fact: "F-12",
+    kind: "Operation",
+    label: "P-1001 rev B op 10 (HAAS-VF2)",
+    field: "Setup time",
+    was: "45 min",
+    now: "30 min",
+    evidence: 'Sam: "with the new vise, setup is 30, not 45"',
+    what: "Setup time: 30 min",
+    reviewedAt: "2026-11-03T14:00:00.000Z",
+  };
+
+  test("one row per change, quoted where needed", () => {
+    const [header, row] = changesCsv([change]).split("\r\n");
+    expect(header).toBe(
+      "Fact,Record type,Record,Field,In your ERP now,Change it to,Why,Approved"
+    );
+    expect(row).toBe(
+      'F-12,Operation,P-1001 rev B op 10 (HAAS-VF2),Setup time,45 min,30 min,"Sam: ""with the new vise, setup is 30, not 45""",2026-11-03'
+    );
+  });
+
+  test("a reason that starts like a formula isn't run by the spreadsheet", () => {
+    const [, row] = changesCsv([
+      { ...change, evidence: "=HYPERLINK(\"http://x\")" },
+    ]).split("\r\n");
+    expect(row).toContain("'=HYPERLINK");
+  });
+
+  test("nothing to change: just the header", () => {
+    expect(changesCsv([]).split("\r\n")).toHaveLength(1);
+    expect(changesFileName(new Date("2026-11-04T12:00:00Z"))).toBe(
+      "takumo-erp-changes-2026-11-04.csv"
+    );
+  });
+});
