@@ -204,7 +204,7 @@ const notifyMapping = async (orgId: string, outcomes: SheetOutcome[]) => {
       [
         `${r.report.name} arrived with different columns: ${describeRenamed(r)}.`,
         r.complete
-          ? "Takumo moved your column choices over. Open the link and press \"Use the same columns\" to import it; it imports by itself again after that."
+          ? 'Takumo moved your column choices over. Open the link and press "Use the same columns" to import it; it imports by itself again after that.'
           : "Takumo moved over what it could, but a required column is missing. Open the link and choose it.",
         "Until then, this report isn't imported.",
       ],

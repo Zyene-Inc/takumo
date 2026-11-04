@@ -36,7 +36,11 @@ vi.mock("../lib/orders/settle", () => ({
 const HEADERS = ["order_no", "customer", "part_no", "qty", "due_date"];
 const RENAMED = ["order_no", "customer", "part_no", "qty", "ship_by"];
 
-const sheet = (headers: string[], rows: string[][], name = "Open Jobs.csv") => ({
+const sheet = (
+  headers: string[],
+  rows: string[][],
+  name = "Open Jobs.csv"
+) => ({
   name,
   firstRow: 2,
   headers,
@@ -111,14 +115,14 @@ describe.skipIf(!TEST_DATABASE_URL)("ERP reports (database)", async () => {
       return;
     }
     expect(out.replaces?.report.id).toBe(firstId);
-    expect(out.replaces?.renamed).toEqual([{ from: "due_date", to: "ship_by" }]);
+    expect(out.replaces?.renamed).toEqual([
+      { from: "due_date", to: "ship_by" },
+    ]);
     expect(out.replaces?.complete).toBe(true);
     // Nothing imported yet: SO-1's date is unchanged.
     const so1 = () =>
       database.order.findFirstOrThrow({ where: { orgId, orderNo: "SO-1" } });
-    expect((await so1()).dueDate.toISOString().slice(0, 10)).toBe(
-      "2026-11-20"
-    );
+    expect((await so1()).dueDate.toISOString().slice(0, 10)).toBe("2026-11-20");
 
     // The next night's copy still knows what it replaces.
     const next = await handleReportSheet(
@@ -142,9 +146,7 @@ describe.skipIf(!TEST_DATABASE_URL)("ERP reports (database)", async () => {
       true
     );
     expect(done.ok).toBe(true);
-    expect((await so1()).dueDate.toISOString().slice(0, 10)).toBe(
-      "2026-11-21"
-    );
+    expect((await so1()).dueDate.toISOString().slice(0, 10)).toBe("2026-11-21");
     // The old report is gone, so this is the one full report of its kind:
     // SO-2, no longer listed, is closed.
     const reports = await database.erpReport.findMany({ where: { orgId } });

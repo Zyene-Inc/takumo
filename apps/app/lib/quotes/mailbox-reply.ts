@@ -27,7 +27,12 @@ import { htmlToText, parseEmail } from "./email";
 import { estimateRfqLines } from "./estimate-rfq";
 import { nextNumber } from "./numbers";
 import { renderQuotePdf } from "./pdf";
-import { customerAddress, draftStep, normalizeBody } from "./reply";
+import {
+  customerAddress,
+  draftStep,
+  normalizeBody,
+  updatedDraftText,
+} from "./reply";
 import { quoteSettings } from "./settings";
 import { type RfqReply, rfqLabel } from "./types";
 import { loadRfqView, type RfqView } from "./view";
@@ -408,13 +413,17 @@ const notifyDraftReady = async (
     number: number;
   },
   reply: RfqReply,
-  lines: number,
-  questions: number
+  counts: { lines: number; questions: number },
+  action: DraftAction
 ) => {
+  const { lines, questions } = counts;
   const label = rfqLabel(rfq.number);
-  const where = reply.pdfOnly
-    ? "The quote PDF is ready to send."
-    : `It's in your ${reply.provider === "gmail" ? "Gmail" : "Outlook"} drafts${reply.inThread ? ", in the customer's thread" : ""}.`;
+  let where = `It's in your ${reply.provider === "gmail" ? "Gmail" : "Outlook"} drafts${reply.inThread ? ", in the customer's thread" : ""}.`;
+  if (reply.pdfOnly) {
+    where = "The quote PDF is ready to send.";
+  } else if (action === "added") {
+    where = updatedDraftText(reply);
+  }
   await notifyMember(
     orgId,
     [rfq.createdBy],
@@ -658,7 +667,13 @@ export const writeReplyDraft = async (
     const questions =
       view.questions.length +
       view.lines.reduce((n, l) => n + (l.drawing?.questions?.length ?? 0), 0);
-    await notifyDraftReady(orgId, rfq, reply, built.lineCount, questions);
+    await notifyDraftReady(
+      orgId,
+      rfq,
+      reply,
+      { lines: built.lineCount, questions },
+      outcome.action
+    );
   }
   return { ok: true, action: outcome.action, reply };
 };

@@ -188,7 +188,7 @@ describe("changes to make in the ERP, as a file", async () => {
 
   test("a reason that starts like a formula isn't run by the spreadsheet", () => {
     const [, row] = changesCsv([
-      { ...change, evidence: "=HYPERLINK(\"http://x\")" },
+      { ...change, evidence: '=HYPERLINK("http://x")' },
     ]).split("\r\n");
     expect(row).toContain("'=HYPERLINK");
   });

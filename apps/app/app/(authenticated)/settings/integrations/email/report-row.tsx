@@ -348,7 +348,7 @@ export const ReportRow = ({
 
   return (
     <li
-      className={`grid scroll-mt-4 gap-3 rounded-xl border p-4${focused ? " ring-2 ring-primary/40" : ""}`}
+      className={`grid scroll-mt-4 gap-3 rounded-xl border p-4${focused ? "ring-2 ring-primary/40" : ""}`}
       id={`report-${report.id}`}
     >
       <div className="flex flex-wrap items-center gap-2">

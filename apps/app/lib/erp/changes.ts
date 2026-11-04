@@ -22,9 +22,9 @@ export interface ErpChange {
   fact: string;
   /** The field in words: "Setup time". */
   field: string;
-  label: string;
   /** "Operation", "Machine", … */
   kind: string;
+  label: string;
   /** The new value, formatted. */
   now: string;
   reviewedAt: string;

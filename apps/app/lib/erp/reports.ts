@@ -48,9 +48,9 @@ export interface ReportResult {
 interface PendingRows {
   fileName: string;
   firstRow: number;
-  rows: Sheet["rows"];
   /** The confirmed report this one replaces (its columns were renamed). */
   replaces?: Replaces;
+  rows: Sheet["rows"];
   /** Rows in the file, when more than are kept here (a waiting report). */
   total?: number;
 }
@@ -408,7 +408,10 @@ const isResend = (
 /** Reports whose columns the shop confirmed: what a renamed one may be. */
 const confirmedReports = async (orgId: string): Promise<KnownReport[]> => {
   const rows = await forOrg(database, orgId).erpReport.findMany({
-    where: { status: { in: ["active", "paused"] }, mapping: { not: Prisma.DbNull } },
+    where: {
+      status: { in: ["active", "paused"] },
+      mapping: { not: Prisma.DbNull },
+    },
     select: { id: true, name: true, headers: true, mapping: true, mode: true },
   });
   return rows.map((r) => ({

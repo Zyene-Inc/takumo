@@ -119,7 +119,10 @@ export const GET = async (request: Request) => {
         "Takumo's data from your systems needs attention:",
         ...healthLines(late, mailboxes, now),
       ],
-      reportPath(late.length, onlyLate && (waiting.get(onlyLate.id)?.id ?? onlyLate.id))
+      reportPath(
+        late.length,
+        onlyLate && (waiting.get(onlyLate.id)?.id ?? onlyLate.id)
+      )
     );
     if (late.length) {
       await database.erpReport.updateMany({
