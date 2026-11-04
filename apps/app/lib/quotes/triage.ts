@@ -60,16 +60,16 @@ export const triageEmail = async (
     return null;
   }
   try {
-    const { output, usage, response } = await generateText({
+    const { output, usage, finalStep } = await generateText({
       model: models.extract,
       output: Output.object({ schema }),
-      system: SYSTEM,
+      instructions: SYSTEM,
       prompt: `From: ${email.from ?? "(unknown)"}
 Subject: ${email.subject ?? "(none)"}
 
 ${email.body.slice(0, BODY_CHARS)}`,
     });
-    await recordUsage(orgId, "rfq_triage", response.modelId, usage);
+    await recordUsage(orgId, "rfq_triage", finalStep.response.modelId, usage);
     return {
       isRfq: output.kind === "rfq",
       kind: output.kind,

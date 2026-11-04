@@ -17,7 +17,7 @@
     "eval:drawings": "SKIP_ENV_VALIDATION=true VITE_CONFIG_NATIVE_IGNORE_WARNING=true vitest run --config vitest.evals.config.ts evals/drawings.eval.ts --reporter=verbose"
   },
   "dependencies": {
-    "@ai-sdk/react": "3.0.322",
+    "@ai-sdk/react": "4.0.166",
     "@repo/analytics": "workspace:*",
     "@repo/auth": "workspace:*",
     "@repo/database": "workspace:*",

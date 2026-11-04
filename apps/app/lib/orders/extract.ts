@@ -94,13 +94,13 @@ export const extractPo = async (
     MAX_CHARS
   );
   try {
-    const { output, usage, response } = await generateText({
+    const { output, usage, finalStep } = await generateText({
       model: models.extract,
       output: Output.object({ schema }),
-      system: SYSTEM,
+      instructions: SYSTEM,
       prompt: `Received on: ${input.receivedOn}\n\n${text}`,
     });
-    await recordUsage(orgId, "po_read", response.modelId, usage);
+    await recordUsage(orgId, "po_read", finalStep.response.modelId, usage);
     return { isPo: output.isPo, ...normalizePo(output) };
   } catch (error) {
     await recordFailedUsage(orgId, "po_read", error);

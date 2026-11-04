@@ -1,4 +1,11 @@
-import { convertToModelMessages, streamText, type UIMessage } from "@repo/ai";
+import {
+  consumeStream,
+  convertToModelMessages,
+  createUIMessageStreamResponse,
+  streamText,
+  toUIMessageStream,
+  type UIMessage,
+} from "@repo/ai";
 import { auth } from "@repo/auth/server";
 import { database } from "@repo/database";
 import { log } from "@repo/observability/log";
@@ -162,16 +169,19 @@ export const POST = async (request: Request) => {
       log.error("Ask Takumo failed", { error: String(error) }),
     // Each step as it finishes (cache reads and writes included), so the
     // steps before an error are still counted.
-    onStepFinish: ({ usage, response }) => {
+    onStepEnd: ({ usage, response }) => {
       // The last step saw the most: everything the answer looked at.
       context = { model: response.modelId, tokens: usage.inputTokens ?? 0 };
       return recordUsage(orgId, "ask", response.modelId, usage, userId);
     },
   });
-  // Finish (and save) the answer even if the browser goes away.
+  // Finish the model's work (and record its usage) even if the browser goes
+  // away; saving the answer is kept going by consumeSseStream below.
   result.consumeStream();
 
-  return result.toUIMessageStreamResponse({
+  const stream = toUIMessageStream({
+    stream: result.stream,
+    tools: settings.tools,
     originalMessages: messages,
     generateMessageId: () => crypto.randomUUID(),
     // The chat shows which model answered, and offers a thorough re-run.
@@ -184,7 +194,7 @@ export const POST = async (request: Request) => {
     },
     onError: () =>
       "Takumo hit a problem answering that. Try again in a moment.",
-    onFinish: async ({ responseMessage }) => {
+    onEnd: async ({ responseMessage }) => {
       const tools = toolParts(responseMessage);
       track("question_answered", {
         orgId,
@@ -214,5 +224,12 @@ export const POST = async (request: Request) => {
         data: { updatedAt: new Date() },
       });
     },
+  });
+  return createUIMessageStreamResponse({
+    stream,
+    // A copy of the stream is read to the end on the server, so the answer
+    // is finished and saved (onEnd) even when the browser goes away; without
+    // it the saved answer was empty (__tests__/ask-stream.test.ts).
+    consumeSseStream: consumeStream,
   });
 };

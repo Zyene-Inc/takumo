@@ -1,6 +1,10 @@
 {
   "extends": "@repo/typescript-config/nextjs.json",
   "compilerOptions": {
+    // An app emits nothing (noEmit), so no .d.ts files: with declarations on,
+    // the AI SDK's inferred tool types can't be named from here (TS2742).
+    "declaration": false,
+    "declarationMap": false,
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],

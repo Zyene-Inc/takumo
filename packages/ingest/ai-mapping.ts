@@ -97,10 +97,10 @@ export const suggestMappingWithAi = async ({
     .join("\n");
 
   try {
-    const { output, usage, response } = await generateText({
+    const { output, usage, finalStep } = await generateText({
       model: models.extract,
       output: Output.object({ schema }),
-      system: `You map spreadsheet columns from a manufacturing job shop (ERP exports, Excel trackers) to Takumo's data model.
+      instructions: `You map spreadsheet columns from a manufacturing job shop (ERP exports, Excel trackers) to Takumo's data model.
 Only use column names that appear exactly in the header list. Leave a field's column null when no column fits; never guess wildly.
 For setup/run time fields, say whether the column holds minutes or hours, using the header and the sample values.
 Confidence: 0.9+ when the header clearly names the field, 0.6–0.9 when you infer it from values, below 0.6 when unsure.
@@ -115,7 +115,7 @@ First rows:
 ${sample}`,
     });
 
-    await onUsage?.(response.modelId, usage);
+    await onUsage?.(finalStep.response.modelId, usage);
     if (!output) {
       log.warn("AI column mapping returned no output", { fileName });
       return fallback;

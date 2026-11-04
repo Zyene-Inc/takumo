@@ -159,10 +159,10 @@ export const understandDocument = async (
 ): Promise<Understanding> => {
   let card: DocumentCard;
   try {
-    const { output, usage, response } = await generateText({
+    const { output, usage, finalStep } = await generateText({
       model: models.chat,
       output: Output.object({ schema: cardSchema }),
-      system: CARD_SYSTEM,
+      instructions: CARD_SYSTEM,
       prompt: `${shop.lists}
 
 Document "${name}":
@@ -170,7 +170,7 @@ Document "${name}":
 ${text.slice(0, CARD_CHARS)}
 </document>`,
     });
-    await recordUsage(orgId, "doc_read", response.modelId, usage);
+    await recordUsage(orgId, "doc_read", finalStep.response.modelId, usage);
     card = output;
   } catch (error) {
     await recordFailedUsage(orgId, "doc_read", error);
@@ -225,7 +225,7 @@ ${doc.text.slice(0, CONTEXT_DOC_CHARS)}
   for (let start = 0; start < passages.length; start += CONTEXT_BATCH) {
     const batch = passages.slice(start, start + CONTEXT_BATCH);
     try {
-      const { output, usage, response } = await generateText({
+      const { output, usage, finalStep } = await generateText({
         model: models.extract,
         output: Output.object({ schema: contextSchema }),
         // The document comes first so each batch reuses the cached prefix.
@@ -235,7 +235,7 @@ For each numbered passage from this document, write one short sentence (under 30
 
 ${batch.map((p, i) => `[${start + i + 1}]\n${p.slice(0, 1500)}`).join("\n\n")}`,
       });
-      await recordUsage(orgId, "doc_read", response.modelId, usage);
+      await recordUsage(orgId, "doc_read", finalStep.response.modelId, usage);
       for (const c of output.contexts) {
         if (c.n >= 1 && c.n <= passages.length) {
           out[c.n - 1] = c.context.trim().slice(0, 400);

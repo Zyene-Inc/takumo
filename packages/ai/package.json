@@ -7,11 +7,11 @@
     "typecheck": "tsc --noEmit --emitDeclarationOnly false"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.136",
-    "@ai-sdk/google-vertex": "^4.0.224",
-    "@ai-sdk/openai": "^3.0.41",
+    "@ai-sdk/anthropic": "^4.0.96",
+    "@ai-sdk/google-vertex": "^5.0.131",
+    "@ai-sdk/openai": "^4.0.108",
     "@t3-oss/env-nextjs": "^0.13.10",
-    "ai": "^6.0.116",
+    "ai": "^7.0.162",
     "react": "19.2.4",
     "streamdown": "^2.4.0",
     "tailwind-merge": "^3.5.0",

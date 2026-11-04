@@ -49,7 +49,7 @@ const recognize = async (
   count: number
 ) => {
   try {
-    const { output, usage, response } = await generateText({
+    const { output, usage, finalStep } = await generateText({
       model: models.chat,
       output: Output.object({ schema: pagesSchema }),
       messages: [
@@ -65,7 +65,7 @@ const recognize = async (
         },
       ],
     });
-    await recordUsage(orgId, "doc_read", response.modelId, usage);
+    await recordUsage(orgId, "doc_read", finalStep.response.modelId, usage);
     const byPage = new Map(
       output.pages.map((p) => [p.page, htmlTablesToMarkdown(p.markdown)])
     );

@@ -30,14 +30,14 @@ export const chooseMode = async (
     return hinted;
   }
   try {
-    const { output, usage, response } = await generateText({
+    const { output, usage, finalStep } = await generateText({
       model: models.extract,
       output: Output.object({ schema }),
-      system: SYSTEM,
+      instructions: SYSTEM,
       prompt: `${previous ? `Previous answer (for context):\n${previous.slice(0, 600)}\n\n` : ""}Question: ${question.slice(0, 1000)}`,
       maxOutputTokens: 50,
     });
-    await recordUsage(orgId, "ask", response.modelId, usage, userId);
+    await recordUsage(orgId, "ask", finalStep.response.modelId, usage, userId);
     return output?.mode ?? "thorough";
   } catch (error) {
     await recordFailedUsage(orgId, "ask", error);

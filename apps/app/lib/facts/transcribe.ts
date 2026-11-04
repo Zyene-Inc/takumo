@@ -1,6 +1,6 @@
 import "server-only";
 
-import { experimental_transcribe as transcribe } from "@repo/ai";
+import { transcribe } from "@repo/ai";
 import { canEmbed, models } from "@repo/ai/lib/models";
 import { database, forOrg } from "@repo/database";
 

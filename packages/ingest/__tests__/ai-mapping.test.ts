@@ -76,7 +76,7 @@ describe("suggestMappingWithAi", () => {
     generateText.mockResolvedValue({
       output: { entity: "orders", columns: [], notes: [] },
       usage,
-      response: { modelId: "haiku" },
+      finalStep: { response: { modelId: "haiku" } },
     });
     const onUsage = vi.fn(async () => undefined);
     await suggestMappingWithAi({ fileName: "a.csv", headers, rows, onUsage });
