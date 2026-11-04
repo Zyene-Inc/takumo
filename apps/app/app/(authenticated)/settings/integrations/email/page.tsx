@@ -57,7 +57,7 @@ const ADDRESS_COPY: Record<
   ask: {
     title: "Ask by email",
     description:
-      "Forward a customer's \"can you do 300 by Friday?\" here, or write your own question. Takumo answers in the same thread within minutes: yes or no with the earliest date, why (machines, people, material), who would slip if it went first, and ways to make it, with a link to add it to the plan.",
+      'Forward a customer\'s "can you do 300 by Friday?" here, or write your own question. Takumo answers in the same thread within minutes: yes or no with the earliest date, why (machines, people, material), who would slip if it went first, and ways to make it, with a link to add it to the plan.',
     help: [
       "It checks the plan the way the Can we take this order? page does, and keeps the answer in Ask Takumo.",
       "If the part, quantity or date isn't clear, Takumo replies with one question instead of guessing.",
@@ -287,8 +287,7 @@ const EmailIntegrationsPage = async () => {
                       {STATUS_TEXT[m.status] ?? m.status}
                     </Badge>
                     <span className="text-muted-foreground">
-                      {MESSAGE_KIND[m.kind] ?? "RFQ"} ·{" "}
-                      {when(m.receivedAt)}
+                      {MESSAGE_KIND[m.kind] ?? "RFQ"} · {when(m.receivedAt)}
                     </span>
                     <span className="truncate">
                       {m.fromAddress ?? "unknown sender"}

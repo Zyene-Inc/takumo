@@ -25,7 +25,8 @@ export const replySubject = (subject: string | null) => {
 };
 
 /** Citation brackets like [check NEW-261104-1] read badly in an email. */
-const CITATION = /\s?\[(?:check|query|order|part|plan|doc|fact|scenario|estimate)[^\]]*\]/gi;
+const CITATION =
+  /\s?\[(?:check|query|order|part|plan|doc|fact|scenario|estimate)[^\]]*\]/gi;
 
 /** The email body: the answer, the add-to-plan link, the conversation. */
 export const answerEmail = (input: {

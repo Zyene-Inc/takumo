@@ -300,7 +300,7 @@ def test_a_no_for_lack_of_people_says_so_and_offers_another_person():
         CapacityRequest(**request.model_dump(), new_order=Order(order_no="N", part_no="P", qty=20, due_date=START + timedelta(days=1)))
     )
     assert not result.can_take
-    assert "VF2 has people for 8 of its 16 hours on Mon Nov 2: no one qualified on it works 15:00–23:00." in result.explanation
+    assert "VF2 has people for 8 of its 16 hours on Mon Nov 2: no one qualified on it is in 15:00–23:00." in result.explanation
     extra = next(lv for lv in result.levers if lv.kind == "extra_operator")
     assert extra.on_time
     assert extra.description.startswith("Another person qualified on VF2 working 15:00–23:00: done")

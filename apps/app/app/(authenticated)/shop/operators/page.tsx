@@ -35,6 +35,130 @@ export const metadata: Metadata = { title: "Operators · Takumo" };
 /** Upcoming time off shown per person; the rest is counted. */
 const SHOWN_DAYS_OFF = 3;
 
+type OperatorWithDays = Awaited<
+  ReturnType<ReturnType<typeof forOrg>["operator"]["findMany"]>
+>[number] & {
+  days: { date: Date; hours: number; id: string; reason: string | null }[];
+};
+
+/** Upcoming days off, as chips; the rest counted. */
+const DaysOff = ({
+  canEdit,
+  days,
+}: {
+  canEdit: boolean;
+  days: OperatorWithDays["days"];
+}) => (
+  <div className="flex flex-wrap gap-1">
+    {days.slice(0, SHOWN_DAYS_OFF).map((d) => (
+      <TimeOffChip
+        canEdit={canEdit}
+        id={d.id}
+        key={d.id}
+        label={`${shortDay(isoDate(d.date))}${d.hours > 0 ? ` (${d.hours} h)` : ""}${d.reason ? ` · ${d.reason}` : ""}`}
+      />
+    ))}
+    {days.length > SHOWN_DAYS_OFF && (
+      <span className="text-muted-foreground text-xs">
+        +{days.length - SHOWN_DAYS_OFF} more
+      </span>
+    )}
+    {days.length === 0 && (
+      <span className="text-muted-foreground text-xs">—</span>
+    )}
+  </div>
+);
+
+/** One person on the roster: shift, machines, time off, and edits. */
+const OperatorRow = ({
+  operator: o,
+  canEdit,
+  machineName,
+  machineNames,
+}: {
+  canEdit: boolean;
+  machineName: Map<string, string>;
+  machineNames: string[];
+  operator: OperatorWithDays;
+}) => {
+  const shift = readShift(o.shifts);
+  const runs = o.workCenterIds
+    .map((id) => machineName.get(id))
+    .filter((n): n is string => Boolean(n));
+  return (
+    <TableRow className={o.active ? undefined : "opacity-60"} key={o.id}>
+      <TableCell className="font-medium">
+        <div className="flex items-center gap-2">
+          {o.name}
+          <ErpBadge syncedAt={o.syncedAt} />
+          {!o.active && (
+            <span className="rounded bg-muted px-1.5 text-muted-foreground text-xs">
+              inactive
+            </span>
+          )}
+        </div>
+        {o.externalId && (
+          <span className="text-muted-foreground text-xs">#{o.externalId}</span>
+        )}
+      </TableCell>
+      <TableCell className="text-sm">
+        {shift ? formatShift(shift) : "Any time"}
+        {o.canRunUnattended && (
+          <span className="block text-muted-foreground text-xs">
+            can leave machines running
+          </span>
+        )}
+      </TableCell>
+      <TableCell className="text-sm">
+        {runs.length ? (
+          runs.join(", ")
+        ) : (
+          <span className="text-amber-700 dark:text-amber-400">
+            None listed
+          </span>
+        )}
+      </TableCell>
+      <TableCell>
+        <DaysOff canEdit={canEdit} days={o.days} />
+      </TableCell>
+      <TableCell>
+        <div className="flex justify-end">
+          {canEdit && <TimeOffDialog name={o.name} operatorId={o.id} />}
+          <RecordDialog
+            canEdit={canEdit && !o.syncedAt}
+            entity="operators"
+            initial={{
+              name: o.name,
+              employeeId: formValue(o.externalId),
+              active: o.active ? "yes" : "no",
+              shiftStart: shift?.start ?? "",
+              shiftEnd: shift?.end ?? "",
+              shiftDays: shift ? formatDays(shift.days) : "",
+              unattended: o.canRunUnattended ? "yes" : "no",
+              skills: runs.join(", "),
+              hourlyRate: formValue(o.hourlyRate),
+            }}
+            locked={["name"]}
+            options={{ skills: machineNames }}
+            title={`Edit ${o.name}`}
+            trigger={
+              <Button aria-label={`Edit ${o.name}`} size="icon" variant="ghost">
+                <PencilIcon />
+              </Button>
+            }
+          />
+          <DeleteButton
+            canEdit={canEdit && !o.syncedAt}
+            entity="operators"
+            id={o.id}
+            name={o.name}
+          />
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+};
+
 const OperatorsPage = async ({
   searchParams,
 }: {
@@ -103,20 +227,19 @@ const OperatorsPage = async ({
       </Header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
         <p className="max-w-3xl text-muted-foreground text-sm">
-          Machines don't run without people. Takumo plans each machine only
-          for the hours someone qualified on it is in, so "can we ship by
-          Friday?" counts shifts, skills and time off.
+          Machines don't run without people. Takumo plans each machine only for
+          the hours someone qualified on it is in, so "can we ship by Friday?"
+          counts shifts, skills and time off.
         </p>
         {q && <FilterNote href="/shop/operators" q={q} />}
         {uncovered.length > 0 && (
           <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
             <p className="font-medium">
-              Nobody is listed to run{" "}
-              {uncovered.map((m) => m.name).join(", ")}.
+              Nobody is listed to run {uncovered.map((m) => m.name).join(", ")}.
             </p>
             <p className="mt-1 text-muted-foreground">
-              Their hours aren't checked against people until someone
-              qualified is added below (Machines column).
+              Their hours aren't checked against people until someone qualified
+              is added below (Machines column).
             </p>
           </div>
         )}
@@ -142,114 +265,15 @@ const OperatorsPage = async ({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {operators.map((o) => {
-                  const shift = readShift(o.shifts);
-                  const runs = o.workCenterIds
-                    .map((id) => machineName.get(id))
-                    .filter((n): n is string => Boolean(n));
-                  return (
-                    <TableRow
-                      className={o.active ? undefined : "opacity-60"}
-                      key={o.id}
-                    >
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          {o.name}
-                          <ErpBadge syncedAt={o.syncedAt} />
-                          {!o.active && (
-                            <span className="rounded bg-muted px-1.5 text-muted-foreground text-xs">
-                              inactive
-                            </span>
-                          )}
-                        </div>
-                        {o.externalId && (
-                          <span className="text-muted-foreground text-xs">
-                            #{o.externalId}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {shift ? formatShift(shift) : "Any time"}
-                        {o.canRunUnattended && (
-                          <span className="block text-muted-foreground text-xs">
-                            can leave machines running
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {runs.length ? (
-                          runs.join(", ")
-                        ) : (
-                          <span className="text-amber-700 dark:text-amber-400">
-                            None listed
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {o.days.slice(0, SHOWN_DAYS_OFF).map((d) => (
-                            <TimeOffChip
-                              canEdit={canEditShop}
-                              id={d.id}
-                              key={d.id}
-                              label={`${shortDay(isoDate(d.date))}${d.hours > 0 ? ` (${d.hours} h)` : ""}${d.reason ? ` · ${d.reason}` : ""}`}
-                            />
-                          ))}
-                          {o.days.length > SHOWN_DAYS_OFF && (
-                            <span className="text-muted-foreground text-xs">
-                              +{o.days.length - SHOWN_DAYS_OFF} more
-                            </span>
-                          )}
-                          {o.days.length === 0 && (
-                            <span className="text-muted-foreground text-xs">
-                              —
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex justify-end">
-                          {canEditShop && (
-                            <TimeOffDialog name={o.name} operatorId={o.id} />
-                          )}
-                          <RecordDialog
-                            canEdit={canEditShop && !o.syncedAt}
-                            entity="operators"
-                            initial={{
-                              name: o.name,
-                              employeeId: formValue(o.externalId),
-                              active: o.active ? "yes" : "no",
-                              shiftStart: shift?.start ?? "",
-                              shiftEnd: shift?.end ?? "",
-                              shiftDays: shift ? formatDays(shift.days) : "",
-                              unattended: o.canRunUnattended ? "yes" : "no",
-                              skills: runs.join(", "),
-                              hourlyRate: formValue(o.hourlyRate),
-                            }}
-                            locked={["name"]}
-                            options={{ skills: machineNames }}
-                            title={`Edit ${o.name}`}
-                            trigger={
-                              <Button
-                                aria-label={`Edit ${o.name}`}
-                                size="icon"
-                                variant="ghost"
-                              >
-                                <PencilIcon />
-                              </Button>
-                            }
-                          />
-                          <DeleteButton
-                            canEdit={canEditShop && !o.syncedAt}
-                            entity="operators"
-                            id={o.id}
-                            name={o.name}
-                          />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                {operators.map((o) => (
+                  <OperatorRow
+                    canEdit={canEditShop}
+                    key={o.id}
+                    machineName={machineName}
+                    machineNames={machineNames}
+                    operator={o}
+                  />
+                ))}
               </TableBody>
             </Table>
           </div>

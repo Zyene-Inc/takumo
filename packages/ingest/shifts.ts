@@ -69,6 +69,34 @@ const DAY_NAMES: Record<string, number> = {
 };
 
 const RANGE = /^(\w+)\s*(?:-|–|to|through|thru)\s*(\w+)$/i;
+const LIST_SEPARATOR = /[,/;&]|\band\b/;
+const ALL_WEEK = new Set(["daily", "every day", "7 days"]);
+
+/** "Fri-Mon" → Fri, Sat, Sun, Mon; null when a name can't be read. */
+const dayRange = (from: string, to: string) => {
+  const first = DAY_NAMES[from];
+  const last = DAY_NAMES[to];
+  if (!(first && last)) {
+    return null;
+  }
+  const days: number[] = [];
+  for (let d = first; ; d = (d % 7) + 1) {
+    days.push(d);
+    if (d === last) {
+      return days;
+    }
+  }
+};
+
+/** One item of a list: a range or a single day. */
+const dayItem = (item: string) => {
+  const range = item.match(RANGE);
+  if (range) {
+    return dayRange(range[1] as string, range[2] as string);
+  }
+  const day = DAY_NAMES[item];
+  return day ? [day] : null;
+};
 
 /**
  * "Mon-Fri", "M-F", "Mon, Wed, Fri", "Tue-Sat", "weekdays", "Sat" → ISO
@@ -82,36 +110,22 @@ export const parseDays = (text: string): number[] | null => {
   if (clean === "weekdays") {
     return [...WEEKDAYS];
   }
-  if (clean === "daily" || clean === "every day" || clean === "7 days") {
+  if (ALL_WEEK.has(clean)) {
     return [1, 2, 3, 4, 5, 6, 7];
   }
   const days = new Set<number>();
-  for (const part of clean.split(/[,/;&]|\band\b/)) {
+  for (const part of clean.split(LIST_SEPARATOR)) {
     const item = part.trim();
     if (!item) {
       continue;
     }
-    const range = item.match(RANGE);
-    if (range) {
-      const from = DAY_NAMES[range[1]];
-      const to = DAY_NAMES[range[2]];
-      if (!(from && to)) {
-        return null;
-      }
-      // Wraps past Sunday: "Fri-Mon" is Fri, Sat, Sun, Mon.
-      for (let d = from; ; d = (d % 7) + 1) {
-        days.add(d);
-        if (d === to) {
-          break;
-        }
-      }
-      continue;
-    }
-    const day = DAY_NAMES[item];
-    if (!day) {
+    const found = dayItem(item);
+    if (!found) {
       return null;
     }
-    days.add(day);
+    for (const d of found) {
+      days.add(d);
+    }
   }
   return days.size ? [...days].sort((a, b) => a - b) : null;
 };

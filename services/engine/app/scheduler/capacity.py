@@ -229,7 +229,7 @@ def _labor_sentence(
         when = _d(request.start_date + timedelta(days=day))
         gaps = report.uncovered.get((name, day))
         why = (
-            f"no one qualified on it works {_windows_text(gaps)}"
+            f"no one qualified on it is in {_windows_text(gaps)}"
             if gaps
             else "the people qualified on it are needed on other machines too"
         )
@@ -509,6 +509,20 @@ def check_capacity(request: CapacityRequest) -> CapacityResponse:
                         extra_cost=None,
                     )
                 )
+
+    # Only ways that help: on time, or at least sooner than fitting it in as
+    # it is. Overtime or a split that changes nothing (the machine has no
+    # people, the material isn't in) would only be noise.
+    levers = [
+        lv
+        for lv in levers
+        if lv.on_time
+        or lv.kind == "alternate_machine"
+        or (
+            lv.completion_date is not None
+            and lv.completion_date < fit_new.completion_date
+        )
+    ]
 
     # Cheapest on-time lever first.
     levers.sort(

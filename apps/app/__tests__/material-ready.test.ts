@@ -31,7 +31,12 @@ const order = (
   dueDate: new Date(`${due}T00:00:00Z`),
   started,
 });
-const po = (poNo: string, materialId: string, qty: number, due: string): PoRow => ({
+const po = (
+  poNo: string,
+  materialId: string,
+  qty: number,
+  due: string
+): PoRow => ({
   poNo,
   materialId,
   qtyOrdered: qty,
@@ -60,7 +65,10 @@ describe("material-ready dates", () => {
 
   test("orders take stock in due-date order: the later one waits for the PO", () => {
     const r = run(
-      [order("LATE", "p1", 20, "2026-12-01"), order("SOON", "p1", 20, "2026-11-10")],
+      [
+        order("LATE", "p1", 20, "2026-12-01"),
+        order("SOON", "p1", 20, "2026-11-10"),
+      ],
       [{ materialId: "al", qtyOnHand: 12, qtyAllocated: 0, unit: null }],
       [po("PO-4471", "al", 50, "2026-11-12")]
     );
@@ -92,7 +100,9 @@ describe("material-ready dates", () => {
   });
 
   test("stock the ERP set aside goes to existing orders, not a new one", () => {
-    const stock = [{ materialId: "al", qtyOnHand: 10, qtyAllocated: 10, unit: null }];
+    const stock = [
+      { materialId: "al", qtyOnHand: 10, qtyAllocated: 10, unit: null },
+    ];
     const r = run(
       [order("OLD", "p1", 20, "2026-11-30")],
       stock,
@@ -120,7 +130,11 @@ describe("material-ready dates", () => {
   });
 
   test("an overdue PO is ready today, and says it's overdue", () => {
-    const r = run([order("A", "p1", 10, "2026-11-30")], [], [po("PO-7", "al", 10, "2026-11-01")]);
+    const r = run(
+      [order("A", "p1", 10, "2026-11-30")],
+      [],
+      [po("PO-7", "al", 10, "2026-11-01")]
+    );
     expect(r.get("A")?.date).toBeNull();
     expect(r.get("A")?.note).toContain("overdue");
   });

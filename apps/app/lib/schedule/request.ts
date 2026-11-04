@@ -317,6 +317,17 @@ const remainingKey = (
     : `${key} ops ${remaining.map((r) => r.seq).join(", ")}`;
 };
 
+/** An order's material date (only when later than the start) and note. */
+export const releaseFields = (
+  release: ReleaseRow | null | undefined,
+  startDate: string
+): Pick<Order, "release_date" | "release_note"> => ({
+  ...(release?.date && release.date > startDate
+    ? { release_date: release.date }
+    : {}),
+  ...(release ? { release_note: release.note } : {}),
+});
+
 export const buildScheduleRequest = (
   rows: ShopRows,
   startDate: string,
@@ -370,7 +381,6 @@ export const buildScheduleRequest = (
     } else {
       addPart(part);
     }
-    const release = rows.release?.get(order.orderNo);
     orders.push({
       order_no: order.orderNo,
       part_no: partNo,
@@ -378,10 +388,7 @@ export const buildScheduleRequest = (
       due_date: isoDay(order.dueDate),
       priority: Math.max(0, Math.min(10, order.priority)),
       price: toNumber(order.price),
-      ...(release?.date && release.date > startDate
-        ? { release_date: release.date }
-        : {}),
-      ...(release ? { release_note: release.note } : {}),
+      ...releaseFields(rows.release?.get(order.orderNo), startDate),
     });
   }
   for (const id of options.includeParts ?? []) {

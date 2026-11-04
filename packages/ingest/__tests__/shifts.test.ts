@@ -56,8 +56,8 @@ describe("shift times and days from ERP exports", () => {
     expect(formatDays([1, 3, 5])).toBe("Mon, Wed, Fri");
     expect(formatDays([6, 7])).toBe("Sat, Sun");
     expect(parseDays(formatDays([2, 3, 4, 5, 6]))).toEqual([2, 3, 4, 5, 6]);
-    expect(formatShift({ start: "15:30", end: "24:00", days: [1, 2, 3, 4, 5] })).toBe(
-      "Mon-Fri 15:30–24:00"
-    );
+    expect(
+      formatShift({ start: "15:30", end: "24:00", days: [1, 2, 3, 4, 5] })
+    ).toBe("Mon-Fri 15:30–24:00");
   });
 });

@@ -140,10 +140,10 @@ export type SolverStatus =
 export interface ScheduleResponse {
   conflicts: Conflict[];
   load: DayLoad[];
-  operations: ScheduledOperation[];
-  orders: OrderResult[];
   /** Notes about the inputs, e.g. machines nobody is listed to run. */
   notices?: string[];
+  operations: ScheduledOperation[];
+  orders: OrderResult[];
   status: SolverStatus;
   total_days_late: number;
 }

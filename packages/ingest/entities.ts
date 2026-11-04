@@ -958,7 +958,12 @@ const operators: EntityDef = {
       key: "unattended",
       label: "Can leave machines running",
       kind: "enum",
-      synonyms: ["unattended", "lights out", "multi machine", "can run unattended"],
+      synonyms: [
+        "unattended",
+        "lights out",
+        "multi machine",
+        "can run unattended",
+      ],
       values: ["yes", "no"],
       valueAliases: {
         y: "yes",

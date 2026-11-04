@@ -9,6 +9,7 @@ import {
   engineProblem,
   loadShop,
 } from "./plan";
+import { releaseFields } from "./request";
 
 export interface CapacityQuestion {
   customer?: string | null;
@@ -99,10 +100,7 @@ export const runCapacityCheck = async (
         due_date: question.dueDate,
         price,
         priority: 0,
-        ...(material?.date && material.date > today
-          ? { release_date: material.date }
-          : {}),
-        ...(material ? { release_note: material.note } : {}),
+        ...releaseFields(material, today),
       },
     });
   } catch (error) {

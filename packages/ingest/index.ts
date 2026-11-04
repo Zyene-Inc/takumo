@@ -5,5 +5,5 @@
 export * from "./contacts";
 export * from "./entities";
 export * from "./match";
-export * from "./transform";
 export * from "./shifts";
+export * from "./transform";

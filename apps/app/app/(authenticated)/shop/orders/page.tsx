@@ -63,7 +63,9 @@ const MaterialCell = ({
   if (ready.unknown) {
     label = "not checked";
   } else if (ready.notOrdered) {
-    label = ready.date ? `not ordered · ${shortDay(ready.date)}` : "not ordered";
+    label = ready.date
+      ? `not ordered · ${shortDay(ready.date)}`
+      : "not ordered";
     tone = "text-destructive";
   } else if (ready.date) {
     label = `arrives ${shortDay(ready.date)}`;

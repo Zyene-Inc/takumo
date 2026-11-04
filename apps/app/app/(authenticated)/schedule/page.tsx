@@ -12,7 +12,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { hashFingerprint, latestPlan, loadShop } from "@/lib/schedule/plan";
-import { shortStaffed } from "@/lib/schedule/staffing";
+import { type ShortStaffed, shortStaffed } from "@/lib/schedule/staffing";
 import { Header } from "../components/header";
 import { EmptyState } from "../shop/components/format";
 import { Board, type OrderInfo } from "./board";
@@ -48,6 +48,39 @@ const ago = (date: Date) => {
   const hours = Math.round(minutes / 60);
   return hours < 48 ? `${hours} h ago` : `${Math.round(hours / 24)} days ago`;
 };
+
+/** Machine-days short of qualified people, and roster notices (F3.1-R5). */
+const PeopleAlert = ({
+  staffing,
+  notices,
+}: {
+  notices: string[];
+  staffing: ShortStaffed[];
+}) =>
+  staffing.length === 0 && notices.length === 0 ? null : (
+    <Alert>
+      <AlertTitle>People</AlertTitle>
+      <AlertDescription>
+        <ul className="list-disc pl-4">
+          {staffing.map((s) => (
+            <li key={s.machine}>
+              {s.machine} has fewer qualified people than hours on{" "}
+              {s.days.join(", ")}
+              {s.more ? ` and ${s.more} more days` : ""}; it's planned only for
+              the hours someone is in.
+            </li>
+          ))}
+          {notices.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+        <Link className="underline" href="/shop/operators">
+          See who runs what
+        </Link>
+        .
+      </AlertDescription>
+    </Alert>
+  );
 
 const SchedulePage = async () => {
   const { orgId, canEditShop } = await getAccess();
@@ -211,30 +244,7 @@ const SchedulePage = async () => {
           </Alert>
         )}
 
-        {(staffing.length > 0 || (plan.output.notices ?? []).length > 0) && (
-          <Alert>
-            <AlertTitle>People</AlertTitle>
-            <AlertDescription>
-              <ul className="list-disc pl-4">
-                {staffing.map((s) => (
-                  <li key={s.machine}>
-                    {s.machine} has fewer qualified people than hours on{" "}
-                    {s.days.join(", ")}
-                    {s.more ? ` and ${s.more} more days` : ""}; it's planned
-                    only for the hours someone is in.
-                  </li>
-                ))}
-                {(plan.output.notices ?? []).map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ul>
-              <Link className="underline" href="/shop/operators">
-                See who runs what
-              </Link>
-              .
-            </AlertDescription>
-          </Alert>
-        )}
+        <PeopleAlert notices={plan.output.notices ?? []} staffing={staffing} />
 
         {plan.input.assumptions.length > 0 && (
           <Alert>
