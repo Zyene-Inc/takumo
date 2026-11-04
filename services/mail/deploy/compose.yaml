@@ -51,10 +51,11 @@ services:
   # ClamAV: every message is scanned before it reaches the app (src/scan.ts).
   # Only the mail service talks to it; no ports are published on the host. It
   # still needs outbound internet for freshclam's signature updates, so the
-  # network isn't "internal". Multi-arch image (amd64 and arm64, the VM's).
+  # network isn't "internal". The Debian-based image: it is multi-arch (amd64
+  # and arm64, the VM's); the Alpine one (clamav/clamav) is amd64 only.
   # Needs about 1-1.5 GB of RAM once the signatures are loaded.
   clamd:
-    image: clamav/clamav:1.4.3
+    image: clamav/clamav-debian:1.4.3
     restart: unless-stopped
     networks: [scan]
     volumes:

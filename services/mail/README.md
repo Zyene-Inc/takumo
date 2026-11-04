@@ -102,7 +102,8 @@ The service refuses to start when a required value is missing or invalid; compos
 
 ## Malware scanning (ClamAV)
 
-Compose runs `clamav/clamav` (pinned, multi-arch: works on the VM's arm64) as a `clamd` service
+Compose runs `clamav/clamav-debian` (pinned, multi-arch: works on the VM's arm64; the Alpine-based
+`clamav/clamav` has no arm64 build) as a `clamd` service
 next to the receiver. It publishes no ports; only the receiver reaches it, on its own network.
 It does need outbound internet: freshclam inside the container updates the signatures.
 
@@ -112,7 +113,7 @@ It does need outbound internet: freshclam inside the container updates the signa
   waits for it (`depends_on: service_healthy`, up to 10 minutes). They're kept in the
   `clamav-db` volume, so restarts are quick.
 - **Before upgrading the image tag,** confirm the new tag still has an arm64 build:
-  `docker manifest inspect clamav/clamav:<tag> | grep arm64`.
+  `docker manifest inspect clamav/clamav-debian:<tag> | grep arm64`.
 - **Check it's working:** `curl -s 127.0.0.1:2526/health` shows `"scanner":"ok"`. Then send a
   message whose body is the standard EICAR antivirus test string (a harmless 68-character text
   every scanner treats as a virus; see eicar.org). The receiver answers `554 ... malware` and the
