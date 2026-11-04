@@ -116,6 +116,8 @@ export const confirmMapping = async (input: {
   reportId: string;
   mapping: unknown;
   mode: string;
+  /** The ERP renamed this report's columns: it replaces the old one. */
+  replace?: boolean;
 }): Promise<Result<{ result: ReportResult | null }>> => {
   const access = await authorize("connectors:manage");
   if (!access.ok) {
@@ -131,7 +133,13 @@ export const confirmMapping = async (input: {
     confidence: {},
     source: "heuristic",
   };
-  const done = await confirmReport(access.orgId, input.reportId, mapping, mode);
+  const done = await confirmReport(
+    access.orgId,
+    input.reportId,
+    mapping,
+    mode,
+    input.replace === true
+  );
   revalidatePath(PATH);
   return done.ok ? { ok: true, result: done.result } : done;
 };

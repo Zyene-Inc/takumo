@@ -3,6 +3,7 @@ import { database } from "@repo/database";
 import { env } from "@/env";
 import { PROVIDER_NAME, type Provider } from "@/lib/connectors/config";
 import { healthLines, lateReports } from "@/lib/erp/health";
+import { reportLink } from "@/lib/erp/link";
 import { notifyAdmins } from "@/lib/notify";
 import { markAllEnteredFromErp } from "@/lib/orders/settle";
 import { removeOldFiltered } from "@/lib/quotes/screening";
@@ -17,6 +18,14 @@ const FAILING_FOR_MS = 26 * 60 * 60 * 1000;
 // disconnected, so stale data gets noticed before it misleads anyone. Also
 // settles quotes the ERP's orders answered.
 export const maxDuration = 120;
+
+/** Straight to the report when there's one, else the reports page. */
+const reportPath = (late: number, only: string | undefined) => {
+  if (late === 0) {
+    return "/settings/integrations";
+  }
+  return reportLink(late === 1 ? only : undefined);
+};
 
 const authorized = (header: string | null) => {
   const secret = env.CRON_SECRET;
@@ -36,7 +45,7 @@ export const GET = async (request: Request) => {
   // Housekeeping: pieces of uploads that were never submitted.
   await removeOldUploadParts(now.getTime()).catch(() => 0);
   await removeOldFiltered(now.getTime()).catch(() => 0);
-  const [reports, broken] = await Promise.all([
+  const [reports, broken, renames] = await Promise.all([
     database.erpReport.findMany({
       where: { status: "active" },
       select: {
@@ -72,7 +81,17 @@ export const GET = async (request: Request) => {
         account: true,
       },
     }),
+    // Reports waiting for a click because the ERP renamed their columns.
+    // Only the one field: pending also holds up to 20,000 waiting rows.
+    database.$queryRaw<{ id: string; name: string; old: string }[]>`
+      SELECT id, name, pending->'replaces'->'report'->>'id' AS old
+      FROM "ErpReport"
+      WHERE status = 'needs_mapping'
+        AND pending->'replaces'->'report'->>'id' IS NOT NULL`,
   ]);
+  const waiting = new Map(
+    renames.map((r) => [r.old, { id: r.id, name: r.name }] as const)
+  );
   const orgs = new Set([
     ...reports.map((r) => r.orgId),
     ...broken.map((c) => c.orgId),
@@ -82,7 +101,8 @@ export const GET = async (request: Request) => {
     const late = lateReports(
       reports.filter((r) => r.orgId === orgId),
       now
-    );
+    ).map((r) => ({ ...r, renamedTo: waiting.get(r.id)?.name }));
+    const [onlyLate] = late;
     const mailboxes = broken
       .filter((c) => c.orgId === orgId)
       .map(
@@ -99,7 +119,7 @@ export const GET = async (request: Request) => {
         "Takumo's data from your systems needs attention:",
         ...healthLines(late, mailboxes, now),
       ],
-      late.length ? "/settings/integrations/email" : "/settings/integrations"
+      reportPath(late.length, onlyLate && (waiting.get(onlyLate.id)?.id ?? onlyLate.id))
     );
     if (late.length) {
       await database.erpReport.updateMany({

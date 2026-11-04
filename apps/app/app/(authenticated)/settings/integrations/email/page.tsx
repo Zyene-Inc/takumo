@@ -7,6 +7,8 @@ import { notFound } from "next/navigation";
 import { env } from "@/env";
 import { getAccess } from "@/lib/access";
 import { changesForErp } from "@/lib/erp/changes";
+import { describeRenamed } from "@/lib/erp/renamed";
+import type { Replaces } from "@/lib/erp/reports";
 import type { ReportResult } from "@/lib/erp/reports";
 import { ensureAddresses } from "@/lib/inbound/process";
 import { addressFor, type InboundKind } from "@/lib/inbound/verify";
@@ -114,7 +116,12 @@ const when = (d: Date) =>
     minute: "2-digit",
   });
 
-const EmailIntegrationsPage = async () => {
+const EmailIntegrationsPage = async ({
+  searchParams,
+}: {
+  searchParams: Promise<{ report?: string }>;
+}) => {
+  const focus = (await searchParams).report;
   const { orgId, canManageConnectors } = await getAccess();
   if (!orgId) {
     notFound();
@@ -133,7 +140,11 @@ const EmailIntegrationsPage = async () => {
 
   const reportViews: ReportView[] = reports.map((r) => {
     const mapping = r.mapping as ColumnMapping | null;
-    const pending = r.pending as { rows?: Record<string, unknown>[] } | null;
+    const pending = r.pending as {
+      replaces?: Replaces;
+      rows?: Record<string, unknown>[];
+    } | null;
+    const replaces = r.status === "needs_mapping" ? pending?.replaces : null;
     return {
       id: r.id,
       name: r.name,
@@ -152,6 +163,13 @@ const EmailIntegrationsPage = async () => {
       lastReceivedAt: r.lastReceivedAt?.toISOString() ?? null,
       lastImportAt: r.lastImportAt?.toISOString() ?? null,
       lastSummary: summary(r.lastResult),
+      replaces: replaces
+        ? {
+            name: replaces.report.name,
+            changes: describeRenamed(replaces),
+            complete: replaces.complete,
+          }
+        : null,
     };
   });
 
@@ -214,6 +232,7 @@ const EmailIntegrationsPage = async () => {
               {reportViews.map((r) => (
                 <ReportRow
                   canManage={canManageConnectors}
+                  focused={r.id === focus}
                   key={r.id}
                   report={r}
                 />

@@ -11,6 +11,8 @@ export interface ReportHealth {
   lastImportAt: Date | null;
   lastReceivedAt: Date | null;
   name: string;
+  /** It arrives under new columns, waiting for an admin's click. */
+  renamedTo?: string;
   status: string;
   updatedAt: Date;
 }
@@ -35,6 +37,9 @@ const daysAgo = (from: Date, now: Date) => {
 
 /** What went wrong with a late report, and what to check. */
 const lateLine = (r: ReportHealth, now: Date) => {
+  if (r.renamedTo) {
+    return `• ${r.name}: your ERP changed its columns, so it now arrives as ${r.renamedTo}. Confirm the new columns (one click) and it imports again.`;
+  }
   const arriving =
     r.lastReceivedAt &&
     (!r.lastImportAt || r.lastReceivedAt > r.lastImportAt) &&
