@@ -91,10 +91,10 @@ export const proposeRouting = async (
   usage: { modelId: string; tokens: LanguageModelUsage };
 }> => {
   const { line } = input;
-  const { output, usage, response } = await generateText({
+  const { output, usage, finalStep } = await generateText({
     model: models.agent,
     output: Output.object({ schema }),
-    system: SYSTEM,
+    instructions: SYSTEM,
     prompt: `Shop machines:
 ${input.machines.map((m) => `- ${m.name}${m.type ? ` (${m.type})` : ""}${m.envelope ? `, holds up to ${m.envelope}` : ""}${m.toleranceIn ? `, holds ±${m.toleranceIn} in` : ""}`).join("\n")}
 
@@ -121,6 +121,6 @@ Part to quote:
   return {
     ops,
     notes: [...output.notes.slice(0, 3), ...dropped],
-    usage: { modelId: response.modelId, tokens: usage },
+    usage: { modelId: finalStep.response.modelId, tokens: usage },
   };
 };

@@ -142,7 +142,7 @@ describe("Ask Takumo golden questions", () => {
       ...(EVAL_MODEL ? { model: EVAL_MODEL } : {}),
       prompt: golden.q,
     });
-    spentUsd += costUsd(result.response.modelId, result.totalUsage) ?? 0;
+    spentUsd += costUsd(result.finalStep.response.modelId, result.usage) ?? 0;
     const graded = grade(golden, result, ctx);
     outcomes.push({
       q: golden.q,

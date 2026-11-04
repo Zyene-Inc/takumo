@@ -70,7 +70,7 @@ const ask = async (
   pages: number
 ) => {
   try {
-    const { output, usage, response } = await generateText({
+    const { output, usage, finalStep } = await generateText({
       model: models.chat,
       output: Output.object({ schema: drawingAnswerSchema }),
       messages: [
@@ -86,7 +86,7 @@ const ask = async (
         },
       ],
     });
-    await recordUsage(orgId, "drawing_read", response.modelId, usage);
+    await recordUsage(orgId, "drawing_read", finalStep.response.modelId, usage);
     return output;
   } catch (error) {
     await recordFailedUsage(orgId, "drawing_read", error);

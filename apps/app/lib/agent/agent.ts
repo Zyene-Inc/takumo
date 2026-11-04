@@ -1,6 +1,6 @@
 import "server-only";
 
-import { stepCountIs } from "@repo/ai";
+import { isStepCount } from "@repo/ai";
 import { models } from "@repo/ai/lib/models";
 import { database } from "@repo/database";
 import type { AnswerMode } from "./answer";
@@ -97,9 +97,9 @@ export const agentSettings = async (
   });
   return {
     model: mode === "quick" ? models.chat : models.agent,
-    system: systemPrompt(org?.name ?? "this shop", ctx.today),
+    instructions: systemPrompt(org?.name ?? "this shop", ctx.today),
     tools: createTools(ctx, counters),
-    stopWhen: stepCountIs(MAX_STEPS),
+    stopWhen: isStepCount(MAX_STEPS),
     // Each step re-sends the tools, the instructions and the steps so far:
     // automatic caching moves a breakpoint to the end of each request, so the
     // next step reads that prefix from cache (5% of the input price on Opus)

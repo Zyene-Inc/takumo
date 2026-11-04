@@ -155,10 +155,10 @@ export const extractRfq = async (
   receivedOn: string,
   shop: ShopLists
 ): Promise<ReadRfq> => {
-  const { output, usage, response } = await generateText({
+  const { output, usage, finalStep } = await generateText({
     model: models.extract,
     output: Output.object({ schema }),
-    system: SYSTEM,
+    instructions: SYSTEM,
     prompt: `Received on: ${receivedOn}
 
 ${list(
@@ -235,6 +235,6 @@ ${text}
     questions: output.questions.slice(0, 4),
     lines,
     reading: output,
-    usage: { modelId: response.modelId, tokens: usage },
+    usage: { modelId: finalStep.response.modelId, tokens: usage },
   };
 };

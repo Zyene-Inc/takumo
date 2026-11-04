@@ -123,12 +123,12 @@ export const extractFacts = async (
 ) => {
   const feature = kind === "note" ? "note_read" : "doc_read";
   try {
-    const { output, usage, response } = await generateText({
+    const { output, usage, finalStep } = await generateText({
       // Floor notes are short and every word counts; documents are long and
       // read in pieces, so the faster model keeps them affordable.
       model: kind === "note" ? models.agent : models.chat,
       output: Output.object({ schema }),
-      system: system(kind),
+      instructions: system(kind),
       prompt: `${context ?? (await shopContext(orgId))}
 
 ${SOURCES[kind].noun[0].toUpperCase()}${SOURCES[kind].noun.slice(1)}:
@@ -136,7 +136,7 @@ ${SOURCES[kind].noun[0].toUpperCase()}${SOURCES[kind].noun.slice(1)}:
 ${text.slice(0, MAX_NOTE_CHARS)}
 </${SOURCES[kind].noun}>`,
     });
-    await recordUsage(orgId, feature, response.modelId, usage);
+    await recordUsage(orgId, feature, finalStep.response.modelId, usage);
     return output?.facts ?? [];
   } catch (error) {
     await recordFailedUsage(orgId, feature, error);
