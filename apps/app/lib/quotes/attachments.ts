@@ -91,6 +91,10 @@ const DRAWING_NAME =
 /** Under this many characters per page, a PDF page is a scan. */
 const SCANNED_CHARS = 40;
 
+/** A PDF whose pages have (almost) no text of their own: scanned images. */
+export const isScanned = (pages: string[]) =>
+  pages.length > 0 && pages.every((p) => p.trim().length < SCANNED_CHARS);
+
 /** True when a PDF's text reads like an engineering drawing. */
 export const looksLikeDrawing = (pages: string[]) => {
   const text = pages.join("\n").slice(0, 20_000);
@@ -124,9 +128,7 @@ export const kindOf = (
     if (looksLikeDrawing(pages)) {
       return "drawing";
     }
-    const scanned =
-      pages.length > 0 && pages.every((p) => p.trim().length < SCANNED_CHARS);
-    return (scanned || pages.length === 0) && DRAWING_NAME.test(name)
+    return (isScanned(pages) || pages.length === 0) && DRAWING_NAME.test(name)
       ? "drawing"
       : "document";
   }

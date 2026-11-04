@@ -6,6 +6,8 @@ import { log } from "@repo/observability/log";
 import { env } from "@/env";
 import { budgetProblem } from "../ai-usage";
 import { track } from "../analytics";
+import { reportLink } from "../erp/link";
+import { describeRenamed } from "../erp/renamed";
 import { handleReportSheet, type SheetOutcome } from "../erp/reports";
 import { isReport, readSheets } from "../erp/sheets";
 import { notifyAdmins } from "../notify";
@@ -167,13 +169,60 @@ const describe = (o: SheetOutcome) => {
     const r = o.result;
     return `${o.report}: ${r.created} added, ${r.updated} updated, ${r.skipped} skipped${r.closed ? `, ${r.closed} closed` : ""}`;
   }
+  if (o.status === "duplicate") {
+    return `${o.report}: the same file as earlier, nothing new to import`;
+  }
   if (o.status === "needs_mapping") {
-    return `${o.report}: new report, waiting for its columns to be confirmed`;
+    return o.replaces
+      ? `${o.report}: ${o.replaces.report.name} with changed columns (${describeRenamed(o.replaces)}), waiting for a click to confirm`
+      : `${o.report}: new report, waiting for its columns to be confirmed`;
   }
   if (o.status === "paused") {
     return `${o.report}: paused, not imported`;
   }
   return `${o.report}: ${o.error ?? "failed"}`;
+};
+
+type NeedsMapping = Extract<SheetOutcome, { status: "needs_mapping" }>;
+
+/**
+ * Tell the admins what to check: a renamed column gets its own email with a
+ * link straight to the one-click confirm; new reports share one.
+ */
+const notifyMapping = async (orgId: string, outcomes: SheetOutcome[]) => {
+  const waiting = outcomes.filter(
+    (o): o is NeedsMapping => o.status === "needs_mapping"
+  );
+  for (const o of waiting.filter((x) => x.replaces)) {
+    const r = o.replaces;
+    if (!r) {
+      continue;
+    }
+    await notifyAdmins(
+      orgId,
+      `your ERP changed the columns of ${r.report.name}`,
+      [
+        `${r.report.name} arrived with different columns: ${describeRenamed(r)}.`,
+        r.complete
+          ? 'Takumo moved your column choices over. Open the link and press "Use the same columns" to import it; it imports by itself again after that.'
+          : "Takumo moved over what it could, but a required column is missing. Open the link and choose it.",
+        "Until then, this report isn't imported.",
+      ],
+      reportLink(o.reportId)
+    );
+  }
+  const fresh = waiting.filter((o) => !o.replaces);
+  if (fresh.length) {
+    await notifyAdmins(
+      orgId,
+      "a new ERP report needs a quick check",
+      [
+        `Takumo received ${fresh.map((o) => o.report).join(", ")} for the first time.`,
+        "Check what its columns mean once, and it imports by itself every night after that.",
+      ],
+      reportLink(fresh.length === 1 ? fresh[0]?.reportId : undefined)
+    );
+  }
 };
 
 /** An ERP report email: import every spreadsheet attached. */
@@ -219,7 +268,10 @@ const processReport = async (
     );
   }
   const needsMapping = outcomes.filter((o) => o.status === "needs_mapping");
-  const failed = outcomes.filter((o) => o.status === "failed");
+  const failed = outcomes.filter(
+    (o): o is Extract<SheetOutcome, { status: "failed" | "paused" }> =>
+      o.status === "failed"
+  );
   let status = "processed";
   if (failed.length) {
     status = "failed";
@@ -231,17 +283,13 @@ const processReport = async (
     orgId,
     properties: { sheets: outcomes.length, status },
   });
-  if (needsMapping.length) {
-    await notifyAdmins(orgId, "a new ERP report needs a quick check", [
-      `Takumo received ${needsMapping.map((o) => o.report).join(", ")} for the first time.`,
-      "Check what its columns mean once, and it imports by itself every night after that.",
-    ]);
-  }
+  await notifyMapping(orgId, needsMapping);
   if (failed.length) {
     await notifyAdmins(
       orgId,
       "an ERP report couldn't be imported",
-      failed.map(describe)
+      failed.map(describe),
+      reportLink(failed.length === 1 ? failed[0]?.reportId : undefined)
     );
   }
 };

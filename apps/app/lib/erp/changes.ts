@@ -6,6 +6,8 @@ import {
   changesModel,
   factLabel,
   formatValue,
+  SUBJECT_LABEL,
+  type SubjectType,
 } from "../facts/attributes";
 
 // Approved facts change Takumo's numbers at once; when the record came from
@@ -15,9 +17,19 @@ import {
 const DAYS = 60;
 
 export interface ErpChange {
+  /** Why it changed, as the person who stated it said. */
+  evidence: string | null;
   fact: string;
+  /** The field in words: "Setup time". */
+  field: string;
+  /** "Operation", "Machine", … */
+  kind: string;
   label: string;
+  /** The new value, formatted. */
+  now: string;
   reviewedAt: string;
+  /** The ERP's value before, formatted; "—" when unknown. */
+  was: string;
   what: string;
 }
 
@@ -69,10 +81,17 @@ export const changesForErp = async (orgId: string): Promise<ErpChange[]> => {
     .filter((f) => synced.get(f.subjectType)?.has(f.subjectId))
     .map((f) => {
       const def = attributeDef(f.subjectType, f.attribute);
+      const field = def?.label ?? f.attribute;
+      const now = formatValue(def, f.value);
       return {
         fact: factLabel(f.number),
+        kind: SUBJECT_LABEL[f.subjectType as SubjectType] ?? f.subjectType,
         label: f.subjectLabel,
-        what: `${def?.label ?? f.attribute}: ${formatValue(def, f.value)}`,
+        field,
+        was: formatValue(def, f.previousValue),
+        now,
+        evidence: f.evidence,
+        what: `${field}: ${now}`,
         reviewedAt: (f.reviewedAt ?? f.createdAt).toISOString(),
       };
     });

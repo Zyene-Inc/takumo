@@ -15,7 +15,8 @@ import type { Sheet } from "@/app/(authenticated)/onboarding/read-file";
 import { budgetProblem, recordUsage } from "../ai-usage";
 import { markEnteredFromErp } from "../orders/settle";
 import { settleFromErp } from "../quotes/settle";
-import { headerKey } from "./sheets";
+import { findRenamed, type KnownReport, type Renamed } from "./renamed";
+import { headerKey, sheetHash } from "./sheets";
 
 // A shop's ERP emails the same reports every night (docs/PRODUCT-PLAN.md
 // F1.3). The first time a report arrives Takumo suggests what its columns
@@ -23,6 +24,12 @@ import { headerKey } from "./sheets";
 
 /** Rows kept from an unconfirmed report until its columns are confirmed. */
 const MAX_PENDING_ROWS = 20_000;
+/**
+ * The same file again within this long is a resend, not new data (F1.3: a
+ * duplicate report the same day is a no-op). Hours rather than the calendar
+ * day, so a resend just after midnight is still caught.
+ */
+export const DUPLICATE_WITHIN_MS = 20 * 3_600_000;
 export const REPORT_MODES = ["full", "changes"] as const;
 export type ReportMode = (typeof REPORT_MODES)[number];
 
@@ -31,6 +38,8 @@ export interface ReportResult {
   closed: number;
   created: number;
   errors: number;
+  /** The imported file's content hash, to recognise a resend. */
+  fileHash?: string;
   notes: string[];
   skipped: number;
   updated: number;
@@ -39,18 +48,38 @@ export interface ReportResult {
 interface PendingRows {
   fileName: string;
   firstRow: number;
+  /** The confirmed report this one replaces (its columns were renamed). */
+  replaces?: Replaces;
   rows: Sheet["rows"];
   /** Rows in the file, when more than are kept here (a waiting report). */
   total?: number;
 }
+
+export type Replaces = Pick<
+  Renamed,
+  "added" | "removed" | "renamed" | "report" | "complete"
+>;
 
 /** Nothing in the report could be read: a column was renamed or removed. */
 export class UnreadableReportError extends Error {}
 
 export type SheetOutcome =
   | { status: "imported"; report: string; result: ReportResult }
-  | { status: "needs_mapping"; report: string; entity: EntityKey }
-  | { status: "paused" | "failed"; report: string; error?: string };
+  | { status: "duplicate"; report: string }
+  | {
+      status: "needs_mapping";
+      report: string;
+      entity: EntityKey;
+      reportId?: string;
+      /** Set when it's a known report whose columns the ERP renamed. */
+      replaces?: Replaces;
+    }
+  | {
+      status: "paused" | "failed";
+      report: string;
+      error?: string;
+      reportId?: string;
+    };
 
 /**
  * A full report lists everything that's open: what the ERP used to list and
@@ -149,7 +178,8 @@ export const importReportRows = async (
   orgId: string,
   report: { id: string; name: string; mode: string },
   mapping: ColumnMapping,
-  pending: PendingRows
+  pending: PendingRows,
+  fileHash?: string
 ): Promise<ReportResult> => {
   const { records, errors } = parseRows(
     pending.rows,
@@ -199,6 +229,7 @@ export const importReportRows = async (
     errors: rowErrors,
     closed,
     notes,
+    ...(fileHash ? { fileHash } : {}),
   };
   if (mapping.entity === "orders") {
     // New orders may answer open quotes (won within 60 days).
@@ -275,17 +306,27 @@ export const handleReportSheet = async (
       where: { id: existing.id },
       data: { lastReceivedAt: now, name: sheet.name },
     });
+    const fileHash = sheetHash(sheet);
+    if (isResend(existing, fileHash, now)) {
+      return { status: "duplicate", report: sheet.name };
+    }
     try {
       const result = await importReportRows(
         orgId,
         existing,
         existing.mapping as unknown as ColumnMapping,
-        { fileName: sheet.name, firstRow: sheet.firstRow, rows: sheet.rows }
+        { fileName: sheet.name, firstRow: sheet.firstRow, rows: sheet.rows },
+        fileHash
       );
       return { status: "imported", report: sheet.name, result };
     } catch (error) {
       if (error instanceof UnreadableReportError) {
-        return { status: "failed", report: sheet.name, error: error.message };
+        return {
+          status: "failed",
+          report: sheet.name,
+          error: error.message,
+          reportId: existing.id,
+        };
       }
       log.error("ERP report import failed", { orgId, error: String(error) });
       return {
@@ -295,28 +336,88 @@ export const handleReportSheet = async (
       };
     }
   }
-  const mapping = existing?.mapping
-    ? (existing.mapping as unknown as ColumnMapping)
-    : await suggest(orgId, sheet);
+  // A report the shop confirmed, with columns the ERP renamed: carry its
+  // choices over so the admin confirms in one click. Remembered until then.
+  const before = existing?.pending as PendingRows | null | undefined;
+  const renamed = existing
+    ? null
+    : findRenamed(sheet.headers, await confirmedReports(orgId));
+  let mapping: ColumnMapping;
+  if (existing?.mapping) {
+    mapping = existing.mapping as unknown as ColumnMapping;
+  } else if (renamed) {
+    mapping = renamed.mapping;
+  } else {
+    mapping = await suggest(orgId, sheet);
+  }
+  if (renamed) {
+    pending.replaces = {
+      report: renamed.report,
+      renamed: renamed.renamed,
+      removed: renamed.removed,
+      added: renamed.added,
+      complete: renamed.complete,
+    };
+  } else if (before?.replaces) {
+    pending.replaces = before.replaces;
+  }
   const data = {
     name: sheet.name,
     headers: sheet.headers,
     entity: mapping.entity,
     mapping: mapping as object,
+    ...(renamed ? { mode: renamed.mode } : {}),
     status: "needs_mapping",
     pending: pending as object,
     lastReceivedAt: now,
   };
+  let reportId = existing?.id;
   if (existing) {
     await db.erpReport.updateMany({ where: { id: existing.id }, data });
   } else {
-    await db.erpReport.create({ data: { orgId, headerKey: key, ...data } });
+    reportId = (
+      await db.erpReport.create({
+        data: { orgId, headerKey: key, ...data },
+        select: { id: true },
+      })
+    ).id;
   }
   return {
     status: "needs_mapping",
     report: sheet.name,
     entity: mapping.entity,
+    reportId,
+    ...(pending.replaces ? { replaces: pending.replaces } : {}),
   };
+};
+
+/** The same file as the last import, within a resend's time: skip it. */
+const isResend = (
+  report: { lastImportAt: Date | null; lastResult: unknown },
+  fileHash: string,
+  now: Date
+) => {
+  const last = report.lastResult as { fileHash?: string } | null;
+  return Boolean(
+    report.lastImportAt &&
+      last?.fileHash === fileHash &&
+      now.getTime() - report.lastImportAt.getTime() < DUPLICATE_WITHIN_MS
+  );
+};
+
+/** Reports whose columns the shop confirmed: what a renamed one may be. */
+const confirmedReports = async (orgId: string): Promise<KnownReport[]> => {
+  const rows = await forOrg(database, orgId).erpReport.findMany({
+    where: {
+      status: { in: ["active", "paused"] },
+      mapping: { not: Prisma.DbNull },
+    },
+    select: { id: true, name: true, headers: true, mapping: true, mode: true },
+  });
+  return rows.map((r) => ({
+    ...r,
+    mapping: r.mapping as unknown as ColumnMapping,
+  }));
 };
 
 /**
@@ -327,7 +428,9 @@ export const confirmReport = async (
   orgId: string,
   reportId: string,
   mapping: ColumnMapping,
-  mode: ReportMode
+  mode: ReportMode,
+  /** The report's columns were renamed: retire the one it replaces. */
+  replace = false
 ): Promise<
   { ok: true; result: ReportResult | null } | { ok: false; error: string }
 > => {
@@ -353,7 +456,29 @@ export const confirmReport = async (
     },
   });
   const pending = report.pending as PendingRows | null;
+  const replaced = replace ? pending?.replaces?.report.id : undefined;
+  const old = replaced
+    ? await db.erpReport.findFirst({
+        where: { id: replaced, NOT: { id: report.id } },
+        select: { id: true, status: true },
+      })
+    : null;
+  // The old header row won't arrive again: this report takes over. Paused
+  // while importing so it's the one full report of its kind; removed once
+  // the rows are in (records it imported stay).
+  const retire = async () => {
+    if (old) {
+      await db.erpReport.deleteMany({ where: { id: old.id } });
+    }
+  };
+  if (old) {
+    await db.erpReport.updateMany({
+      where: { id: old.id },
+      data: { status: "paused" },
+    });
+  }
   if (!pending?.rows?.length) {
+    await retire();
     return { ok: true, result: null };
   }
   try {
@@ -363,8 +488,15 @@ export const confirmReport = async (
       mapping,
       pending
     );
+    await retire();
     return { ok: true, result };
   } catch (error) {
+    if (old) {
+      await db.erpReport.updateMany({
+        where: { id: old.id },
+        data: { status: old.status },
+      });
+    }
     if (error instanceof UnreadableReportError) {
       // Not confirmed after all: it waits for the right columns.
       await db.erpReport.updateMany({

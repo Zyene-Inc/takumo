@@ -71,3 +71,10 @@ export const headerKey = (headers: string[]) =>
     )
     .digest("hex")
     .slice(0, 32);
+
+/** A sheet's content, to tell a resent report from a new one. */
+export const sheetHash = (sheet: { headers: string[]; rows: unknown[] }) =>
+  createHash("sha256")
+    .update(JSON.stringify([sheet.headers, sheet.rows]))
+    .digest("hex")
+    .slice(0, 32);
