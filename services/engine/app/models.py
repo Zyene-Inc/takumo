@@ -21,6 +21,15 @@ class DayException(BaseModel):
     reason: str | None = None
 
 
+class ShiftWindow(BaseModel):
+    """Clock hours on given weekdays, e.g. Mon–Fri 15:30–24:00. An end at or
+    before the start runs past midnight (counted on the day it starts)."""
+
+    days: list[int] = Field(default_factory=lambda: list(WEEKDAYS))
+    start: str = Field(pattern=r"^\d{2}:\d{2}$")
+    end: str = Field(pattern=r"^\d{2}:\d{2}$")
+
+
 class WorkCenter(BaseModel):
     name: str
     hours_per_day: float = Field(gt=0, le=24, description="Hours on a normal working day")
@@ -30,12 +39,34 @@ class WorkCenter(BaseModel):
     )
     exceptions: list[DayException] = []
     hourly_rate: float | None = Field(default=None, ge=0)
+    # When the machine runs, as clock windows. Empty: `hours_per_day` from the
+    # plan's `day_start` on `working_days`. Used to match operators' shifts.
+    shifts: list[ShiftWindow] = []
+    # People needed per machine while it runs: 0.5 = one person runs two.
+    operators_per_machine: float = Field(default=1.0, gt=0, le=4)
+    # Runs need nobody once it's set up (lights-out), when an operator who
+    # can leave machines running is in that day.
+    unattended_runs: bool = False
 
     def hours_on(self, day: date) -> float:
         for exception in self.exceptions:
             if exception.date == day:
                 return exception.hours
         return self.hours_per_day if day.weekday() in self.working_days else 0.0
+
+
+class Operator(BaseModel):
+    """Someone who runs machines (F3.1). Their hours limit the machines'."""
+
+    id: str
+    name: str
+    # Machines they're qualified to run (work center names).
+    work_centers: list[str]
+    shifts: list[ShiftWindow] = []
+    # Can set up a machine and leave it running (lights-out, several machines).
+    unattended: bool = False
+    # Days they work different hours: vacation, sick (0), a short day.
+    time_off: list[DayException] = []
 
 
 class Operation(BaseModel):
@@ -67,6 +98,9 @@ class Order(BaseModel):
     release_date: date | None = Field(
         default=None, description="No operation starts before this day (e.g. material arrives)"
     )
+    # Where the material comes from, in words: "12 ft of 2 in 6061 on hand",
+    # "arrives Thu Nov 12 on PO-4471" (F3.2-R4). Echoed in capacity answers.
+    release_note: str | None = None
 
 
 class Pin(BaseModel):
@@ -89,6 +123,8 @@ class ScheduleRequest(BaseModel):
         default=1.0, gt=0, le=2, description="Multiply available hours, e.g. 1.25 = overtime"
     )
     time_limit_s: float = Field(default=10.0, gt=0, le=120)
+    # The shop's people (F3.3). Empty: machines' hours aren't limited by staff.
+    operators: list[Operator] = []
 
 
 class ScheduledOperation(BaseModel):
@@ -115,6 +151,9 @@ class DayLoad(BaseModel):
     date: date
     load_minutes: int
     capacity_minutes: int
+    # The machine's own hours that day (before staffing), in capacity minutes.
+    # More than capacity_minutes: not enough qualified people on shift.
+    machine_minutes: int | None = None
 
 
 class Conflict(BaseModel):
@@ -132,6 +171,9 @@ class ScheduleResponse(BaseModel):
     load: list[DayLoad] = []
     conflicts: list[Conflict] = []
     total_days_late: int = 0
+    # Plain-language notes about the plan's inputs, e.g. machines no operator
+    # is listed for (their hours aren't checked against people).
+    notices: list[str] = []
 
 
 class CapacityRequest(ScheduleRequest):
@@ -145,7 +187,9 @@ class SlippedOrder(BaseModel):
 
 
 class Lever(BaseModel):
-    kind: str  # "overtime" | "alternate_machine" | "split_lot"
+    # "overtime" | "alternate_machine" | "split_lot" | "extra_operator"
+    # | "expedite_material"
+    kind: str
     description: str
     on_time: bool
     completion_date: date | None = None
