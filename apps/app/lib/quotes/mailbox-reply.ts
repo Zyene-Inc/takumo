@@ -20,14 +20,14 @@ import {
 } from "../connectors/outlook";
 import { mailboxAccess } from "../connectors/sync";
 import { mailThreadOf } from "../connectors/thread";
-import { emailAddress } from "../inbound/verify";
+import { domainOf, emailAddress } from "../inbound/verify";
 import { notifyMember } from "../notify";
 import { customerReply, quoteDocument } from "./document";
 import { htmlToText, parseEmail } from "./email";
 import { estimateRfqLines } from "./estimate-rfq";
 import { nextNumber } from "./numbers";
 import { renderQuotePdf } from "./pdf";
-import { draftStep, normalizeBody } from "./reply";
+import { customerAddress, draftStep, normalizeBody } from "./reply";
 import { quoteSettings } from "./settings";
 import { type RfqReply, rfqLabel } from "./types";
 import { loadRfqView, type RfqView } from "./view";
@@ -157,6 +157,11 @@ interface Target {
   /** In the RFQ's thread (its message id), or a new message to `to`. */
   inThread: string | null;
   provider: Provider;
+  /**
+   * The thread's message isn't from the customer (a colleague's forward, a
+   * portal's no-reply notice): the draft goes to `to`, the customer.
+   */
+  redirect?: boolean;
   sharedMailbox: string | null;
   threadId: string | null;
   to: string | null;
@@ -170,10 +175,18 @@ const sharedMailboxOf = (settings: unknown) => {
   return typeof shared === "string" && shared ? shared : null;
 };
 
+/** Whether an address is at the shop's own domain (the mailbox's). */
+const fromShop = (address: string | null, mailbox: string | null) => {
+  const from = emailAddress(address);
+  return Boolean(
+    from && mailbox && domainOf(from) === domainOf(mailbox.toLowerCase())
+  );
+};
+
 /**
  * Where the draft goes: the mailbox the RFQ came from (in its thread), else a
- * new message to the contact from whichever mailbox is connected. A reason
- * instead when there's no mailbox to put it in.
+ * new message to the customer from whichever mailbox is connected. A reason
+ * instead when there's no mailbox to put it in, or no customer address.
  */
 const findTarget = async (
   orgId: string,
@@ -194,21 +207,27 @@ const findTarget = async (
         provider: mail.provider,
         inThread: rfq.sourceId,
         threadId: mail.threadId,
-        to: emailAddress(rfq.sender),
+        to: customerAddress(rfq, access.connection.account),
+        // A colleague's forward, or a portal or website form's notification
+        // (a no-reply address): the reply goes to the customer instead.
+        redirect:
+          fromShop(rfq.sender, access.connection.account) ||
+          rfq.source === "portal" ||
+          rfq.source === "form",
         sharedMailbox: sharedMailboxOf(access.connection.settings),
       };
     }
   }
-  const to = emailAddress(rfq.contact) ?? emailAddress(rfq.sender);
-  if (!to) {
-    return {
-      reason:
-        "There's no email address for this customer, so the quote is a PDF to send yourself.",
-    };
-  }
   for (const provider of ["outlook", "gmail"] as const) {
     const access = await mailboxAccess(orgId, provider);
     if (access) {
+      const to = customerAddress(rfq, access.connection.account);
+      if (!to) {
+        return {
+          reason:
+            "There's no email address for this customer, so the quote is a PDF to send yourself.",
+        };
+      }
       return {
         connection: access,
         provider,
@@ -234,6 +253,52 @@ interface Written {
   threadId: string | null;
 }
 
+/**
+ * A Gmail draft in the RFQ's thread, or null when the thread can't take one
+ * (no Message-ID, no address): then it's a new message.
+ */
+const gmailInThread = async (
+  target: Target,
+  html: string,
+  pdf: { bytes: Uint8Array; mediaType: string; name: string }
+): Promise<Written | null> => {
+  if (!(target.inThread && target.threadId)) {
+    return null;
+  }
+  const token = target.connection.token;
+  const { bytes } = await rawMessageAndThread(fetch, token, target.inThread);
+  const headers = replyHeaders(bytes);
+  const original = parseEmail(new TextDecoder().decode(bytes));
+  const to =
+    (target.redirect ? target.to : null) ??
+    emailAddress(headers.replyTo) ??
+    emailAddress(headers.from) ??
+    target.to;
+  if (!(headers.messageId && to)) {
+    return null;
+  }
+  const draft = await gmailDraftReply(
+    fetch,
+    token,
+    {
+      threadId: target.threadId,
+      messageId: headers.messageId,
+      references: headers.references,
+      // Gmail only keeps a draft in the thread when its subject matches the
+      // thread's, so an updated draft keeps the same subject.
+      subject: original.subject ?? "",
+      to,
+    },
+    html,
+    pdf
+  );
+  return {
+    draftId: draft.id,
+    messageId: draft.messageId,
+    threadId: draft.threadId,
+  };
+};
+
 /** Put a new draft in the mailbox. */
 const createInMailbox = async (
   target: Target,
@@ -249,40 +314,9 @@ const createInMailbox = async (
         "Reconnect Gmail under Settings → Integrations and allow drafts, so Takumo can put the reply in your mailbox."
       );
     }
-    if (target.inThread && target.threadId) {
-      const { bytes } = await rawMessageAndThread(
-        fetch,
-        token,
-        target.inThread
-      );
-      const headers = replyHeaders(bytes);
-      const original = parseEmail(new TextDecoder().decode(bytes));
-      const to =
-        emailAddress(headers.replyTo) ??
-        emailAddress(headers.from) ??
-        target.to;
-      if (headers.messageId && to) {
-        const draft = await gmailDraftReply(
-          fetch,
-          token,
-          {
-            threadId: target.threadId,
-            messageId: headers.messageId,
-            references: headers.references,
-            // Gmail only keeps a draft in the thread when its subject matches
-            // the thread's, so an updated draft keeps the same subject.
-            subject: original.subject ?? "",
-            to,
-          },
-          content.html,
-          pdf
-        );
-        return {
-          draftId: draft.id,
-          messageId: draft.messageId,
-          threadId: draft.threadId,
-        };
-      }
+    const inThread = await gmailInThread(target, content.html, pdf);
+    if (inThread) {
+      return inThread;
     }
     if (!target.to) {
       throw new Error("There's no address to send the quote to.");
@@ -309,6 +343,7 @@ const createInMailbox = async (
       target.sharedMailbox,
       {
         attachment: pdf,
+        ...(target.redirect && target.to ? { to: target.to } : {}),
         ...(subjectSuffix
           ? { subject: `RE: ${originalSubject ?? ""}${subjectSuffix}` }
           : {}),
@@ -636,7 +671,13 @@ export const draftWhenReady = async (orgId: string, rfqId: string) => {
   try {
     const rfq = await forOrg(database, orgId).rfq.findFirst({
       where: { id: rfqId },
-      select: { status: true, _count: { select: { lines: true } } },
+      select: {
+        status: true,
+        number: true,
+        customerName: true,
+        createdBy: true,
+        _count: { select: { lines: true } },
+      },
     });
     if (!(rfq && OPEN_STATUSES.includes(rfq.status) && rfq._count.lines)) {
       return;
@@ -648,7 +689,22 @@ export const draftWhenReady = async (orgId: string, rfqId: string) => {
     const { drafted, total } = await estimateRfqLines(orgId, rfqId, today());
     if (drafted === total) {
       await writeReplyDraft(orgId, rfqId, "auto");
+      return;
     }
+    // Not silently: the estimator learns there's no draft, and why.
+    const label = rfqLabel(rfq.number);
+    const from = rfq.customerName ? ` from ${rfq.customerName}` : "";
+    await notifyMember(
+      orgId,
+      [rfq.createdBy],
+      `${label}${from} needs you before Takumo can draft the reply`,
+      [
+        `Takumo priced ${drafted} of ${total} line${total === 1 ? "" : "s"} of ${label}${from}, so there's no draft reply yet.`,
+        "Open it to see what's missing on each line. Often it's a margin: with no won quotes to learn from yet, enter the margin you want, and Takumo drafts the reply.",
+        "Review:",
+      ],
+      `/quotes/${rfqId}`
+    );
   } catch (error) {
     log.warn("Drafting an RFQ reply failed", {
       orgId,

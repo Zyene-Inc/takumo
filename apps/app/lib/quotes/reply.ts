@@ -1,5 +1,6 @@
 // The email that goes with a quote. Pure.
 
+import { domainOf, emailAddress } from "../inbound/verify";
 import type { SentPrice } from "./types";
 
 export interface ReplyLine {
@@ -312,4 +313,38 @@ export const draftStep = (input: {
     return "add";
   }
   return input.before === input.next ? "unchanged" : "replace";
+};
+
+export interface SentMessage {
+  at: Date;
+  /** It carries a document (the quote PDF, a spreadsheet). */
+  hasFiles: boolean;
+  messageId: string;
+  text: string;
+}
+
+/**
+ * Whether a message sent in the RFQ's thread is the quote: Takumo can read a
+ * price for one of the lines, or a document is attached. A "got it, quote
+ * to follow" is neither, so it's passed over and the real quote still
+ * counts when it goes out. Pure, so tested.
+ */
+export const isQuoteReply = (sent: SentMessage, partNos: string[]) =>
+  sent.hasFiles || parseSentPrices(sent.text, partNos).length > 0;
+
+/**
+ * The customer's address for the draft: the sender when the customer emailed
+ * the RFQ, else the contact read from it. Never someone at the shop: a
+ * colleague who forwarded a portal RFQ isn't the customer. Pure, so tested.
+ */
+export const customerAddress = (
+  rfq: { contact: string | null; sender: string | null; source: string },
+  /** The connected mailbox, whose domain is the shop's own. */
+  mailbox: string | null
+) => {
+  const own = mailbox ? domainOf(mailbox) : null;
+  const outside = (address: string | null) =>
+    address && domainOf(address) !== own ? address : null;
+  const sender = rfq.source === "email" ? emailAddress(rfq.sender) : null;
+  return outside(sender) ?? outside(emailAddress(rfq.contact));
 };

@@ -11,7 +11,7 @@ import { sentInConversation } from "../connectors/outlook";
 import { sentFinal } from "./approval";
 import { approveRfq } from "./approve";
 import { htmlToText, parseEmail } from "./email";
-import { parseSentPrices } from "./reply";
+import { isQuoteReply, parseSentPrices, type SentMessage } from "./reply";
 import {
   type QuotedBreak,
   type RfqReply,
@@ -158,28 +158,36 @@ export const recordSent = async (
 
 type Provider = "gmail" | "outlook";
 
-/** The reply sent in a draft's thread after the draft was made, as text. */
-const findSent = async (
+/** Sent messages looked at per draft (the quote is rarely far down). */
+const MAX_SENT_LOOKED_AT = 5;
+/** A file that can carry a quote (not a signature logo). */
+const QUOTE_FILE = /\.(pdf|docx?|xlsx?|csv)$/i;
+
+/** The messages sent in a draft's thread after the draft was made. */
+const sentAfterDraft = async (
   provider: Provider,
   token: string,
   reply: RfqReply,
   sharedMailbox: string | null
-) => {
+): Promise<SentMessage[]> => {
   if (!reply.threadId) {
-    return null;
+    return [];
   }
   const after = new Date(reply.createdAt);
   if (provider === "gmail") {
     const sent = await sentInThread(fetch, token, reply.threadId, after);
-    if (!sent) {
-      return null;
+    const found: SentMessage[] = [];
+    for (const message of sent.slice(0, MAX_SENT_LOOKED_AT)) {
+      const raw = await gmailRawMessage(fetch, token, message.id);
+      const email = parseEmail(new TextDecoder().decode(raw));
+      found.push({
+        at: message.at,
+        messageId: message.id,
+        text: email.body,
+        hasFiles: email.attachments.some((a) => QUOTE_FILE.test(a.name)),
+      });
     }
-    const raw = await gmailRawMessage(fetch, token, sent.id);
-    return {
-      at: sent.at,
-      messageId: sent.id,
-      text: parseEmail(new TextDecoder().decode(raw)).body,
-    };
+    return found;
   }
   const sent = await sentInConversation(
     fetch,
@@ -188,10 +196,25 @@ const findSent = async (
     after,
     sharedMailbox
   );
-  return sent
-    ? { at: sent.at, messageId: sent.id, text: htmlToText(sent.html) }
-    : null;
+  return sent.slice(0, MAX_SENT_LOOKED_AT).map((m) => ({
+    at: m.at,
+    messageId: m.id,
+    text: htmlToText(m.html),
+    hasFiles: m.hasAttachments,
+  }));
 };
+
+/** The first message sent in the thread that is the quote, if any yet. */
+const findSent = async (
+  provider: Provider,
+  token: string,
+  reply: RfqReply,
+  sharedMailbox: string | null,
+  partNos: string[]
+) =>
+  (await sentAfterDraft(provider, token, reply, sharedMailbox)).find((m) =>
+    isQuoteReply(m, partNos)
+  ) ?? null;
 
 const sharedMailboxOf = (settings: unknown) => {
   const shared =
@@ -221,7 +244,7 @@ export const checkSentReplies = async (
       },
       orderBy: { draftedAt: "desc" },
       take: MAX_WATCHED,
-      select: { id: true, reply: true },
+      select: { id: true, reply: true, lines: { select: { partNo: true } } },
     });
     if (watched.length === 0) {
       return [];
@@ -236,7 +259,13 @@ export const checkSentReplies = async (
         continue;
       }
       try {
-        const sent = await findSent(provider, access, reply, shared);
+        const sent = await findSent(
+          provider,
+          access,
+          reply,
+          shared,
+          rfq.lines.map((l) => l.partNo ?? "")
+        );
         if (!sent) {
           continue;
         }

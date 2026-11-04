@@ -45,7 +45,9 @@ describe("what kind of file came with an RFQ", () => {
     expect(kindOf("photo.jpg")).toBe("image");
     expect(kindOf("P-1001 dwg.png")).toBe("drawing");
     expect(kindOf("terms.docx")).toBe("document");
-    expect(kindOf("print.dxf")).toBe("drawing");
+    // CAD the drawing reader can't read: kept, and a PDF is asked for.
+    expect(kindOf("print.dxf")).toBe("model");
+    expect(kindOf("print.dwg")).toBe("model");
     expect(kindOf("archive.7z")).toBe("other");
   });
 

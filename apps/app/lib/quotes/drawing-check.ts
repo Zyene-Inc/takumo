@@ -4,6 +4,7 @@
 // Pure, so tested.
 
 import { normalizePartNo } from "./match";
+import { doneInHouse } from "./pricing";
 import type {
   DrawingFlag,
   DrawingReading,
@@ -261,16 +262,25 @@ const materialFlags = (r: DrawingReading, ctx: CheckContext) =>
     : [];
 
 const finishFlags = (r: DrawingReading, ctx: CheckContext) =>
-  r.finishes.map((finish) => {
-    const supplier = supplierFor(finish, ctx.outsideProcesses);
-    return flagAt(
-      "outsourced",
-      supplier
-        ? `${finish.text}: you send this out${supplier.supplier ? ` (${supplier.supplier})` : ""}. Add its cost and lead time.`
-        : `${finish.text}: is this done in house? If it goes out, add the supplier under Settings → Quoting.`,
-      finish
-    );
-  });
+  r.finishes
+    // Done at one of the shop's own stations: nothing to check.
+    .filter(
+      (finish) =>
+        !doneInHouse(
+          finish.text,
+          ctx.machines.map((m) => m.name)
+        )
+    )
+    .map((finish) => {
+      const supplier = supplierFor(finish, ctx.outsideProcesses);
+      return flagAt(
+        "outsourced",
+        supplier
+          ? `${finish.text}: you send this out${supplier.supplier ? ` (${supplier.supplier})` : ""}. Add its cost and lead time.`
+          : `${finish.text}: is this done in house? If it goes out, add the supplier under Settings → Quoting.`,
+        finish
+      );
+    });
 
 const toleranceFlags = (r: DrawingReading, ctx: CheckContext) => {
   const machineTols = ctx.machines
@@ -460,13 +470,17 @@ export const checkDrawing = (
   return { flags, questions };
 };
 
+/** A 2D CAD file (DXF, DWG): kept, but not a drawing Takumo can read. */
+const CAD_FILE = /\.(dxf|dwg)$/i;
+
 /** A drawing for a 3D-only RFQ line: nothing to read, one question to ask. */
 export const noDrawingReading = (
   file: { id: string; name: string },
   partNo: string | null,
   readAt: string
 ): DrawingReading => {
-  const message = `No drawing came with ${partNo ?? "this part"}, only a 3D model (${file.name}).`;
+  const what = CAD_FILE.test(file.name) ? "CAD file" : "3D model";
+  const message = `No PDF drawing came with ${partNo ?? "this part"}, only a ${what} (${file.name}).`;
   return {
     fileId: file.id,
     fileName: file.name,
@@ -485,7 +499,7 @@ export const noDrawingReading = (
     quantities: [],
     flags: [{ kind: "no_drawing", message, sheet: null, box: null }],
     questions: [
-      `Could you send a PDF drawing for ${partNo ?? "the part"}? We received only the 3D model, and need the drawing for tolerances, finish and notes.`,
+      `Could you send a PDF drawing for ${partNo ?? "the part"}? We received only the ${what}, and need the drawing for tolerances, finish and notes.`,
     ],
   };
 };

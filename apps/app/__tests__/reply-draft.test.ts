@@ -20,10 +20,12 @@ import { htmlToText, parseEmail } from "../lib/quotes/email";
 import { formatHours, median, quoteMetrics } from "../lib/quotes/metrics";
 import { settleQuotes } from "../lib/quotes/outcomes";
 import {
+  customerAddress,
   type DraftReplyInput,
   draftReply,
   draftStep,
   draftUntouched,
+  isQuoteReply,
   normalizeBody,
   parseSentPrices,
 } from "../lib/quotes/reply";
@@ -291,7 +293,36 @@ describe("Gmail drafts", () => {
       "t1",
       after
     );
-    expect(sent?.id).toBe("sent");
+    expect(sent.map((m) => m.id)).toEqual(["sent"]);
+  });
+});
+
+describe("which sent message is the quote", () => {
+  const sent = (text: string, hasFiles = false) => ({
+    at: new Date("2026-11-02T12:00:00Z"),
+    messageId: "m",
+    text,
+    hasFiles,
+  });
+
+  test("a message with a price for a line is the quote", () => {
+    expect(
+      isQuoteReply(sent("NW-2211\n50 pcs: $40.00/ea, 15 days"), ["NW-2211"])
+    ).toBe(true);
+  });
+
+  test("a document attached (the quote PDF) is the quote", () => {
+    expect(
+      isQuoteReply(sent("Please find our quote attached.", true), ["NW-2211"])
+    ).toBe(true);
+  });
+
+  test("a 'got it, quote to follow' is passed over", () => {
+    expect(
+      isQuoteReply(sent("Thanks Dana, got it. We'll quote by Friday."), [
+        "NW-2211",
+      ])
+    ).toBe(false);
   });
 });
 
@@ -416,7 +447,9 @@ describe("Outlook drafts", () => {
       "conv'1",
       after
     );
-    expect(sent?.id).toBe("s1");
+    // Oldest first, each with whether a file is attached.
+    expect(sent.map((m) => m.id)).toEqual(["s1", "s2"]);
+    expect(sent[0]?.hasAttachments).toBe(false);
     const url = decodeURIComponent(
       String(calls(fetcher)[0][0]).replaceAll("+", " ")
     );
@@ -661,5 +694,50 @@ describe("prices captured from the sent reply", () => {
         { partNo: "OTHER", qty: 50, unitPrice: 40, leadTimeDays: 3 },
       ])
     ).toBeNull();
+  });
+});
+
+describe("who the customer draft goes to", () => {
+  const mailbox = "quotes@myshop.com";
+
+  test("the customer who emailed the RFQ", () => {
+    expect(
+      customerAddress(
+        { source: "email", sender: "Jo <jo@acme.com>", contact: null },
+        mailbox
+      )
+    ).toBe("jo@acme.com");
+  });
+
+  test("a colleague's forward goes to the customer contact, never back to the colleague", () => {
+    expect(
+      customerAddress(
+        {
+          source: "email",
+          sender: "Sam <sam@myshop.com>",
+          contact: "Jo <jo@acme.com>",
+        },
+        mailbox
+      )
+    ).toBe("jo@acme.com");
+    expect(
+      customerAddress(
+        { source: "portal", sender: "sam@myshop.com", contact: null },
+        mailbox
+      )
+    ).toBeNull();
+  });
+
+  test("a portal's no-reply sender is skipped for the contact", () => {
+    expect(
+      customerAddress(
+        {
+          source: "portal",
+          sender: "no-reply@ariba.com",
+          contact: "buyer@acme.com",
+        },
+        mailbox
+      )
+    ).toBe("buyer@acme.com");
   });
 });

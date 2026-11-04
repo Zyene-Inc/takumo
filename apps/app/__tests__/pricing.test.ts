@@ -4,6 +4,7 @@ import {
   applyMarginFloor,
   buildUp,
   densityFor,
+  doneInHouse,
   drawingSummary,
   envelopeText,
   explainMaterialLine,
@@ -19,6 +20,7 @@ import {
   type PlannedOperation,
   type PoLine,
   parseStockSize,
+  partLengthIn,
   readDrawing,
   stockUsage,
   supplierFor,
@@ -64,6 +66,41 @@ describe("stock size and usage", () => {
     expect(mm?.length).toBeCloseTo(4);
     expect(parseStockSize("1-1/4 RD x 4", "bar", null)?.diameter).toBe(1.25);
     expect(parseStockSize("bar stock", "bar", null)).toBeNull();
+  });
+
+  test("a metric drawing's stock written in inches stays in inches", () => {
+    // The drawing is in mm, the suggested bar in inches: not divided by 25.4.
+    const inch = parseStockSize('1.5" dia x 4 in', "bar", "mm");
+    expect(inch?.diameter).toBeCloseTo(1.5);
+    expect(inch?.length).toBeCloseTo(4);
+    // No unit written: the drawing's units.
+    expect(parseStockSize("Ø38 x 102", "bar", "mm")?.diameter).toBeCloseTo(
+      1.496,
+      3
+    );
+    // mm written on an inch drawing: mm.
+    expect(
+      parseStockSize("50 mm dia x 110 mm", "bar", "in")?.diameter
+    ).toBeCloseTo(1.969, 3);
+  });
+
+  test("a stock size with no length takes the part's length plus a cut", () => {
+    expect(parseStockSize("2.0 dia bar", "bar", "in")).toEqual({ diameter: 2 });
+    expect(parseStockSize("1 x 4 plate", "plate", "in")).toEqual({
+      thickness: 1,
+      width: 4,
+    });
+    const u = stockUsage({
+      materialName: "AL 6061-T6",
+      stock: { form: "bar", size: "2.0 dia bar" },
+      unit: "LBS",
+      units: "in",
+      partLength: 4.875,
+    });
+    // 2 dia x (4.875 + 0.125) = 5 in long: the same 1.539 lb as 2 DIA x 5.
+    expect(u?.usage).toBeCloseTo(1.539, 3);
+    expect(u?.basis).toContain("the part plus 0.125 in");
+    expect(partLengthIn({ l: 127, w: 30, h: 10 }, "mm")).toBeCloseTo(5);
   });
 
   test("pounds from volume and the material's density", () => {
@@ -752,5 +789,35 @@ describe("drawing in words", () => {
     expect(envelopeText({ x: 30, y: 16, z: 20 })).toBe("30 × 16 × 20 in");
     expect(envelopeText({ diameter: 10, length: 20 })).toBe("Ø10 × 20 in");
     expect(envelopeText(null)).toBeNull();
+  });
+});
+
+describe("finishes the shop does itself", () => {
+  test("a station for the finish means it's in house", () => {
+    expect(doneInHouse("Passivate per AMS 2700", ["Passivation tank"])).toBe(
+      true
+    );
+    expect(
+      doneInHouse("Anodize Type II Class 1 clear", ["HAAS-VF2", "anodize_line"])
+    ).toBe(true);
+  });
+
+  test("no matching station, or a look-alike name, means outside", () => {
+    expect(doneInHouse("Zinc plated", ["Plate saw", "Plate shear"])).toBe(
+      false
+    );
+    expect(doneInHouse("Heat treat to 40 HRC", ["Paint oven"])).toBe(false);
+    expect(doneInHouse("Passivate", ["HAAS-VF2"])).toBe(false);
+  });
+
+  test("an in-house finish gets no outside operation", () => {
+    const plan = outsideProcesses({
+      drawingFinishes: [],
+      lineFinish: "Passivate per AMS 2700",
+      saved: null,
+      stations: ["Passivation tank"],
+      suppliers: [],
+    });
+    expect(plan.outside).toEqual([]);
   });
 });

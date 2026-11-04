@@ -32,6 +32,7 @@ import {
   outsideProcesses,
   type PlannedOperation,
   type PoLine,
+  partLengthIn,
   readDrawing,
   withOutsideDays,
 } from "./pricing";
@@ -598,6 +599,10 @@ const planMaterial = async (
     usagePerPart: line.usagePerPart,
     stock: drawing?.stock ?? null,
     drawingUnits: drawing?.units ?? null,
+    partLength: partLengthIn(
+      drawing?.envelope?.value ?? null,
+      drawing?.units ?? null
+    ),
     markup: input.markup,
     materialText: line.materialText,
     material: material
@@ -762,10 +767,14 @@ export const estimateLine = async (
     today,
   });
 
+  const stations = await db.workCenter.findMany({
+    select: { name: true, type: true },
+  });
   const outside = outsideProcesses({
     saved: line.outside as OutsideProcess[] | null,
     drawingFinishes: drawing?.finishes ?? [],
     lineFinish: line.finish,
+    stations: stations.flatMap((w) => [w.name, w.type ?? ""]),
     suppliers: settings.outsideProcesses,
   });
   const extraDays = outsideDays(outside.meta);
@@ -820,6 +829,7 @@ export const estimateLine = async (
       outsideDays: extraDays,
       floor,
       floorRaised: finished.raised,
+      targetMargin: line.targetMargin,
       laborRate: { rate: settings.laborRate, set: laborRateSet },
       machines: shop.rates,
       opBasis: new Map(

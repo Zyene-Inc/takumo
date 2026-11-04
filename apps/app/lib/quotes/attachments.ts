@@ -109,7 +109,9 @@ export const kindOf = (
     return "model";
   }
   if (has([".dxf", ".dwg"], name)) {
-    return "drawing";
+    // CAD files: kept, but the drawing reader reads PDFs and images only,
+    // so like a 3D model they ask the customer for a PDF drawing.
+    return "model";
   }
   if (has(IMAGE_TYPES, name)) {
     return DRAWING_NAME.test(name) ? "drawing" : "image";

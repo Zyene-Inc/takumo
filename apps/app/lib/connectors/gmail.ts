@@ -465,7 +465,7 @@ export const sentInThread = async (
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
   if (response.status === 404) {
-    return null;
+    return [];
   }
   if (response.status === 401) {
     throw new GmailAuthError("Gmail access expired. Reconnect it.");
@@ -476,13 +476,15 @@ export const sentInThread = async (
   const thread = (await response.json()) as {
     messages?: { id: string; internalDate?: string; labelIds?: string[] }[];
   };
-  const sent = (thread.messages ?? [])
+  // Every message sent after the draft, oldest first: the first one may be
+  // a "got it, quote to follow" and not the quote.
+  return (thread.messages ?? [])
     .filter(
       (m) =>
         m.labelIds?.includes("SENT") &&
         !m.labelIds.includes("DRAFT") &&
         Number(m.internalDate ?? 0) > after.getTime()
     )
-    .sort((a, b) => Number(a.internalDate) - Number(b.internalDate))[0];
-  return sent ? { id: sent.id, at: new Date(Number(sent.internalDate)) } : null;
+    .sort((a, b) => Number(a.internalDate) - Number(b.internalDate))
+    .map((m) => ({ id: m.id, at: new Date(Number(m.internalDate)) }));
 };

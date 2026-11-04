@@ -163,7 +163,44 @@ const ID_WORD = /\bid\b/i;
  * "1.25 DIA x 4.0", "Ø32 x 100" (mm), "0.75 x 3 x 6", "2 OD x .125 wall x 6".
  */
 const MM_WORD = /\bmm\b/i;
+/** An inch mark: the size is in inches whatever the drawing's units. */
+const INCH_WORD = /("|''|\d\s*in\b|\binch(es)?\b)/i;
+/** Saw kerf and facing added when the length comes from the part's size. */
+const CUT_ALLOWANCE_IN = 0.125;
 const SIZE_SEPARATOR = /\s*[x×*]\s*/i;
+
+/** Round bar: "2 dia x 5", or "2.0 dia bar" with no length (stockUsage
+ * takes it from the part). */
+const roundDims = (values: number[]): StockDims =>
+  values.length >= 2
+    ? { diameter: values[0], length: values[1] }
+    : { diameter: values[0] };
+
+/** Plate, sheet, flat or square bar: thickness, width and length. */
+const flatDims = (
+  values: number[],
+  form: "bar" | "plate" | "tube" | "sheet" | "other"
+): StockDims | null => {
+  const sorted = [...values].sort((a, b) => a - b);
+  if (sorted.length >= 3) {
+    return { thickness: sorted[0], width: sorted[1], length: sorted[2] };
+  }
+  if (sorted.length === 1 && form === "bar") {
+    return { diameter: sorted[0] };
+  }
+  if (sorted.length !== 2) {
+    return null;
+  }
+  if (form === "other") {
+    // Square bar given as side x length.
+    return { thickness: sorted[0], width: sorted[0], length: sorted[1] };
+  }
+  // "1 x 4 plate": thickness x width; stockUsage takes the length from the
+  // part.
+  return form === "plate" || form === "sheet"
+    ? { thickness: sorted[0], width: sorted[1] }
+    : null;
+};
 
 /** "2 OD x .125 wall x 6" or "2 OD x 1.75 ID x 6", in the size's units. */
 const tubeSize = (parts: string[]): StockDims | null => {
@@ -192,7 +229,11 @@ export const parseStockSize = (
   form: "bar" | "plate" | "tube" | "sheet" | "other",
   units: "in" | "mm" | null
 ): StockDims | null => {
-  const metric = units === "mm" || MM_WORD.test(size);
+  // A unit written in the size wins over the drawing's: a metric drawing's
+  // stock is often bought (and suggested) in inches, and dividing an inch
+  // size by 25.4 made the material nearly free.
+  const metric =
+    MM_WORD.test(size) || (units === "mm" && !INCH_WORD.test(size));
   const scale = metric ? 1 / MM_PER_IN : 1;
   const values = numbers(size).map((n) => n.value);
   if (values.length === 0) {
@@ -203,18 +244,8 @@ export const parseStockSize = (
     const tube = tubeSize(parts);
     return tube ? scaled(tube, scale) : null;
   }
-  let dims: StockDims | null = null;
   const round_ = form === "bar" && (DIA_WORD.test(size) || values.length === 2);
-  if (round_ && values.length >= 2) {
-    dims = { diameter: values[0], length: values[1] };
-  } else if (values.length >= 3) {
-    const [t, w, l] = [...values].sort((a, b) => a - b);
-    dims = { thickness: t, width: w, length: l };
-  } else if (values.length === 2 && form === "other") {
-    // Square bar given as side x length.
-    const [a, b] = [...values].sort((x, y) => x - y);
-    dims = { thickness: a, width: a, length: b };
-  }
+  const dims = round_ ? roundDims(values) : flatDims(values, form);
   return dims ? scaled(dims, scale) : null;
 };
 
@@ -235,6 +266,36 @@ export interface StockUsage {
 }
 
 /**
+ * The stock's dimensions in inches, with the length taken from the part
+ * (plus a cut) when the size leaves it out, and how to name it.
+ */
+const sizedStock = (
+  input: {
+    partLength?: number | null;
+    stock: { form: "bar" | "plate" | "tube" | "sheet" | "other"; size: string };
+    units: "in" | "mm" | null;
+  },
+  stockName: string
+) => {
+  const parsed = parseStockSize(
+    input.stock.size,
+    input.stock.form,
+    input.units
+  );
+  if (!parsed) {
+    return null;
+  }
+  if (parsed.length || !input.partLength) {
+    return { dims: parsed, stock: stockName };
+  }
+  const length = input.partLength + CUT_ALLOWANCE_IN;
+  return {
+    dims: { ...parsed, length },
+    stock: `${stockName}, ${round(length, 3)} in long (the part plus ${CUT_ALLOWANCE_IN} in to cut and face)`,
+  };
+};
+
+/**
  * How much of the material's unit one part uses, from the stock size: pounds
  * from volume × density, inches or feet of bar, square feet of plate, or one
  * blank. Null when the unit or the material can't be converted.
@@ -244,19 +305,22 @@ export const stockUsage = (input: {
   stock: { form: "bar" | "plate" | "tube" | "sheet" | "other"; size: string };
   unit: string | null;
   units: "in" | "mm" | null;
+  /** The part's longest dimension in inches, for a stock size with no length. */
+  partLength?: number | null;
 }): StockUsage | null => {
   const unit = normalizeUnit(input.unit);
   if (!unit) {
     return null;
   }
-  const stock = `${input.stock.size} ${input.stock.form}`;
+  const stockName = `${input.stock.size} ${input.stock.form}`;
   if (unit === "ea") {
-    return { usage: 1, basis: `one ${stock} per part` };
+    return { usage: 1, basis: `one ${stockName} per part` };
   }
-  const dims = parseStockSize(input.stock.size, input.stock.form, input.units);
-  if (!dims) {
+  const sized = sizedStock(input, stockName);
+  if (!sized) {
     return null;
   }
+  const { dims, stock } = sized;
   if (unit === "lb" || unit === "kg") {
     const volume = volumeIn3(dims);
     const density = densityFor(input.materialName);
@@ -292,6 +356,32 @@ export const stockUsage = (input: {
     usage: round(usage, 3),
     basis: `${stock}: ${round(usage, 3)} ${unit} per part`,
   };
+};
+
+/** The part's longest dimension in inches, from the drawing's envelope. */
+export const partLengthIn = (
+  envelope: {
+    diameter?: number | null;
+    h?: number | null;
+    l?: number | null;
+    length?: number | null;
+    w?: number | null;
+  } | null,
+  units: "in" | "mm" | null
+) => {
+  if (!envelope) {
+    return null;
+  }
+  const longest = Math.max(
+    envelope.length ?? 0,
+    envelope.l ?? 0,
+    envelope.w ?? 0,
+    envelope.h ?? 0
+  );
+  if (!(longest > 0)) {
+    return null;
+  }
+  return units === "mm" ? longest / MM_PER_IN : longest;
 };
 
 // ---------------------------------------------------------------------------
@@ -371,6 +461,8 @@ export interface MaterialInput {
   markup: number;
   material: { name: string; unit: string; unitCost: number | null } | null;
   materialText: string | null;
+  /** The part's longest dimension in inches (from the drawing's envelope). */
+  partLength?: number | null;
   poPrice: PoPrice | null;
   stock: DrawingReading["stock"];
   /** Stock per part typed in by the estimator, in the material's unit. */
@@ -436,6 +528,7 @@ export const materialPricing = (
       stock: input.stock,
       unit: m.unit,
       units: input.drawingUnits,
+      partLength: input.partLength,
     });
   } else if (normalizeUnit(m.unit) === "ea") {
     usage = { usage: 1, basis: `1 ${m.unit} per part` };
@@ -623,6 +716,28 @@ const finishDescriptions = (
   return lineFinish ? [lineFinish] : [];
 };
 
+/** Finish families, each with the word stems that name its station. */
+const FINISH_STATIONS: [RegExp, RegExp][] = [
+  [/anodi[sz]/i, /anodi[sz]/i],
+  [/passivat/i, /passivat/i],
+  [/heat.?treat|harden|temper|anneal/i, /heat.?treat|furnace|harden/i],
+  [/black oxide/i, /black oxide/i],
+  [/chem.?film|alodine|chromate|iridite/i, /chem.?film|alodine|chromate/i],
+  [/powder.?coat/i, /powder/i],
+  [/paint/i, /paint/i],
+  // "Plating line", never "Plate saw".
+  [/plating|plated|zinc|nickel|chrome/i, /plating|plater/i],
+];
+
+/**
+ * Whether the shop does this finish itself: one of its work centers is a
+ * station for it ("Passivation tank", type "Anodize line"). Pure, so tested.
+ */
+export const doneInHouse = (finish: string, stations: string[]) => {
+  const family = FINISH_STATIONS.find(([named]) => named.test(finish));
+  return Boolean(family && stations.some((s) => family[1].test(s)));
+};
+
 export interface OutsidePlan {
   meta: BuildUpOutside[];
   outside: OutsideProcess[];
@@ -630,13 +745,16 @@ export interface OutsidePlan {
 
 /**
  * Outside operations for a line: the estimator's when saved; else one per
- * finish on the drawing (or the line's finish text), priced from the shop's
- * suppliers. A process with no known price is kept, to ask the supplier.
+ * finish on the drawing (or the line's finish text) the shop doesn't do
+ * itself, priced from the shop's suppliers. A process with no known price is
+ * kept, to ask the supplier (leaving it out would under-quote).
  */
 export const outsideProcesses = (input: {
   drawingFinishes: DrawingReading["finishes"];
   lineFinish: string | null;
   saved: OutsideProcess[] | null;
+  /** The shop's work centers (names and types): finishes done in house. */
+  stations?: string[];
   suppliers: OutsideSupplier[];
 }): OutsidePlan => {
   const describe = (p: OutsideProcess): BuildUpOutside => {
@@ -659,7 +777,7 @@ export const outsideProcesses = (input: {
     input.lineFinish
   );
   const outside = descriptions
-    .filter((d) => d.trim())
+    .filter((d) => d.trim() && !doneInHouse(d, input.stations ?? []))
     .map((description): OutsideProcess => {
       const s = supplierFor(description, input.suppliers);
       return {
@@ -879,6 +997,8 @@ export interface BuildUpContext {
   outside: BuildUpOutside[];
   outsideDays: number;
   routing: PlannedOperation[];
+  /** The margin the estimator entered on the line, if any. */
+  targetMargin?: number | null;
 }
 
 const machineLine = (row: QuoteBreak, op: QuoteOperation) =>
@@ -981,7 +1101,11 @@ const marginRow = (
           label: `Raised to the customer's ${round((ctx.floor ?? 0) * 100, 1)}% margin floor`,
         }
       : {
-          kind: response.margin.sources.length ? "history" : "estimator",
+          // An entered target is the estimator's, even with history beside it.
+          kind:
+            ctx.targetMargin == null && response.margin.sources.length
+              ? "history"
+              : "estimator",
           label: response.margin.basis,
         },
   };

@@ -112,7 +112,11 @@ export const rawPartSchema = z.object({
   stock: z
     .object({
       form: z.enum(["bar", "plate", "tube", "sheet", "other"]),
-      size: z.string().describe("e.g. '2.0 dia bar', '1 x 4 plate'"),
+      size: z
+        .string()
+        .describe(
+          "Every dimension with its unit, length included, e.g. '2.0 in dia x 4.25 in', '1 x 4 x 6.5 in', '50 mm dia x 110 mm'"
+        ),
     })
     .nullable()
     .describe("Raw stock you'd cut this from (a suggestion)"),

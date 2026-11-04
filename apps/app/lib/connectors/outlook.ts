@@ -588,7 +588,12 @@ export const createDraftReply = async (
   messageId: string,
   html: string,
   sharedMailbox?: string | null,
-  options: { attachment?: DraftAttachment | null; subject?: string } = {}
+  options: {
+    attachment?: DraftAttachment | null;
+    subject?: string;
+    /** Instead of the thread's sender (a colleague who forwarded the RFQ). */
+    to?: string | null;
+  } = {}
 ) => {
   const base = mailboxPath(sharedMailbox);
   const draft = await json<GraphDraft>(
@@ -614,6 +619,9 @@ export const createDraftReply = async (
       body: JSON.stringify({
         body: { contentType: "html", content: `${html}${below}` },
         ...(options.subject ? { subject: options.subject } : {}),
+        ...(options.to
+          ? { toRecipients: [{ emailAddress: { address: options.to } }] }
+          : {}),
       }),
     }
   );
@@ -729,12 +737,14 @@ export const sentInConversation = async (
   const filter = `conversationId eq '${conversationId.replaceAll("'", "''")}' and sentDateTime ge ${after.toISOString()}`;
   const params = new URLSearchParams({
     $filter: filter,
-    $select: "id,sentDateTime,body",
+    $select: "id,sentDateTime,body,hasAttachments",
     $top: "10",
   });
   const page = await json<{
     value?: {
       body?: { content?: string };
+      /** Files attached (Graph leaves inline images out of this). */
+      hasAttachments?: boolean;
       id: string;
       sentDateTime?: string;
     }[];
@@ -746,21 +756,22 @@ export const sentInConversation = async (
       { sharedMailbox }
     )
   );
-  const sent = (page.value ?? [])
+  // Every message sent after the draft, oldest first: the first one may be
+  // a "got it, quote to follow" and not the quote.
+  return (page.value ?? [])
     .filter(
       (m) => m.sentDateTime && Date.parse(m.sentDateTime) > after.getTime()
     )
     .sort(
       (a, b) =>
         Date.parse(a.sentDateTime ?? "") - Date.parse(b.sentDateTime ?? "")
-    )[0];
-  return sent
-    ? {
-        id: sent.id,
-        at: new Date(sent.sentDateTime as string),
-        html: sent.body?.content ?? "",
-      }
-    : null;
+    )
+    .map((m) => ({
+      id: m.id,
+      at: new Date(m.sentDateTime as string),
+      html: m.body?.content ?? "",
+      hasAttachments: m.hasAttachments === true,
+    }));
 };
 
 // ---- Change notifications ----
