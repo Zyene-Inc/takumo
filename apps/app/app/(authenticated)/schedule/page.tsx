@@ -11,6 +11,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { byOperation, crewText } from "@/lib/schedule/crew";
 import { hashFingerprint, latestPlan, loadShop } from "@/lib/schedule/plan";
 import { type ShortStaffed, shortStaffed } from "@/lib/schedule/staffing";
 import { Header } from "../components/header";
@@ -265,6 +266,11 @@ const SchedulePage = async () => {
 
         <Board
           canEdit={canEditShop}
+          crews={Object.fromEntries(
+            [...byOperation(plan.output.assignments ?? [])].map(
+              ([key, list]) => [key, crewText(list)]
+            )
+          )}
           operations={plan.output.operations}
           orderInfo={orderInfo}
           orders={plan.output.orders}

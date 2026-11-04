@@ -171,6 +171,41 @@ describe.skipIf(!process.env.TEST_ENGINE_URL)("Phase 3 end to end", () => {
     expect(monday?.capacity_minutes).toBe(0);
   });
 
+  test("the plan names who runs each operation, on their shift (v2)", async () => {
+    const built = buildScheduleRequest(
+      {
+        ...shop(false),
+        orders: [
+          {
+            orderNo: "SO-1",
+            partId: "p1",
+            qty: 30,
+            dueDate: day(11),
+            priority: 0,
+            price: null,
+          },
+        ],
+      },
+      START
+    );
+    const plan = await schedule({ ...built.request, time_limit_s: 5 });
+    const assignments = plan.assignments ?? [];
+    // 60 + 30 × 12 = 420 min on HAAS-VF2, all of it Sam's, inside 07:00–15:00.
+    expect(assignments.length).toBeGreaterThan(0);
+    expect(new Set(assignments.map((x) => x.operator))).toEqual(
+      new Set(["Sam"])
+    );
+    expect(assignments.reduce((n, x) => n + x.minutes, 0)).toBe(420);
+    for (const x of assignments) {
+      expect(x.work_center).toBe("HAAS-VF2");
+      expect(x.start_at.slice(11, 16) >= "07:00").toBe(true);
+      expect(x.end_at.slice(11, 16) <= "15:00").toBe(true);
+    }
+    expect(plan.notices ?? []).not.toContainEqual(
+      expect.stringContaining("Nobody qualified is free")
+    );
+  });
+
   test("a no names people and material, and offers both ways out", async () => {
     const qty = 30; // 60 + 30×12 = 420 min on HAAS-VF2
     const ready = material(qty);

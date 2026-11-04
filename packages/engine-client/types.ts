@@ -106,6 +106,21 @@ export interface ScheduledOperation {
   work_center: string;
 }
 
+/** Who runs an operation, and when (F3.3 v2): one stretch of one person's
+ * time on one machine, at real shift clock times. */
+export interface OperatorAssignment {
+  end_at: string;
+  minutes: number;
+  operator: string;
+  operator_id: string;
+  order_no: string;
+  seq: number;
+  /** Only the setup: the machine then runs with nobody (lights-out). */
+  setup_only: boolean;
+  start_at: string;
+  work_center: string;
+}
+
 export interface OrderResult {
   completion_date: string;
   days_late: number;
@@ -138,6 +153,8 @@ export type SolverStatus =
   | "MODEL_INVALID";
 
 export interface ScheduleResponse {
+  /** Who runs what, when (with operators; plans made before v2 have none). */
+  assignments?: OperatorAssignment[];
   conflicts: Conflict[];
   load: DayLoad[];
   /** Notes about the inputs, e.g. machines nobody is listed to run. */

@@ -154,6 +154,23 @@ class ScheduledOperation(BaseModel):
     pinned: bool = False
 
 
+class OperatorAssignment(BaseModel):
+    """Who runs an operation, and when (F3.3 v2): one stretch of one person's
+    time on one machine. An operation longer than a shift has several (day
+    shift, then second shift); a lights-out machine has only its setup."""
+
+    order_no: str
+    seq: int
+    work_center: str
+    operator_id: str
+    operator: str
+    start_at: datetime
+    end_at: datetime
+    minutes: int
+    # Only the setup: the machine then runs with nobody (unattended_runs).
+    setup_only: bool = False
+
+
 class OrderResult(BaseModel):
     order_no: str
     due_date: date
@@ -189,6 +206,9 @@ class ScheduleResponse(BaseModel):
     # Plain-language notes about the plan's inputs, e.g. machines no operator
     # is listed for (their hours aren't checked against people).
     notices: list[str] = []
+    # Who runs what, when (only with operators; machines nobody is listed
+    # for have none).
+    assignments: list[OperatorAssignment] = []
 
 
 class CapacityRequest(ScheduleRequest):

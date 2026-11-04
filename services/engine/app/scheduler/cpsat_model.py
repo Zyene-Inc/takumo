@@ -35,6 +35,7 @@ from app.models import (
 )
 from app.scheduler.calendar import DAY, Timeline, day_index, to_datetime
 from app.scheduler.dispatch import Placement, candidates, dispatch, release_minute
+from app.scheduler.assign import assign_operators
 from app.scheduler.staffing import staff
 
 LATENESS_WEIGHT = 1000
@@ -245,6 +246,7 @@ def solve_schedule(
     num_workers: int = 8,
     machine_request: ScheduleRequest | None = None,
     dispatch_only: bool = False,
+    assign: bool = False,
 ) -> ScheduleResponse:
     """Plan every order.
 
@@ -257,9 +259,12 @@ def solve_schedule(
     and `first` warm-start from an earlier plan (see dispatch);
     `machine_request` is the request before it was staffed, when the caller
     staffed it already (its machines' own hours go in the load);
-    `dispatch_only` skips CP-SAT (the caller knows it can't finish in time)."""
+    `dispatch_only` skips CP-SAT (the caller knows it can't finish in time);
+    `assign` names who runs each operation (assign.py), for a plan people
+    will work from rather than one compared inside a capacity check."""
     _validate(request)
     notices: list[str] = []
+    report = None
     if request.operators:
         machine_request = request
         request, report = staff(request)
@@ -267,6 +272,11 @@ def solve_schedule(
     response = _solve(
         request, lateness_caps, keep, first, num_workers, machine_request, dispatch_only
     )
+    if assign and report is not None and machine_request is not None:
+        response.assignments, unassigned = assign_operators(
+            machine_request, request, response.operations, report
+        )
+        notices = [*notices, *unassigned]
     response.notices = notices
     return response
 
@@ -350,10 +360,14 @@ def _solve(
             for index, name in enumerate(names):
                 t = timelines[name]
                 working = [d for d in range(horizon) if t.minutes[d] > 0]
-                if not working:
+                total = t.cum[horizon]
+                # The constraints below hold whether or not this machine is
+                # chosen, so one that can't fit the operation at all in the
+                # horizon (a machine with few staffed hours) would make the
+                # whole plan infeasible: it isn't an option here.
+                if not working or (total < minutes and not pin):
                     continue
                 tag = f"{order.order_no}_{op.seq}_{name}"
-                total = t.cum[horizon]
                 v = {
                     "start": model.new_int_var(0, max(0, total - minutes), f"{tag}_s"),
                     "end": model.new_int_var(minutes, max(minutes, total), f"{tag}_e"),

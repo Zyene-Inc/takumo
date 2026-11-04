@@ -2,7 +2,7 @@
 
 Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); its §5 table has a one-line status per feature. This page gives the detail.
 
-**In one line:** Phases 1, 2 and 3 are built and tested. Nothing has run on a real shop's data yet. That needs the inbound domain and design partners (Phase 0), which are owner actions. Phases 4–6 haven't started.
+**In one line:** Phases 1, 2 and 3 are built and tested, Phase 3 including who runs each job (v2). Nothing has run on a real shop's data yet. That needs the inbound domain and design partners (Phase 0), which are owner actions. Phases 4–6 haven't started.
 
 ## Phases
 
@@ -39,7 +39,8 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 **F3.3 Engine: people and material**
 - Before planning, each day's operator hours are shared out over the machines each person is qualified on. The split follows how much work each machine has, and only counts hours when the person's shift overlaps the machine's.
 - A machine is planned only for hours someone is there. Nobody is ever double-booked.
-- This is the plan's v1 "capacity per qualification". v2 would assign named operators to individual jobs.
+- Hours are counted on the clock: a person's minute is booked once, so two people on the same two hours of a one-person machine give it two hours, not four, and one person can't cover two full-person machines at the same time. A machine needing two people runs only while two are in.
+- A machine nobody qualified is ever in (or ever free) for keeps its own hours, with a notice saying so, instead of making the plan impossible.
 - A "no" names the real reason, for example "HAAS-VF2 has people for 0 of its 8 hours on Thu Nov 12: no one qualified on it is in 07:00–15:00", plus the material sentence.
 - Two new options to make the date:
   - another qualified operator;
@@ -47,6 +48,12 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 - Overtime now covers the people as well as the machines. Options that don't change the date aren't shown.
 - Performance: a 50-machine, 300-job shop with 40 operators answers in about 6.5 seconds, under the 10-second limit.
 - The engine had a crash on any order with a material date after another order. It was fixed here.
+
+**F3.3 v2: who runs each job**
+- Every plan names who runs each operation, and when, at real shift times: "Sam 07:00–15:00, Ana 15:00–19:00". A job longer than a shift is handed over; a machine at half a person lets one person run two; a lights-out machine only needs someone for the setup.
+- The names come from the same clock-time staffing the plan uses, so they always add up: nobody is in two places, everyone is on shift and qualified.
+- Shop → Schedule → Shop floor shows **Who's on what** for today (or the next working day): each person's stretches, machine and job. The planned operations list has a Who column, and the schedule board shows who on each operation's hover.
+- Planning is as fast as before: a 50-machine, 300-job shop with 40 people is named in well under a second.
 
 **F3.4 Answer by email**
 - Each shop gets an `ask-<code>@` address. Only the shop's own members can use it, sending from the address they sign in with, verified by SPF/DKIM.
@@ -60,9 +67,18 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 - Every answer is kept in Ask Takumo history.
 
 **Tests**
-- 69 engine tests, including 22 new staffing tests and a random-shop check that no machine runs without people and nothing starts before its material.
-- 384 app tests, including the material rules, email formatting, and an end-to-end test that runs the app's real request mapping against the real engine.
+- 85 engine tests, including the staffing tests, 12 tests for who runs each job, and random-shop checks that nobody is double-booked, everyone is on shift and qualified, and nothing starts before its material.
+- 387 app tests, including the material rules, email formatting, who's-on-what, and an end-to-end test that runs the app's real request mapping against the real engine (including the names).
 - 34 import tests, including a roster and bill-of-materials import against a real database.
+
+## Audit gaps closed (2026-11-04, live)
+
+- **The ERP renames a column.** A report that arrives with new columns but mostly matches one you confirmed is recognised. Your column choices move over, the admin is emailed what changed with a link straight to it, and **Use the same columns** imports it and retires the old report. The daily check says "your ERP changed its columns", not "stopped arriving".
+- **A report sent twice.** The same file again within 20 hours of its import is skipped.
+- **Changes for your ERP as a file.** "Download as a spreadsheet" lists each approved change to an ERP record: the record, the field, the value in the ERP now, what to change it to, and why.
+- **Updated Gmail drafts.** Gmail keeps a draft in the customer's thread only with the thread's exact subject, so it can't say "(updated)". Takumo now says where the new draft is (the second, newer one in the thread) instead of claiming it's marked. Outlook and new emails keep "(updated)".
+- **Drawing checks.** The tightest tolerance needs a machine that holds it and that the part fits on; the flag names the closest machine, or the one that holds it but is too small. A scanned or photographed drawing is flagged so the numbers get checked, and a hard-to-read tightest tolerance is asked about in the reply.
+- **Developer email preview** builds and runs again.
 
 ## Fixed in the Phase 1 and 2 audit (2026-11-04)
 
@@ -104,13 +120,6 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
    - ERP ids on every record, so renames don't create duplicates (operators already have one);
    - a default margin per shop, so new shops get drafts;
    - open operations from the ERP's open-jobs report.
-3. Smaller gaps found in the audit:
-   - a one-click re-map link when an ERP renames a column;
-   - skipping a report that arrives twice the same day;
-   - a downloadable "changes for your ERP" file;
-   - "(updated)" on re-drafted Gmail replies;
-   - scanned-drawing and per-machine tolerance checks, to tune on real drawings.
-4. Phase 3 v2: assign named operators to jobs. Do it when partners ask; v1 limits capacity per qualification.
-5. Fix the developer-only email preview tool.
+3. Tune the drawing checks (scans, per-machine tolerances) on real drawings from design partners.
 
 **Not started:** Phase 4 (morning brief), Phase 5 (native ERP connectors), Phase 6 (WhatsApp, SMS and shared-folder knowledge), Teams.

@@ -107,7 +107,7 @@ Every feature below follows these. A feature that breaks one is not done.
 | | Quote outcomes and metrics | F2.7 | P1 | 0.5 | Built |
 | 3. Can we ship by Friday? | Operators, shifts and skills | F3.1 | P0 | 1 | Built |
 | | Material availability | F3.2 | P0 | 1 | Built |
-| | Engine: labor and material constraints | F3.3 | P0 | 2 | Built (v1: capacity per qualification) |
+| | Engine: labor and material constraints | F3.3 | P0 | 2 | Built (v1 capacity per qualification, v2 named operators on jobs) |
 | | Answer by email | F3.4 | P0 | 1 | Built; goes live with the inbound domain |
 | 4. Morning brief | Daily brief by role | F4.1 | P1 | 1 | Not started |
 | | Approve from email | F4.2 | P1 | 1 | Not started |

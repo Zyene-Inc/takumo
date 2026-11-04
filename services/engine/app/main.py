@@ -38,7 +38,7 @@ def health() -> dict[str, str]:
 @app.post("/schedule", dependencies=[Depends(require_secret)])
 def schedule(request: ScheduleRequest) -> ScheduleResponse:
     try:
-        return solve_schedule(request)
+        return solve_schedule(request, assign=True)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 

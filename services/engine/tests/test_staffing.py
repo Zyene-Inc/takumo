@@ -126,8 +126,24 @@ def test_one_person_runs_two_machines_at_half_an_operator_each():
         operators_per_machine=0.5,
     )
     assert staffed_minutes(request, "VF2") == 480
+    # Two people per machine: it runs only while two qualified people are in.
     request.work_centers[0] = request.work_centers[0].model_copy(update={"operators_per_machine": 2})
-    assert staffed_minutes(request, "VF2") == 240
+    assert staffed_minutes(request, "VF2") == 0
+    request.operators.append(Operator(id="b", name="Bo", work_centers=["VF2"], shifts=[DAY_SHIFT]))
+    assert staffed_minutes(request, "VF2") == 480
+
+
+def test_two_people_on_the_same_hours_of_one_machine_give_those_hours_once():
+    # Al and Bo both work 15:00–23:00; the machine runs 07:00–17:00, so
+    # people are there for 2 of its hours, however many of them there are.
+    second = [SECOND_SHIFT]
+    request = shop(
+        Operator(id="a", name="Al", work_centers=["VF2"], shifts=second),
+        Operator(id="b", name="Bo", work_centers=["VF2"], shifts=second),
+        hours=10,
+        shifts=[ShiftWindow(start="07:00", end="17:00")],
+    )
+    assert staffed_minutes(request, "VF2") == 120
 
 
 def test_unattended_runs_need_someone_who_can_leave_it_running():
@@ -429,3 +445,53 @@ def test_capacity_check_on_a_big_shop_with_a_roster_is_fast():
     assert result.status in ("OPTIMAL", "FEASIBLE", "HEURISTIC", "UNKNOWN"), result.status
     assert result.new_order is not None
     assert took < 20, took
+
+
+def test_one_person_on_two_machines_at_the_same_hour_is_shared_not_doubled():
+    # Al works 22:00–06:00; both machines run 07:00–23:00, so Al's one
+    # evening hour is shared between them (as demand says), never given twice.
+    night = [ShiftWindow(start="22:00", end="06:00")]
+    long_day = [ShiftWindow(start="07:00", end="23:00")]
+    request = shop(Operator(id="a", name="Al", work_centers=["VF2", "LATHE"], shifts=night), hours=16, shifts=long_day)
+    request.work_centers[1] = request.work_centers[1].model_copy(update={"hours_per_day": 16, "shifts": long_day})
+    request.orders = [
+        Order(order_no="O1", part_no="P", qty=1, due_date=START + timedelta(days=30)),
+        Order(order_no="O2", part_no="L", qty=1, due_date=START + timedelta(days=30)),
+    ]
+    _, report = staff(request)
+    assert (report.staffed_minutes[("VF2", 0)], report.staffed_minutes[("LATHE", 0)]) == (30, 30)
+    # And who covers which half hour is recorded on the clock, for assign.py.
+    crews = sorted(report.crews[("VF2", 0)] + report.crews[("LATHE", 0)])
+    assert [(s % 1440, e % 1440, people) for s, e, people in crews] == [
+        (22 * 60, 22 * 60 + 30, ("a",)),
+        (22 * 60 + 30, 23 * 60, ("a",)),
+    ]
+
+
+def test_a_machine_nobody_is_ever_in_for_keeps_its_hours_with_a_notice():
+    request = shop(Operator(id="a", name="Al", work_centers=["VF2"], shifts=[ShiftWindow(start="22:00", end="06:00")]), hours=8, shifts=[DAY_SHIFT])
+    request.orders = [Order(order_no="O1", part_no="P", qty=2, due_date=START + timedelta(days=5))]
+    staffed, report = staff(request)
+    assert "Nobody listed for VF2 (Al) is ever in while it runs" in " ".join(report.notices)
+    assert "VF2" not in report.listed
+    response = solve_schedule(request)
+    assert response.status in ("OPTIMAL", "FEASIBLE")
+
+
+def test_an_alternate_machine_too_short_for_the_job_is_skipped_not_infeasible():
+    # LATHE has people for one hour, once; the job (3 h) can't fit there, so
+    # it isn't an option, and the plan still runs it on VF2.
+    once = DayException(date=START, hours=0)
+    lathe_person = Operator(
+        id="b", name="Bo", work_centers=["LATHE"], shifts=[ShiftWindow(start="07:00", end="08:00", days=[0])]
+    )
+    request = shop(Operator(id="a", name="Al", work_centers=["VF2"], shifts=[DAY_SHIFT]), lathe_person)
+    request.parts[0] = Part(
+        part_no="P",
+        routing=[Operation(seq=10, work_center="VF2", setup_min=0, run_min_per_unit=60, alt_work_centers=["LATHE"])],
+    )
+    request.orders = [Order(order_no="O1", part_no="P", qty=3, due_date=START + timedelta(days=5))]
+    request.operators[1].time_off = [once.model_copy(update={"date": START + timedelta(days=7 * w)}) for w in range(1, 60)]
+    response = solve_schedule(request)
+    assert response.status in ("OPTIMAL", "FEASIBLE")
+    assert [op.work_center for op in response.operations] == ["VF2"]
