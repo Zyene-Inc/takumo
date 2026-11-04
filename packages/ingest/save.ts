@@ -3,6 +3,7 @@ import "server-only";
 import type { PrismaClient } from "@repo/database";
 import { companyDomains, emailsIn } from "./contacts";
 import type { EntityKey } from "./entities";
+import { parseClock, parseDays, WEEKDAYS } from "./shifts";
 import type { ParsedRecord, Value } from "./transform";
 
 export interface SaveResult {
@@ -182,6 +183,13 @@ const count = (counter: Counter, existed: boolean) => {
   }
 };
 
+/** "yes"/"no" from an enum cell; undefined when the column isn't mapped. */
+const yesNo = (value: Value | undefined) =>
+  value === undefined ? undefined : str(value) === "yes";
+
+/** A number above zero, else null (left unset). */
+const positive = (n: number | null) => (n !== null && n > 0 ? n : null);
+
 const saveWorkCenters = async (
   ctx: Context,
   records: ParsedRecord[],
@@ -208,6 +216,8 @@ const saveWorkCenters = async (
       type: str(v.type),
       hourlyRate: num(v.hourlyRate),
       efficiency,
+      operatorsPerMachine: positive(num(v.operatorsPerMachine)),
+      unattendedRuns: yesNo(v.unattendedRuns),
       // Keep the working days already set; only the hours come from the file.
       shifts:
         hoursPerDay === null
@@ -318,6 +328,10 @@ const saveParts = async (ctx: Context, records: ParsedRecord[], c: Counter) => {
         description: str(v.description),
         customerId: await customers.get(str(v.customer)),
         materialId: await materials.get(str(v.material)),
+        // How much stock one part uses (the ERP's bill of materials), for
+        // material-ready dates (F3.2).
+        materialQtyPerUnit: num(v.materialQtyPerUnit),
+        materialUnit: str(v.materialUnit),
       }),
     });
   }
@@ -746,36 +760,91 @@ const savePurchaseOrders = async (
   }
 };
 
-// Operators have no unique name in the database: matched by name here.
+
+/** The shift a row describes, or undefined when it has no shift columns. */
+const shiftOf = (v: Record<string, Value>) => {
+  const start = str(v.shiftStart);
+  const end = str(v.shiftEnd);
+  if (!(start && end)) {
+    return undefined;
+  }
+  const from = parseClock(start);
+  const to = parseClock(end);
+  if (!(from && to)) {
+    return undefined;
+  }
+  const days = str(v.shiftDays);
+  return { start: from, end: to, days: (days && parseDays(days)) || WEEKDAYS };
+};
+
+// Matched by the ERP's employee id when the report has one (two people can
+// share a name), else by name.
 const saveOperators = async (
   ctx: Context,
   records: ParsedRecord[],
   c: Counter
 ) => {
   const { db, orgId } = ctx;
-  const byName = new Map(
+  const existing = await db.operator.findMany({
+    where: { orgId },
+    select: { id: true, name: true, externalId: true },
+  });
+  const byExternal = new Map(
+    existing.filter((r) => r.externalId).map((r) => [r.externalId, r.id])
+  );
+  const byName = new Map(existing.map((r) => [r.name.toLowerCase(), r.id]));
+  const machines = new Map(
     (
-      await db.operator.findMany({
+      await db.workCenter.findMany({
         where: { orgId },
         select: { id: true, name: true },
       })
-    ).map((r) => [r.name.toLowerCase(), r.id])
+    ).map((w) => [w.name.toLowerCase(), w.id])
   );
+  const unknownMachines = new Set<string>();
   for (const { values: v } of records) {
     const name = str(v.name) as string;
+    const externalId = str(v.employeeId);
+    const skills = v.skills === undefined ? undefined : list(v.skills).map(String);
+    const workCenterIds = skills?.flatMap((m) => {
+      const id = machines.get(m.toLowerCase());
+      if (!id) {
+        unknownMachines.add(m);
+      }
+      return id ? [id] : [];
+    });
+    const shift = shiftOf(v);
     const data = {
-      ...defined({ hourlyRate: num(v.hourlyRate) }),
-      ...(v.skills === undefined ? {} : { skills: list(v.skills).map(String) }),
+      name,
+      ...defined({ hourlyRate: num(v.hourlyRate), externalId }),
+      ...(skills === undefined ? {} : { skills, workCenterIds }),
+      ...(shift === undefined ? {} : { shifts: shift }),
+      ...(yesNo(v.active) === undefined ? {} : { active: yesNo(v.active) }),
+      ...(yesNo(v.unattended) === undefined
+        ? {}
+        : { canRunUnattended: yesNo(v.unattended) }),
       ...synced(ctx),
     };
-    const id = byName.get(name.toLowerCase());
+    const id =
+      (externalId ? byExternal.get(externalId) : undefined) ??
+      byName.get(name.toLowerCase());
     if (id) {
       await db.operator.update({ where: { id }, data });
     } else {
-      const row = await db.operator.create({ data: { orgId, name, ...data } });
+      const row = await db.operator.create({ data: { orgId, ...data } });
       byName.set(name.toLowerCase(), row.id);
+      if (externalId) {
+        byExternal.set(externalId, row.id);
+      }
     }
     count(c, Boolean(id));
+  }
+  const note = listNote(
+    "Machines on the roster that aren't in your machine list (add them, or check the spelling)",
+    unknownMachines
+  );
+  if (note) {
+    ctx.notes.push(note);
   }
 };
 

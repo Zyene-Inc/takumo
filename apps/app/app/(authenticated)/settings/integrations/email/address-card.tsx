@@ -20,7 +20,7 @@ export interface AddressView {
   description: string;
   /** How to point portals, website forms and the like at this address. */
   help?: string[];
-  kind: "erp" | "rfq";
+  kind: "erp" | "rfq" | "ask";
   title: string;
 }
 
@@ -86,28 +86,39 @@ export const AddressCard = ({
           </ul>
         )}
         <div className="grid gap-2">
-          <label
-            className="font-medium text-sm"
-            htmlFor={`senders-${view.kind}`}
-          >
-            Who may send to it
-          </label>
-          <Textarea
-            disabled={!canManage || pending}
-            id={`senders-${view.kind}`}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={"reports@yourshop.com\n@yourshop.com"}
-            rows={3}
-            value={text}
-          />
-          <p className="text-muted-foreground text-xs">
-            One per line: an address, or @domain for anyone at that domain. Mail
-            from anyone else, or that can't be verified as really theirs, is
-            bounced.
-          </p>
+          {view.kind === "ask" ? (
+            <p className="text-muted-foreground text-xs">
+              Only people in your shop can use it: mail from the address they
+              sign in to Takumo with, verified as really theirs. Anyone else is
+              bounced.
+            </p>
+          ) : (
+            <>
+              <label
+                className="font-medium text-sm"
+                htmlFor={`senders-${view.kind}`}
+              >
+                Who may send to it
+              </label>
+              <Textarea
+                disabled={!canManage || pending}
+                id={`senders-${view.kind}`}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={"reports@yourshop.com\n@yourshop.com"}
+                rows={3}
+                value={text}
+              />
+              <p className="text-muted-foreground text-xs">
+                One per line: an address, or @domain for anyone at that domain.
+                Mail from anyone else, or that can't be verified as really
+                theirs, is bounced.
+              </p>
+            </>
+          )}
           {canManage && (
             <div className="flex flex-wrap items-center gap-2">
               <Button
+                className={view.kind === "ask" ? "hidden" : undefined}
                 disabled={pending}
                 onClick={() =>
                   start(async () => {

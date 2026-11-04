@@ -74,6 +74,8 @@ const LEVER_NAME: Record<Lever["kind"], string> = {
   overtime: "Overtime",
   alternate_machine: "Alternate machine",
   split_lot: "Split the lot",
+  extra_operator: "Another qualified operator",
+  expedite_material: "Expedite the material",
 };
 
 export const CheckForm = ({
@@ -81,10 +83,17 @@ export const CheckForm = ({
   customers,
   canEdit,
   initialPartId,
+  initialAnswer = null,
   ordersFromErp = false,
 }: {
   canEdit: boolean;
   customers: string[];
+  /** A saved check opened from a link (e.g. Takumo's email answer). */
+  initialAnswer?: {
+    orderNo: string;
+    result: CapacityResponse;
+    runId: string;
+  } | null;
   initialPartId?: string;
   /** The ERP sends orders: a new one is entered there, not added here. */
   ordersFromErp?: boolean;
@@ -105,7 +114,7 @@ export const CheckForm = ({
     runId: string;
     orderNo: string;
     result: CapacityResponse;
-  } | null>(null);
+  } | null>(initialAnswer);
 
   const part = parts.find((p) => p.id === values.partId);
   const qty = Number(values.qty);

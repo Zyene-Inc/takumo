@@ -29,6 +29,12 @@ const STATUS_TEXT: Record<string, string> = {
   failed: "Failed",
 };
 
+const MESSAGE_KIND: Record<string, string> = {
+  erp: "ERP report",
+  rfq: "RFQ",
+  ask: "Question",
+};
+
 const ADDRESS_COPY: Record<
   InboundKind,
   { title: string; description: string; help?: string[] }
@@ -46,6 +52,15 @@ const ADDRESS_COPY: Record<
       "Customer portals: set the portal to email its RFQ notifications to this address, or forward them. Add the portal's sending address (or @its-domain) to the list below.",
       "Website form: in your form tool (WordPress, Webflow, Squarespace, HubSpot, Jotform and the like), add this address as a notification recipient. Add the form's sending address to the list below.",
       "Phone calls: use New RFQ → From a call in Quotes and type or dictate what the customer asked for.",
+    ],
+  },
+  ask: {
+    title: "Ask by email",
+    description:
+      "Forward a customer's \"can you do 300 by Friday?\" here, or write your own question. Takumo answers in the same thread within minutes: yes or no with the earliest date, why (machines, people, material), who would slip if it went first, and ways to make it, with a link to add it to the plan.",
+    help: [
+      "It checks the plan the way the Can we take this order? page does, and keeps the answer in Ask Takumo.",
+      "If the part, quantity or date isn't clear, Takumo replies with one question instead of guessing.",
     ],
   },
 };
@@ -67,7 +82,9 @@ const summary = (result: unknown) => {
 
 const detailText = (detail: unknown) => {
   const d = detail as {
+    answered?: boolean;
     duplicateOf?: number;
+    emailed?: boolean;
     error?: string;
     po?: number;
     poRepeat?: boolean;
@@ -80,6 +97,11 @@ const detailText = (detail: unknown) => {
   }
   if (d.error) {
     return d.error;
+  }
+  if (d.answered) {
+    return d.emailed
+      ? "Answered by email; the conversation is in Ask Takumo."
+      : "Answered in Ask Takumo (email sending isn't set up, so no reply went out).";
   }
   if (d.po) {
     return d.poRepeat
@@ -169,7 +191,7 @@ const EmailIntegrationsPage = async () => {
         </p>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          {(["erp", "rfq"] as const).map((kind) => {
+          {(["erp", "rfq", "ask"] as const).map((kind) => {
             const a = addresses.find((x) => x.kind === kind);
             return (
               <AddressCard
@@ -265,7 +287,7 @@ const EmailIntegrationsPage = async () => {
                       {STATUS_TEXT[m.status] ?? m.status}
                     </Badge>
                     <span className="text-muted-foreground">
-                      {m.kind === "erp" ? "ERP report" : "RFQ"} ·{" "}
+                      {MESSAGE_KIND[m.kind] ?? "RFQ"} ·{" "}
                       {when(m.receivedAt)}
                     </span>
                     <span className="truncate">

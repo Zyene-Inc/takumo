@@ -3,12 +3,14 @@
 
 import type {
   DayException,
+  Operator,
   Order,
   Part,
   Pin,
   ScheduleRequest,
   WorkCenter,
 } from "@repo/engine-client/types";
+import { readShift } from "@repo/ingest";
 
 /** Hours we assume for a machine whose sheet didn't say. */
 export const DEFAULT_HOURS_PER_DAY = 8;
@@ -19,7 +21,26 @@ export interface WorkCenterRow {
   hourlyRate: { toString(): string } | null;
   id: string;
   name: string;
+  operatorsPerMachine?: number;
   shifts: unknown;
+  unattendedRuns?: boolean;
+}
+
+export interface OperatorRow {
+  active: boolean;
+  canRunUnattended: boolean;
+  days: { date: Date; hours: number; reason: string | null }[];
+  id: string;
+  name: string;
+  shifts: unknown;
+  workCenterIds: string[];
+}
+
+/** When an order's material is ready (lib/schedule/material.ts). */
+export interface ReleaseRow {
+  /** YYYY-MM-DD, later than the plan start; null: ready now or unknown. */
+  date: string | null;
+  note: string;
 }
 
 export interface PartRow {
@@ -55,9 +76,12 @@ export interface PinRow {
 }
 
 export interface ShopRows {
+  operators?: OperatorRow[];
   orders: OrderRow[];
   parts: PartRow[];
   pins: PinRow[];
+  /** Material-ready dates and notes, by order number. */
+  release?: Map<string, ReleaseRow>;
   workCenters: WorkCenterRow[];
 }
 
@@ -135,8 +159,57 @@ const toWorkCenter = (
     ...(workingDays ? { working_days: workingDays } : {}),
     ...(exceptions.length ? { exceptions } : {}),
     hourly_rate: toNumber(wc.hourlyRate),
+    operators_per_machine: Math.min(
+      4,
+      Math.max(0.05, wc.operatorsPerMachine ?? 1)
+    ),
+    unattended_runs: wc.unattendedRuns ?? false,
   };
 };
+
+/**
+ * The active roster for the engine: machines by name (unknown ids dropped),
+ * shifts with Monday = 0, time off from the plan start on.
+ */
+export const toOperators = (
+  rows: OperatorRow[],
+  wcName: Map<string, string>,
+  startDate: string
+): Operator[] =>
+  rows
+    .filter((o) => o.active)
+    .map((o) => {
+      const shift = readShift(o.shifts);
+      const timeOff = o.days
+        .filter((d) => isoDay(d.date) >= startDate)
+        .map((d) => ({
+          date: isoDay(d.date),
+          hours: Math.max(0, Math.min(24, d.hours)),
+          reason: d.reason,
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      return {
+        id: o.id,
+        name: o.name,
+        work_centers: o.workCenterIds
+          .map((id) => wcName.get(id))
+          .filter((n): n is string => Boolean(n)),
+        ...(shift
+          ? {
+              shifts: [
+                {
+                  start: shift.start,
+                  end: shift.end,
+                  days: shift.days.map((d) => d - 1),
+                },
+              ],
+            }
+          : {}),
+        unattended: o.canRunUnattended,
+        ...(timeOff.length ? { time_off: timeOff } : {}),
+      };
+    })
+    .filter((o) => o.work_centers.length > 0);
 
 /** Part numbers are the engine's keys; add the rev only where two revs share one. */
 const toPartKeys = (parts: PartRow[]) => {
@@ -297,6 +370,7 @@ export const buildScheduleRequest = (
     } else {
       addPart(part);
     }
+    const release = rows.release?.get(order.orderNo);
     orders.push({
       order_no: order.orderNo,
       part_no: partNo,
@@ -304,6 +378,10 @@ export const buildScheduleRequest = (
       due_date: isoDay(order.dueDate),
       priority: Math.max(0, Math.min(10, order.priority)),
       price: toNumber(order.price),
+      ...(release?.date && release.date > startDate
+        ? { release_date: release.date }
+        : {}),
+      ...(release ? { release_note: release.note } : {}),
     });
   }
   for (const id of options.includeParts ?? []) {
@@ -324,6 +402,9 @@ export const buildScheduleRequest = (
       parts,
       orders,
       pins: toPins(rows.pins, orders, parts, wcName, startDate),
+      ...(rows.operators?.length
+        ? { operators: toOperators(rows.operators, wcName, startDate) }
+        : {}),
     },
   };
 };

@@ -32,13 +32,13 @@ const VERDICT_LABEL: Record<string, string> = {
 const CheckPage = async ({
   searchParams,
 }: {
-  searchParams: Promise<{ part?: string }>;
+  searchParams: Promise<{ part?: string; run?: string }>;
 }) => {
   const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
     notFound();
   }
-  const { part: initialPartId } = await searchParams;
+  const { part: initialPartId, run: runParam } = await searchParams;
   const db = forOrg(database, orgId);
 
   const [parts, customers, runs] = await Promise.all([
@@ -97,6 +97,22 @@ const CheckPage = async ({
     };
   });
 
+  // A saved check opened from a link (Takumo's email answer, F3.4): its
+  // answer is shown with "Add to plan".
+  const opened = runParam
+    ? await db.scheduleRun.findFirst({
+        where: { id: runParam, objective: CAPACITY_CHECK },
+        select: { id: true, input: true, output: true },
+      })
+    : null;
+  const initialAnswer = opened?.output
+    ? {
+        runId: opened.id,
+        orderNo: (opened.input as unknown as CheckInput).orderNo,
+        result: opened.output as unknown as CapacityResponse,
+      }
+    : null;
+
   const judged = runs.filter((r) => r.verdict);
   const agreed = judged.filter((r) => r.verdict === "agree").length;
 
@@ -116,6 +132,7 @@ const CheckPage = async ({
           <CheckForm
             canEdit={canEditShop}
             customers={customers.map((c) => c.name)}
+            initialAnswer={initialAnswer}
             initialPartId={
               options.some((o) => o.id === initialPartId)
                 ? initialPartId

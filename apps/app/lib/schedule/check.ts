@@ -77,7 +77,15 @@ export const runCapacityCheck = async (
   const built = await loadShop(orgId, today, {
     includeParts: [part.id],
     materialCost: materialCost === null ? {} : { [part.id]: materialCost },
+    // Its material comes after the orders already promised (F3.2-R2).
+    extra: {
+      orderNo,
+      partId: part.id,
+      qty: question.qty,
+      dueDate: question.dueDate,
+    },
   });
+  const material = built.extraRelease;
 
   let result: CapacityResponse;
   try {
@@ -91,6 +99,10 @@ export const runCapacityCheck = async (
         due_date: question.dueDate,
         price,
         priority: 0,
+        ...(material?.date && material.date > today
+          ? { release_date: material.date }
+          : {}),
+        ...(material ? { release_note: material.note } : {}),
       },
     });
   } catch (error) {

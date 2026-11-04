@@ -14,9 +14,11 @@ import { parseEmail } from "../quotes/email";
 import { intakeRfq } from "../quotes/intake";
 import { readRfqFile } from "../quotes/read";
 import { triageEmail } from "../quotes/triage";
+import { memberAddresses, processAsk } from "./ask";
 import {
   authenticated,
   emailAddress,
+  INBOUND_KINDS,
   type InboundAuth,
   type InboundKind,
   newToken,
@@ -28,7 +30,7 @@ import {
 export const ensureAddresses = async (orgId: string) => {
   const db = forOrg(database, orgId);
   const existing = await db.inboundAddress.findMany();
-  for (const kind of ["erp", "rfq"] as const) {
+  for (const kind of INBOUND_KINDS) {
     if (!existing.some((a) => a.kind === kind)) {
       existing.push(
         await db.inboundAddress.create({
@@ -45,8 +47,12 @@ const refusal = (
   allowed: string[],
   from: string | null,
   auth: InboundAuth,
-  mailFrom: string
+  mailFrom: string,
+  kind: string
 ) => {
+  if (kind === "ask" && !senderAllowed(from, allowed)) {
+    return `${from ?? "This sender"} isn't someone in this shop on Takumo. Ask from the address you sign in with.`;
+  }
   if (allowed.length === 0) {
     return `Nobody is allowed to send to this address yet. Add ${from ?? "the sender"} under Settings → Integrations → Email & ERP reports.`;
   }
@@ -109,11 +115,17 @@ export const receiveMessage = async (input: {
 
   for (const address of matched) {
     const db = forOrg(database, address.orgId);
+    // The ask address takes questions from the shop's own people only.
+    const allowed =
+      address.kind === "ask"
+        ? await memberAddresses(address.orgId)
+        : address.allowedSenders;
     const problem = refusal(
-      address.allowedSenders,
+      allowed,
       from,
       input.auth,
-      input.mailFrom
+      input.mailFrom,
+      address.kind
     );
     const seen = await db.inboundMessage.findFirst({
       where: { sha256 },
@@ -298,6 +310,8 @@ export const processMessage = async (accepted: Accepted, raw: Uint8Array) => {
   try {
     if (accepted.kind === "erp") {
       await processReport(accepted.orgId, accepted.messageId, raw);
+    } else if (accepted.kind === "ask") {
+      await processAsk(accepted.orgId, accepted.messageId, raw);
     } else {
       const sha256 = createHash("sha256").update(raw).digest("hex");
       await processRfq(accepted.orgId, accepted.messageId, raw, sha256);

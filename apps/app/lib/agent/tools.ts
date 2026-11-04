@@ -283,7 +283,7 @@ Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in 
 
     check_capacity: tool({
       description:
-        "Can we take a new order? Plans the shop with and without it and returns: yes/no, the earliest finish without moving other orders, the finish if it went first and which orders would slip, levers (overtime, split lot, alternate machine) with extra cost, and cost and margin. Use for any 'can we take / ship / make X by <date>' question.",
+        "Can we take a new order? Plans the shop with and without it, counting machine hours, the operators on shift who are qualified on each machine (and their time off), and when the material is ready (stock, open POs, lead time). Returns: yes/no, the earliest finish without moving other orders, the finish if it went first and which orders would slip, levers (overtime, split lot, alternate machine, another qualified operator, expediting the material) with extra cost, and cost and margin. The summary names the reason for a no in plain words (a machine short of people on a shift, material arriving later). Use for any 'can we take / ship / make X by <date>' question.",
       inputSchema: z.object({
         part_no: z.string(),
         rev: z
@@ -338,7 +338,7 @@ Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in 
           return { error: answer.error, sources: [] };
         }
         const r = answer.result;
-        const check = cite.check(answer.input.orderNo);
+        const check = cite.check(answer.input.orderNo, answer.runId);
         return {
           can_take: r.can_take,
           summary: r.explanation,
@@ -356,6 +356,8 @@ Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in 
           orders_that_would_slip: r.slipped,
           levers: r.levers,
           cost: r.cost,
+          // Opens this answer with "Add to plan" (Takumo's plan only).
+          add_to_plan_link: check.href,
           cite_as: check.id,
           sources: [
             check,

@@ -70,6 +70,7 @@ model Org {
   workCenters        WorkCenter[]
   calendarDays       CalendarDay[]
   operators          Operator[]
+  operatorDays       OperatorDay[]
   materials          Material[]
   customers          Customer[]
   parts              Part[]
@@ -117,24 +118,29 @@ model Member {
 // ---------------------------------------------------------------------------
 
 model WorkCenter {
-  id          String     @id @default(uuid())
-  orgId       String
-  org         Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name        String
-  type        String? // e.g. "cnc_mill", "lathe", "press_brake"
-  hourlyRate  Decimal?   @db.Decimal(10, 2)
-  efficiency  Float      @default(1.0)
-  shifts      Json? // [{ "days": [1,2,3,4,5], "start": "07:00", "end": "15:30" }]
+  id                  String     @id @default(uuid())
+  orgId               String
+  org                 Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name                String
+  type                String? // e.g. "cnc_mill", "lathe", "press_brake"
+  hourlyRate          Decimal?   @db.Decimal(10, 2)
+  efficiency          Float      @default(1.0)
+  shifts              Json? // [{ "days": [1,2,3,4,5], "start": "07:00", "end": "15:30" }]
   // Largest part it takes, in inches: { x, y, z } or { diameter, length }.
-  envelope    Json?
+  envelope            Json?
   // Tightest tolerance it holds, in inches (e.g. 0.0005).
-  toleranceIn Float?
-  provenance  Provenance @default(data)
-  sourceId    String?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  toleranceIn         Float?
+  // People needed while it runs: 0.5 = one person runs two machines.
+  operatorsPerMachine Float      @default(1)
+  // Runs need nobody once set up (lights-out), if someone who can leave
+  // machines running is in that day.
+  unattendedRuns      Boolean    @default(false)
+  provenance          Provenance @default(data)
+  sourceId            String?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
   // Last time the shop's ERP report updated it; read-only in Takumo then.
-  syncedAt    DateTime?
+  syncedAt            DateTime?
 
   calendar CalendarDay[]
   routings Routing[]
@@ -159,16 +165,48 @@ model CalendarDay {
 }
 
 model Operator {
-  id         String    @id @default(uuid())
-  orgId      String
-  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name       String
-  skills     String[]
-  hourlyRate Decimal?  @db.Decimal(10, 2)
-  createdAt  DateTime  @default(now())
+  id               String    @id @default(uuid())
+  orgId            String
+  org              Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name             String
+  // The ERP's employee id: how nightly reports find the same person.
+  externalId       String?
+  active           Boolean   @default(true)
+  skills           String[]
+  hourlyRate       Decimal?  @db.Decimal(10, 2)
+  // When they work: { "start": "15:30", "end": "24:00", "days": [1,2,3,4,5] }
+  // (ISO weekdays, 1 = Monday, like WorkCenter.shifts; an end at or before the
+  // start runs past midnight). Empty: any time a machine they run is running.
+  shifts           Json?
+  // Machines they're qualified to run (WorkCenter ids).
+  workCenterIds    String[]  @default([])
+  // Can set up a machine and leave it running (lights-out, several machines).
+  canRunUnattended Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @default(now()) @updatedAt
   // Last time the shop's ERP report updated it; read-only in Takumo then.
-  syncedAt   DateTime?
+  syncedAt         DateTime?
 
+  days OperatorDay[]
+
+  @@unique([orgId, externalId])
+  @@index([orgId])
+}
+
+// An operator's day off or short day (vacation, sick), like CalendarDay for
+// machines: hours they work that day (0 = off).
+model OperatorDay {
+  id         String   @id @default(uuid())
+  orgId      String
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  operatorId String
+  date       DateTime @db.Date
+  hours      Float    @default(0)
+  reason     String?
+
+  operator Operator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+
+  @@unique([operatorId, date])
   @@index([orgId])
 }
 
