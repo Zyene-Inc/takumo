@@ -208,6 +208,16 @@ const processReport = async (
       });
     }
   }
+  if (outcomes.length === 0) {
+    // Only a header row, or empty sheets: the ERP sent nothing to import.
+    outcomes.push(
+      ...files.map((f) => ({
+        status: "failed" as const,
+        report: f.name,
+        error: "The file had no rows. Check the ERP's saved report.",
+      }))
+    );
+  }
   const needsMapping = outcomes.filter((o) => o.status === "needs_mapping");
   const failed = outcomes.filter((o) => o.status === "failed");
   let status = "processed";

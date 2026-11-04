@@ -13,6 +13,7 @@ import {
   requestText,
   senderAddress,
   sha256Of,
+  subjectKey,
   withinLimits,
 } from "./attachments";
 import type { RfqFileKind } from "./types";
@@ -79,7 +80,9 @@ const duplicateSince = () =>
  * A text-only RFQ from the last week asking the same thing (F2.1-R7): the
  * customer sent it again, or two people forwarded it. Any sender, since a
  * forward comes from the person forwarding; the request text must match
- * exactly (requestText).
+ * exactly (requestText) and so must the subject (subjectKey), so two RFQs
+ * on one template that name different parts only in the subject stay two.
+ * Mail screened out as not an RFQ is never the original.
  */
 const findSameText = async (
   orgId: string,
@@ -89,16 +92,26 @@ const findSameText = async (
   if (!wanted) {
     return null;
   }
+  const subject = subjectKey(text.subject);
   const recent = await forOrg(database, orgId).rfq.findMany({
-    where: { receivedAt: { gte: duplicateSince() }, files: { none: {} } },
+    where: {
+      receivedAt: { gte: duplicateSince() },
+      files: { none: {} },
+      status: { not: "filtered" },
+    },
     orderBy: { receivedAt: "desc" },
     take: TEXT_CANDIDATES,
     select: { id: true, number: true, subject: true, body: true },
   });
   // The earliest one, so every repeat points at the RFQ people work on.
   return (
-    recent.reverse().find((r) => requestText(r.subject, r.body) === wanted) ??
-    null
+    recent
+      .reverse()
+      .find(
+        (r) =>
+          subjectKey(r.subject) === subject &&
+          requestText(r.subject, r.body) === wanted
+      ) ?? null
   );
 };
 

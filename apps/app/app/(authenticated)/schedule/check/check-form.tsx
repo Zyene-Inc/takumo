@@ -81,10 +81,13 @@ export const CheckForm = ({
   customers,
   canEdit,
   initialPartId,
+  ordersFromErp = false,
 }: {
   canEdit: boolean;
   customers: string[];
   initialPartId?: string;
+  /** The ERP sends orders: a new one is entered there, not added here. */
+  ordersFromErp?: boolean;
   parts: PartOption[];
 }) => {
   const [values, setValues] = useState({
@@ -275,6 +278,7 @@ export const CheckForm = ({
           <Answer
             canEdit={canEdit}
             orderNo={answer.orderNo}
+            ordersFromErp={ordersFromErp}
             result={answer.result}
             runId={answer.runId}
           />
@@ -296,35 +300,17 @@ const Answer = ({
   runId,
   orderNo,
   canEdit,
+  ordersFromErp,
 }: {
   canEdit: boolean;
   orderNo: string;
+  ordersFromErp: boolean;
   result: CapacityResponse;
   runId: string;
 }) => {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  const [added, setAdded] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const fit = result.new_order;
   const rush = result.rush;
   const cost = result.cost;
-
-  const add = (rushed: boolean) =>
-    start(async () => {
-      setError(null);
-      const response = await addToPlan({
-        runId,
-        rush: rushed,
-        today: localToday(),
-      });
-      if (response.ok) {
-        setAdded(response.orderNo);
-        router.refresh();
-      } else {
-        setError(response.error);
-      }
-    });
 
   return (
     <div className="grid gap-4">
@@ -510,45 +496,94 @@ const Answer = ({
         </section>
       )}
 
-      <section className="flex flex-wrap items-center gap-3 rounded-xl border p-4">
-        {added && (
-          <p className="text-sm">
-            Added {added} to the plan.{" "}
-            <Link className="underline" href="/schedule">
-              See it on the board
-            </Link>
-            .
-          </p>
-        )}
-        {!added && canEdit && (
-          <>
-            <Button disabled={pending} onClick={() => add(false)}>
-              {pending && <Spinner />} Add to plan
-            </Button>
-            {!result.can_take && rush && rush.days_late === 0 && (
-              <Button
-                disabled={pending}
-                onClick={() => add(true)}
-                variant="outline"
-              >
-                Add as rush (goes first)
-              </Button>
-            )}
-            <span className="text-muted-foreground text-xs">
-              Creates the order and re-plans the shop.
-            </span>
-          </>
-        )}
-        {!(added || canEdit) && (
-          <p className="text-muted-foreground text-sm">
-            Ask a planner to add this order to the plan.
-          </p>
-        )}
-        {error && <p className="w-full text-destructive text-sm">{error}</p>}
-      </section>
+      <AddToPlan
+        canEdit={canEdit}
+        canRush={!result.can_take && rush?.days_late === 0}
+        ordersFromErp={ordersFromErp}
+        runId={runId}
+      />
 
       {canEdit && <Verdict runId={runId} />}
     </div>
+  );
+};
+
+/** Adding the checked order to the plan (or where to enter it instead). */
+const AddToPlan = ({
+  canEdit,
+  canRush,
+  ordersFromErp,
+  runId,
+}: {
+  canEdit: boolean;
+  canRush: boolean;
+  ordersFromErp: boolean;
+  runId: string;
+}) => {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [added, setAdded] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const add = (rushed: boolean) =>
+    start(async () => {
+      setError(null);
+      const response = await addToPlan({
+        runId,
+        rush: rushed,
+        today: localToday(),
+      });
+      if (response.ok) {
+        setAdded(response.orderNo);
+        router.refresh();
+      } else {
+        setError(response.error);
+      }
+    });
+
+  return (
+    <section className="flex flex-wrap items-center gap-3 rounded-xl border p-4">
+      {added && (
+        <p className="text-sm">
+          Added {added} to the plan.{" "}
+          <Link className="underline" href="/schedule">
+            See it on the board
+          </Link>
+          .
+        </p>
+      )}
+      {!added && canEdit && ordersFromErp && (
+        <p className="text-muted-foreground text-sm">
+          Your ERP sends your orders: enter this order there, and it's planned
+          here after the next report.
+        </p>
+      )}
+      {!added && canEdit && !ordersFromErp && (
+        <>
+          <Button disabled={pending} onClick={() => add(false)}>
+            {pending && <Spinner />} Add to plan
+          </Button>
+          {canRush && (
+            <Button
+              disabled={pending}
+              onClick={() => add(true)}
+              variant="outline"
+            >
+              Add as rush (goes first)
+            </Button>
+          )}
+          <span className="text-muted-foreground text-xs">
+            Creates the order and re-plans the shop.
+          </span>
+        </>
+      )}
+      {!(added || canEdit) && (
+        <p className="text-muted-foreground text-sm">
+          Ask a planner to add this order to the plan.
+        </p>
+      )}
+      {error && <p className="w-full text-destructive text-sm">{error}</p>}
+    </section>
   );
 };
 

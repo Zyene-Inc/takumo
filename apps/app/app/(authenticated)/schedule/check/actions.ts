@@ -8,6 +8,7 @@ import { z } from "zod";
 import { authorize } from "@/lib/access";
 import { track } from "@/lib/analytics";
 import { featureProblem } from "@/lib/billing";
+import { erpFeeds, fedByErp } from "@/lib/erp/feeds";
 import { type CapacityAnswer, runCapacityCheck } from "@/lib/schedule/check";
 import { CAPACITY_CHECK, type CheckInput, replan } from "@/lib/schedule/plan";
 import { checkToday } from "@/lib/schedule/request";
@@ -82,6 +83,13 @@ export const addToPlan = async (input: {
   const access = await authorize("shop:write");
   if (!access.ok) {
     return access;
+  }
+  if (fedByErp(await erpFeeds(access.orgId), "orders")) {
+    return {
+      ok: false,
+      error:
+        "Your ERP sends your orders: enter this order there, and it's planned here after the next report.",
+    };
   }
   const start = checkToday(input.today);
   if (!start) {

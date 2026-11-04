@@ -17,6 +17,7 @@ import { revalidatePath } from "next/cache";
 import { authorize, permissionFor } from "@/lib/access";
 import { budgetProblem, recordUsage } from "@/lib/ai-usage";
 import { track } from "@/lib/analytics";
+import { erpFeeds, fedByErp } from "@/lib/erp/feeds";
 
 // Enough for real shops; bigger files should be split by year or status.
 const MAX_ROWS = 20_000;
@@ -86,6 +87,14 @@ export const importSheet = async (input: {
     return failed(access.error);
   }
   const { orgId } = access;
+  // What the ERP sends every night is changed in the ERP, not by uploading a
+  // spreadsheet over it (the next report would undo it anyway).
+  if (fedByErp(await erpFeeds(orgId), mapping.entity)) {
+    const label = ENTITIES[mapping.entity].label.toLowerCase();
+    return failed(
+      `Your ERP sends your ${label} every night, so Takumo reads them from there. Change them in your ERP and they'll update here after the next report.`
+    );
+  }
   const missing = missingRequired(mapping);
   if (missing.length > 0) {
     return failed(`Choose a column for: ${missing.join(", ")}.`);

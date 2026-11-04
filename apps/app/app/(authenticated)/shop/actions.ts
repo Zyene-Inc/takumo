@@ -10,6 +10,7 @@ import {
 import { saveRecords } from "@repo/ingest/save";
 import { revalidatePath } from "next/cache";
 import { authorize, permissionFor } from "@/lib/access";
+import { erpFeeds, fedByErp } from "@/lib/erp/feeds";
 
 export interface SaveRecordResult {
   readonly errors: string[];
@@ -54,7 +55,9 @@ const exists = async (
         (await db.routing.count({
           where: {
             seq: Number(v.seq),
-            part: { partNo: v.partNo, ...(v.rev ? { rev: v.rev } : {}) },
+            // The same default rev the save uses, so an edit without a rev
+            // can't match another revision's operation and slip past.
+            part: { partNo: v.partNo, rev: v.rev || "A" },
           },
         })) > 0
       );
@@ -137,6 +140,34 @@ const syncedById = async (orgId: string, entity: EntityKey, id: string) => {
   }
 };
 
+const ERP_CREATES =
+  "Your ERP sends these: add it in your ERP, and it shows up here after the next report.";
+
+/**
+ * Whether a new record of this kind is the ERP's to make: the ERP sends this
+ * kind of data, or (an operation) the part's routing came from the ERP.
+ */
+const erpCreates = async (
+  orgId: string,
+  entity: EntityKey,
+  v: Record<string, string>
+) => {
+  if (fedByErp(await erpFeeds(orgId), entity)) {
+    return true;
+  }
+  if (entity !== "routings") {
+    return false;
+  }
+  const synced = await forOrg(database, orgId).routing.findFirst({
+    where: {
+      syncedAt: { not: null },
+      part: { partNo: v.partNo, rev: v.rev || "A" },
+    },
+    select: { id: true },
+  });
+  return synced !== null;
+};
+
 /**
  * Saves one record typed in by a person. Goes through the same parsing and
  * upsert code as file imports, marked as "stated" rather than "data".
@@ -164,6 +195,9 @@ export const saveRecord = async (
   // The ERP owns what it sends (docs/PRODUCT-PLAN.md F1.4).
   if (mode === "update" && (await syncedByIdentity(orgId, entity, values))) {
     return { ok: false, errors: [ERP_OWNED] };
+  }
+  if (mode === "create" && (await erpCreates(orgId, entity, values))) {
+    return { ok: false, errors: [ERP_CREATES] };
   }
   if (mode === "create" && (await exists(orgId, entity, values))) {
     return {

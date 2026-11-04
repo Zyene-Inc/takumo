@@ -7,6 +7,7 @@ import { z } from "zod";
 import { authorize } from "@/lib/access";
 import { track } from "@/lib/analytics";
 import { featureProblem } from "@/lib/billing";
+import { erpFeeds } from "@/lib/erp/feeds";
 import { saveNote } from "@/lib/facts/notes";
 import { clearLog, logOperation } from "@/lib/floor/log";
 
@@ -35,12 +36,31 @@ const refresh = () => {
   revalidatePath("/shop/orders");
 };
 
+/**
+ * Floor logging, unless the ERP already records what each job took (the
+ * page hides the form then; this stops a direct call too).
+ */
+const floorAccess = async () => {
+  const access = await authorize("floor:write");
+  if (!access.ok) {
+    return access;
+  }
+  if ("jobs" in (await erpFeeds(access.orgId))) {
+    return {
+      ok: false as const,
+      error:
+        "Your ERP records job times, so they're logged there and read by Takumo.",
+    };
+  }
+  return access;
+};
+
 export const logOp = async (
   values: LogValues
 ): Promise<
   Result<{ orderDone: boolean; orderNo: string; facts: string[] }>
 > => {
-  const access = await authorize("floor:write");
+  const access = await floorAccess();
   if (!access.ok) {
     return access;
   }
@@ -99,7 +119,7 @@ export const logOp = async (
 };
 
 export const undoLog = async (jobId: string): Promise<Result> => {
-  const access = await authorize("floor:write");
+  const access = await floorAccess();
   if (!access.ok) {
     return access;
   }

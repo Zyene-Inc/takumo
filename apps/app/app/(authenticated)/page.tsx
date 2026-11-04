@@ -46,6 +46,7 @@ const needsAttention = async (orgId: string): Promise<Attention[]> => {
           name: true,
           status: true,
           lastReceivedAt: true,
+          lastImportAt: true,
           updatedAt: true,
         },
       }),

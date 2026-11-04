@@ -11,6 +11,7 @@ import {
   requestText,
   senderAddress,
   sha256Of,
+  subjectKey,
   unpackZip,
   withinLimits,
 } from "../lib/quotes/attachments";
@@ -231,6 +232,17 @@ ${RFQ}`;
 
   test("short generic text is never matched", () => {
     expect(requestText("Quote", "Please quote, thanks. Jane")).toBeNull();
+  });
+
+  test("the subject must match too, ignoring Fwd: and RE:", () => {
+    expect(subjectKey("Fwd: FW: RFQ: BRK-2201 bracket")).toBe(
+      subjectKey("RFQ: BRK-2201 bracket")
+    );
+    expect(subjectKey("RE: Fwd: rfq - brk-2201 BRACKET")).toBe(
+      subjectKey("RFQ: BRK-2201 bracket")
+    );
+    // One template, the part only in the subject: two different RFQs.
+    expect(subjectKey("RFQ: BRK-2201")).not.toBe(subjectKey("RFQ: BRK-2202"));
   });
 });
 

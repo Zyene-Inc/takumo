@@ -12,6 +12,7 @@ import { PencilIcon, PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { erpFeeds, fedByErp } from "@/lib/erp/feeds";
 import { Header } from "../../../components/header";
 import { DeleteButton } from "../../components/delete-button";
 import {
@@ -64,6 +65,10 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
   );
   const totalSetupMin = part.routings.reduce((sum, r) => sum + r.setupMin, 0);
   const nextSeq = (part.routings.at(-1)?.seq ?? 0) + 10;
+  // Routings the ERP sends are changed in the ERP, not added to here.
+  const routingFromErp =
+    fedByErp(await erpFeeds(orgId), "routings") ||
+    part.routings.some((r) => r.syncedAt !== null);
 
   return (
     <>
@@ -127,7 +132,7 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
           <div className="flex items-center justify-between">
             <h2 className="font-medium">Routing</h2>
             <RecordDialog
-              canEdit={canEditShop}
+              canEdit={canEditShop && !routingFromErp}
               entity="routings"
               hidden={["partNo", "rev"]}
               initial={{
@@ -146,7 +151,9 @@ const PartPage = async ({ params }: { params: Promise<{ id: string }> }) => {
           </div>
           {part.routings.length === 0 ? (
             <EmptyState>
-              No operations yet. Add them here, or upload a routing file.
+              {routingFromErp
+                ? "No operations from your ERP for this part yet. They show up after its next routing report."
+                : "No operations yet. Add them here, or upload a routing file."}
             </EmptyState>
           ) : (
             <div className="rounded-xl border">

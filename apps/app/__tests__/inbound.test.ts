@@ -210,24 +210,28 @@ describe("ERP reports by email", () => {
         name: "Open jobs",
         status: "active",
         lastReceivedAt: at("2026-11-03T02:00:00Z"),
+        lastImportAt: at("2026-11-03T02:01:00Z"),
         updatedAt: at("2026-10-01T00:00:00Z") as Date,
       },
       {
         name: "Stock",
         status: "active",
         lastReceivedAt: at("2026-11-01T02:00:00Z"),
+        lastImportAt: at("2026-11-01T02:01:00Z"),
         updatedAt: at("2026-10-01T00:00:00Z") as Date,
       },
       {
         name: "POs",
         status: "paused",
         lastReceivedAt: at("2026-10-01T02:00:00Z"),
+        lastImportAt: at("2026-10-01T02:01:00Z"),
         updatedAt: at("2026-10-01T00:00:00Z") as Date,
       },
       {
         name: "Just confirmed",
         status: "active",
         lastReceivedAt: null,
+        lastImportAt: null,
         updatedAt: at("2026-11-03T10:00:00Z") as Date,
       },
     ];
@@ -236,6 +240,23 @@ describe("ERP reports by email", () => {
     expect(healthLines(late, ["Outlook (quotes@acme.com)"], now)).toEqual([
       "• Stock: last received 2 days ago. Check the ERP's scheduled report or the mail rule that sends it.",
       "• Outlook (quotes@acme.com): the connection stopped working. Reconnect it.",
+    ]);
+  });
+
+  test("a report that arrives every night but can't be read is late too", () => {
+    const now = new Date("2026-11-03T15:00:00Z");
+    const renamed = {
+      name: "Open orders",
+      status: "active",
+      // Arrived last night; its last good import was three days ago.
+      lastReceivedAt: new Date("2026-11-03T02:00:00Z"),
+      lastImportAt: new Date("2026-10-31T02:01:00Z"),
+      updatedAt: new Date("2026-10-01T00:00:00Z"),
+    };
+    const late = lateReports([renamed], now);
+    expect(late).toHaveLength(1);
+    expect(healthLines(late, [], now)).toEqual([
+      "• Open orders: it arrives but hasn't imported since 3 days ago. A column may have been renamed in your ERP: check this report's columns.",
     ]);
   });
 });

@@ -455,6 +455,18 @@ const saveOrders = async (
     });
     count(c, existing.has(orderNo));
   });
+  // An open-orders report without a status column: every order it lists is
+  // open. One closed because an earlier report left it out (closeMissing)
+  // reopens when it's listed again.
+  const listedWithoutStatus = rows
+    .filter((r) => r.data.status === undefined)
+    .map((r) => r.orderNo);
+  if (ctx.syncedAt && listedWithoutStatus.length) {
+    await db.order.updateMany({
+      where: { orgId, orderNo: { in: listedWithoutStatus }, status: "done" },
+      data: { status: "open" },
+    });
+  }
   const notes = [
     listNote(
       "New part numbers added (they have no routing yet)",

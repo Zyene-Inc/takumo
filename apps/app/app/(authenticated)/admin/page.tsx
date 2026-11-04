@@ -83,6 +83,7 @@ const AdminPage = async () => {
         name: true,
         status: true,
         lastReceivedAt: true,
+        lastImportAt: true,
         updatedAt: true,
       },
     }),

@@ -37,7 +37,9 @@ import {
   type MicrosoftTokens,
   MAX_MESSAGES as OUTLOOK_MAX_MESSAGES,
   OutlookAuthError,
+  OutlookConsentError,
   OutlookDeltaExpired,
+  OutlookMailboxError,
   type OutlookSubscription,
   rawMessage as outlookRawMessage,
   previewMessages as previewOutlook,
@@ -340,6 +342,66 @@ const skipReason = async (
     : `Skipped a reply in the thread of RFQ #${number}: same attachments, so the same request.`;
 };
 
+/** One fetched mailbox message, ready to read into an RFQ. */
+interface MailboxMessage {
+  /** Who may send RFQs (Gmail's rules); null: already checked. */
+  allowed: string[] | null;
+  bytes: Uint8Array;
+  id: string;
+  /** How the message is named in sync notes. */
+  label: string;
+  /** The mailbox it came from (a shared one for Outlook). */
+  mailbox: string | null;
+  threadId: string | null;
+}
+
+/** Read one message into an RFQ (or skip it), noting what happened. */
+const intakeMessage = async (
+  orgId: string,
+  connection: ConnectionRow,
+  provider: "gmail" | "outlook",
+  message: MailboxMessage,
+  result: SyncResult
+) => {
+  try {
+    // Inside the try: a malformed message is noted, not the end of the check.
+    const { from, attachmentsHash } = fingerprint(message.bytes);
+    const mail: MailThread = {
+      provider,
+      threadId: message.threadId,
+      attachmentsHash,
+    };
+    const skip = await skipReason(orgId, from, message.allowed, mail);
+    if (skip) {
+      result.skipped += 1;
+      result.notes.push(skip);
+      return;
+    }
+    const text = await readRfqFile("message.eml", message.bytes);
+    const rfq = await intakeRfq(orgId, connection.createdBy, text, {
+      sourceId: message.id,
+      mail,
+      screen: { account: message.mailbox, settings: connection.settings },
+    });
+    if (rfq.duplicate) {
+      result.skipped += 1;
+      result.notes.push(sameRfqNote(text, rfq.number));
+      return;
+    }
+    track("rfq_received", {
+      orgId,
+      properties: { source: provider, channel: text.source, lane: rfq.lane },
+    });
+    result.created += 1;
+    result.notes.push(laneNote(text, rfq.number, rfq.lane));
+  } catch (error) {
+    result.skipped += 1;
+    result.notes.push(
+      `Couldn't read ${message.label}: ${error instanceof Error ? error.message : "error"}`
+    );
+  }
+};
+
 /** New RFQ emails since the last check, each read into an RFQ once. */
 const syncGmail = async (
   orgId: string,
@@ -361,54 +423,50 @@ const syncGmail = async (
   const seen = await seenMessages(orgId, ids);
   const result: SyncResult = { created: 0, updated: 0, skipped: 0, notes: [] };
   let paused: string | null = null;
+  // A message Gmail didn't hand over (a 429 or 5xx): the next check covers
+  // it again, instead of moving past it for good.
+  let unfetched = 0;
   // Oldest first, so RFQ numbers follow the order the mail arrived.
   for (const id of [...ids].reverse()) {
     if (seen.has(id)) {
       result.skipped += 1;
       continue;
     }
-    // Reading an RFQ uses Claude: stop at the shop's monthly AI budget.
+    // Reading an RFQ uses the AI: stop at the shop's monthly AI budget.
     paused = await budgetProblem(orgId);
     if (paused) {
       result.notes.push(paused);
       break;
     }
+    let fetched: Awaited<ReturnType<typeof rawMessageAndThread>>;
     try {
-      const { bytes, threadId } = await rawMessageAndThread(fetch, token, id);
-      const { from, attachmentsHash } = fingerprint(bytes);
-      const mail: MailThread = { provider: "gmail", threadId, attachmentsHash };
-      const skip = await skipReason(orgId, from, allowed, mail);
-      if (skip) {
-        result.skipped += 1;
-        result.notes.push(skip);
-        continue;
-      }
-      const text = await readRfqFile("message.eml", bytes);
-      const rfq = await intakeRfq(orgId, connection.createdBy, text, {
-        sourceId: id,
-        mail,
-        screen: { account: connection.account, settings: connection.settings },
-      });
-      if (rfq.duplicate) {
-        result.skipped += 1;
-        result.notes.push(sameRfqNote(text, rfq.number));
-        continue;
-      }
-      track("rfq_received", {
-        orgId,
-        properties: { source: "gmail", channel: text.source, lane: rfq.lane },
-      });
-      result.created += 1;
-      result.notes.push(laneNote(text, rfq.number, rfq.lane));
+      fetched = await rawMessageAndThread(fetch, token, id);
     } catch (error) {
+      unfetched += 1;
       result.skipped += 1;
       result.notes.push(
-        `Couldn't read message ${id}: ${error instanceof Error ? error.message : "error"}`
+        `Couldn't fetch message ${id} (will try again): ${error instanceof Error ? error.message : "error"}`
       );
+      continue;
     }
+    await intakeMessage(
+      orgId,
+      connection,
+      "gmail",
+      {
+        id,
+        bytes: fetched.bytes,
+        threadId: fetched.threadId,
+        allowed,
+        label: `message ${id}`,
+        mailbox: connection.account,
+      },
+      result
+    );
   }
-  if (paused) {
-    // The rest are read on a later check, once there's budget again.
+  if (paused || unfetched) {
+    // The rest are read on a later check (once there's budget again, or
+    // Gmail answers); messages already read are skipped by id.
     return result;
   }
   // Next time, only mail that arrived after this check started.
@@ -566,7 +624,9 @@ const outlookRound = async (
 
 /**
  * Read each message into an RFQ, oldest first, stopping at the shop's AI
- * budget. Returns whether it stopped early.
+ * budget. Returns whether to keep the old delta position: it stopped early,
+ * or Outlook didn't hand over a message (a 429 or 5xx), which the next check
+ * must see again.
  */
 const readOutlookRfqs = async (
   orgId: string,
@@ -576,6 +636,7 @@ const readOutlookRfqs = async (
   shared: string | null,
   result: SyncResult
 ) => {
+  let unfetched = false;
   for (const message of messages) {
     // Reading an RFQ uses AI: stop at the shop's monthly budget.
     const paused = await budgetProblem(orgId);
@@ -583,48 +644,34 @@ const readOutlookRfqs = async (
       result.notes.push(paused);
       return true;
     }
+    let bytes: Uint8Array;
     try {
-      const bytes = await outlookRawMessage(fetch, token, message.id, shared);
-      const mail: MailThread = {
-        provider: "outlook",
-        threadId: message.conversationId ?? null,
-        attachmentsHash: fingerprint(bytes).attachmentsHash,
-      };
-      // Senders were already checked on the message list (rfqMessages).
-      const skip = await skipReason(orgId, null, null, mail);
-      if (skip) {
-        result.skipped += 1;
-        result.notes.push(skip);
-        continue;
-      }
-      const text = await readRfqFile("message.eml", bytes);
-      const rfq = await intakeRfq(orgId, connection.createdBy, text, {
-        sourceId: message.id,
-        mail,
-        screen: {
-          account: shared ?? connection.account,
-          settings: connection.settings,
-        },
-      });
-      if (rfq.duplicate) {
-        result.skipped += 1;
-        result.notes.push(sameRfqNote(text, rfq.number));
-        continue;
-      }
-      track("rfq_received", {
-        orgId,
-        properties: { source: "outlook", channel: text.source, lane: rfq.lane },
-      });
-      result.created += 1;
-      result.notes.push(laneNote(text, rfq.number, rfq.lane));
+      bytes = await outlookRawMessage(fetch, token, message.id, shared);
     } catch (error) {
+      unfetched = true;
       result.skipped += 1;
       result.notes.push(
-        `Couldn't read "${message.subject ?? "(no subject)"}": ${error instanceof Error ? error.message : "error"}`
+        `Couldn't fetch "${message.subject ?? "(no subject)"}" (will try again): ${error instanceof Error ? error.message : "error"}`
       );
+      continue;
     }
+    // Senders were already checked on the message list (rfqMessages).
+    await intakeMessage(
+      orgId,
+      connection,
+      "outlook",
+      {
+        id: message.id,
+        bytes,
+        threadId: message.conversationId ?? null,
+        allowed: null,
+        label: `"${message.subject ?? "(no subject)"}"`,
+        mailbox: shared ?? connection.account,
+      },
+      result
+    );
   }
-  return false;
+  return unfetched;
 };
 
 /** New RFQ emails in the Outlook RFQ folder since the last delta round. */
@@ -660,7 +707,7 @@ const syncOutlook = async (
   );
   const fresh = candidates.filter((m) => !seen.has(m.id));
   result.skipped += candidates.length - fresh.length;
-  const paused = await readOutlookRfqs(
+  const keepPosition = await readOutlookRfqs(
     orgId,
     connection,
     token,
@@ -668,9 +715,10 @@ const syncOutlook = async (
     shared,
     result
   );
-  if (paused || fresh.length > OUTLOOK_MAX_MESSAGES || !round.deltaLink) {
-    // Keep the old position: the rest are read on a later check (the ones
-    // already read are skipped by message id).
+  if (keepPosition || fresh.length > OUTLOOK_MAX_MESSAGES || !round.deltaLink) {
+    // Keep the old position: the rest (and any message Outlook didn't hand
+    // over) are read on a later check; the ones already read are skipped by
+    // message id.
     return result;
   }
   await mergeSettings(connection.id, {
@@ -728,10 +776,15 @@ const runSync = async (
   } catch (error) {
     const message = error instanceof Error ? error.message : "The sync failed.";
     log.warn("Connector sync failed", { orgId, provider, error: message });
+    // Errors only a person can fix (sign in again, an admin re-grants
+    // consent, access to the shared mailbox restored): the connection shows
+    // as broken and the daily health email names it.
     const auth =
       error instanceof QbAuthError ||
       error instanceof GmailAuthError ||
-      error instanceof OutlookAuthError;
+      error instanceof OutlookAuthError ||
+      error instanceof OutlookConsentError ||
+      error instanceof OutlookMailboxError;
     await database.connection.update({
       where: { id: connection.id },
       data: { status: auth ? "error" : connection.status, lastError: message },

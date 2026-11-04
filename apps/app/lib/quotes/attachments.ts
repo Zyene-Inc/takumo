@@ -292,6 +292,19 @@ const FORWARD_SUBJECT = /^\s*(?:fwd?|fw)\s*:/i;
 const FORWARD_HEADER =
   /^[ \t>]*(?:from|sent|date|to|cc|subject|reply-to)\s*:.*$/gim;
 const NOT_LETTER_OR_DIGIT = /[^a-z0-9]+/g;
+/** "Fwd: RE: FW:" and friends, however many, at the start of a subject. */
+const REPLY_PREFIXES = /^(?:\s*(?:re|fwd?|fw|aw|wg|sv)\s*:\s*)+/i;
+
+/**
+ * The subject without reply and forward prefixes, letters and digits only:
+ * the same request keeps its subject when forwarded or sent again, and
+ * templated RFQs that differ only in the subject's part number stay apart.
+ */
+export const subjectKey = (subject: string | null) =>
+  (subject ?? "")
+    .replace(REPLY_PREFIXES, "")
+    .toLowerCase()
+    .replace(NOT_LETTER_OR_DIGIT, "");
 
 /**
  * The request itself, for spotting the same text-only RFQ twice (F2.1-R7):

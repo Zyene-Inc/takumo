@@ -9,6 +9,9 @@ import { removeOldFiltered } from "@/lib/quotes/screening";
 import { settleAllFromErp } from "@/lib/quotes/settle";
 import { removeOldUploadParts } from "@/lib/quotes/upload-parts";
 
+/** A mailbox failing this long without a good check counts as broken. */
+const FAILING_FOR_MS = 26 * 60 * 60 * 1000;
+
 // Once a day (vercel.json, 15:00 UTC: morning in the US): tell each shop's
 // admins about ERP reports that stopped arriving and mailboxes that
 // disconnected, so stale data gets noticed before it misleads anyone. Also
@@ -42,11 +45,26 @@ export const GET = async (request: Request) => {
         name: true,
         status: true,
         lastReceivedAt: true,
+        lastImportAt: true,
         updatedAt: true,
       },
     }),
     database.connection.findMany({
-      where: { status: "error" },
+      // Broken, or still "connected" but failing for over a day (an outage,
+      // a rate limit that never clears): either way RFQs aren't coming in.
+      where: {
+        OR: [
+          { status: "error" },
+          {
+            status: "connected",
+            lastError: { not: null },
+            OR: [
+              { lastSyncAt: null },
+              { lastSyncAt: { lt: new Date(now.getTime() - FAILING_FOR_MS) } },
+            ],
+          },
+        ],
+      },
       select: {
         orgId: true,
         provider: true,

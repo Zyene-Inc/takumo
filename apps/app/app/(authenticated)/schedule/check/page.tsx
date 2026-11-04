@@ -12,6 +12,7 @@ import type { CapacityResponse } from "@repo/engine-client/types";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { erpFeeds, fedByErp } from "@/lib/erp/feeds";
 import { CAPACITY_CHECK, type CheckInput } from "@/lib/schedule/plan";
 import { Header } from "../../components/header";
 import { CheckForm, type PartOption } from "./check-form";
@@ -120,6 +121,7 @@ const CheckPage = async ({
                 ? initialPartId
                 : undefined
             }
+            ordersFromErp={fedByErp(await erpFeeds(orgId), "orders")}
             parts={options}
           />
         )}

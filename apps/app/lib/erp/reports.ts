@@ -40,7 +40,12 @@ interface PendingRows {
   fileName: string;
   firstRow: number;
   rows: Sheet["rows"];
+  /** Rows in the file, when more than are kept here (a waiting report). */
+  total?: number;
 }
+
+/** Nothing in the report could be read: a column was renamed or removed. */
+export class UnreadableReportError extends Error {}
 
 export type SheetOutcome =
   | { status: "imported"; report: string; result: ReportResult }
@@ -89,6 +94,56 @@ const CLOSED_WORD: Partial<Record<EntityKey, string>> = {
   stock: "materials no longer in stock set to zero",
 };
 
+/**
+ * Close what a full report no longer lists, only when that's safe: the whole
+ * file was kept and read (a half-read report would close records that are
+ * still open), and this is the one full report of its kind (two stock
+ * reports, two warehouses, would zero each other's rows every night).
+ */
+const closeIfSafe = async (
+  orgId: string,
+  mode: string,
+  entity: EntityKey,
+  syncedAt: Date,
+  read: { rowErrors: number; whole: boolean }
+): Promise<{ closed: number; notes: string[] }> => {
+  if (mode !== "full") {
+    return { closed: 0, notes: [] };
+  }
+  if (read.rowErrors > 0) {
+    return {
+      closed: 0,
+      notes: [
+        `${read.rowErrors} rows couldn't be read, so nothing was closed this time`,
+      ],
+    };
+  }
+  if (!read.whole) {
+    return {
+      closed: 0,
+      notes: ["Only part of the file was kept, so nothing was closed"],
+    };
+  }
+  const fullReports = await forOrg(database, orgId).erpReport.count({
+    where: { status: "active", mode: "full", entity },
+  });
+  if (fullReports > 1) {
+    return {
+      closed: 0,
+      notes: [
+        "Another full report sends the same kind of data, so nothing was closed (each would close the other's rows)",
+      ],
+    };
+  }
+  const closed = await closeMissing(orgId, entity, syncedAt);
+  return {
+    closed,
+    notes: closed
+      ? [`${closed} ${CLOSED_WORD[entity] ?? "records closed"}`]
+      : [],
+  };
+};
+
 /** Import rows with a confirmed mapping, stamped as coming from the ERP. */
 export const importReportRows = async (
   orgId: string,
@@ -101,6 +156,13 @@ export const importReportRows = async (
     mapping,
     pending.firstRow
   );
+  if (records.length === 0 && errors.some((e) => e.severity === "error")) {
+    // Every row failed (e.g. the ERP renamed a column): import nothing, close
+    // nothing, and leave lastImportAt alone so the report shows as late.
+    throw new UnreadableReportError(
+      `None of the ${pending.rows.length} rows could be read with the saved columns. A column may have been renamed in your ERP: check this report's columns.`
+    );
+  }
   const syncedAt = new Date();
   const db = forOrg(database, orgId);
   const source = await db.source.create({
@@ -116,24 +178,20 @@ export const importReportRows = async (
     sourceId: source.id,
     syncedAt,
   });
-  // Only when the whole file was read: a half-read report would close
-  // records that are still open.
   const rowErrors = new Set(
     errors.filter((e) => e.severity === "error").map((e) => e.row)
   ).size;
-  const closed =
-    report.mode === "full" && rowErrors === 0
-      ? await closeMissing(orgId, mapping.entity, syncedAt)
-      : 0;
-  const notes = [...saved.notes];
-  if (closed) {
-    notes.push(`${closed} ${CLOSED_WORD[mapping.entity] ?? "records closed"}`);
-  }
-  if (report.mode === "full" && rowErrors > 0) {
-    notes.push(
-      `${rowErrors} rows couldn't be read, so nothing was closed this time`
-    );
-  }
+  const { closed, notes: closeNotes } = await closeIfSafe(
+    orgId,
+    report.mode,
+    mapping.entity,
+    syncedAt,
+    {
+      rowErrors,
+      whole: (pending.total ?? pending.rows.length) <= pending.rows.length,
+    }
+  );
+  const notes = [...saved.notes, ...closeNotes];
   const result: ReportResult = {
     created: saved.created,
     updated: saved.updated,
@@ -196,10 +254,13 @@ export const handleReportSheet = async (
   const db = forOrg(database, orgId);
   const key = headerKey(sheet.headers);
   const now = new Date();
+  // Kept while waiting for an admin: capped. A confirmed report imports
+  // every row (below).
   const pending: PendingRows = {
     fileName: sheet.name,
     firstRow: sheet.firstRow,
     rows: sheet.rows.slice(0, MAX_PENDING_ROWS),
+    total: sheet.rows.length,
   };
   const existing = await db.erpReport.findFirst({ where: { headerKey: key } });
   if (existing?.status === "paused") {
@@ -219,10 +280,13 @@ export const handleReportSheet = async (
         orgId,
         existing,
         existing.mapping as unknown as ColumnMapping,
-        pending
+        { fileName: sheet.name, firstRow: sheet.firstRow, rows: sheet.rows }
       );
       return { status: "imported", report: sheet.name, result };
     } catch (error) {
+      if (error instanceof UnreadableReportError) {
+        return { status: "failed", report: sheet.name, error: error.message };
+      }
       log.error("ERP report import failed", { orgId, error: String(error) });
       return {
         status: "failed",
@@ -292,11 +356,27 @@ export const confirmReport = async (
   if (!pending?.rows?.length) {
     return { ok: true, result: null };
   }
-  const result = await importReportRows(
-    orgId,
-    { id: report.id, name: report.name, mode },
-    mapping,
-    pending
-  );
-  return { ok: true, result };
+  try {
+    const result = await importReportRows(
+      orgId,
+      { id: report.id, name: report.name, mode },
+      mapping,
+      pending
+    );
+    return { ok: true, result };
+  } catch (error) {
+    if (error instanceof UnreadableReportError) {
+      // Not confirmed after all: it waits for the right columns.
+      await db.erpReport.updateMany({
+        where: { id: report.id },
+        data: { status: "needs_mapping" },
+      });
+      return {
+        ok: false,
+        error:
+          "None of the rows could be read with these columns. Check which column holds each value.",
+      };
+    }
+    throw error;
+  }
 };
