@@ -1,5 +1,8 @@
 // Hands a received message to the Takumo app and turns its answer into an
-// SMTP reply: 2xx -> 250, 4xx -> 550 (permanent), anything else -> 451 (retry).
+// SMTP reply: 2xx -> 250, a refusal (4xx) -> 5xx (permanent), anything else
+// -> 451 (retry). Each reply carries its own enhanced status code (RFC 3463):
+// the sender's mail system words the bounce from it, so "not on the allowed
+// list" must not go out as 5.1.1 ("address not found").
 import { sign } from "./signature.js";
 
 export interface AuthSummary {
@@ -19,7 +22,9 @@ export interface Delivery {
 }
 
 export interface SmtpReply {
-  code: 250 | 451 | 550;
+  code: 250 | 451 | 550 | 552;
+  /** RFC 3463 code, e.g. "5.7.1"; sent before the message. */
+  enhanced: string;
   message: string;
   /** HTTP status, or a short reason when there was none (timeout, network). */
   webhookStatus: number | "timeout" | "network-error";
@@ -52,25 +57,56 @@ function errorText(body: string): string | null {
   return null;
 }
 
+const TEMPORARY = "Temporary failure handing over the message, try again later";
+
+/**
+ * 4xx answers that are our own problem, not the sender's: a signature the
+ * app doesn't accept (the shared secret is out of step, e.g. mid-rotation),
+ * a timeout, a rate limit. The sender keeps the message and retries.
+ */
+const OURS = new Set([401, 408, 429]);
+
+/** The enhanced code for the app's refusal: what the sender is told went wrong. */
+const refusalCode = (status: number) => {
+  if (status === 404) {
+    return "5.1.1"; // no such address
+  }
+  if (status === 403) {
+    return "5.7.1"; // sender not allowed / not verified
+  }
+  return "5.6.0"; // the message itself wasn't accepted
+};
+
 /** Maps the webhook's HTTP answer to the SMTP reply for the sender. */
 export function mapResponse(status: number, body: string): SmtpReply {
   if (status >= 200 && status < 300) {
     return {
       code: 250,
+      enhanced: "2.0.0",
       message: "OK: message accepted",
       webhookStatus: status,
     };
   }
-  if (status >= 400 && status < 500) {
+  if (status === 413) {
+    return {
+      code: 552,
+      enhanced: "5.3.4",
+      message: errorText(body) ?? "Message too large",
+      webhookStatus: status,
+    };
+  }
+  if (status >= 400 && status < 500 && !OURS.has(status)) {
     return {
       code: 550,
+      enhanced: refusalCode(status),
       message: errorText(body) ?? "Message rejected by recipient system",
       webhookStatus: status,
     };
   }
   return {
     code: 451,
-    message: "Temporary failure handing over the message, try again later",
+    enhanced: "4.3.0",
+    message: TEMPORARY,
     webhookStatus: status,
   };
 }
@@ -134,7 +170,8 @@ export async function deliver(
         (error.name === "TimeoutError" || error.name === "AbortError"));
     return {
       code: 451,
-      message: "Temporary failure handing over the message, try again later",
+      enhanced: "4.3.0",
+      message: TEMPORARY,
       webhookStatus: timedOut ? "timeout" : "network-error",
     };
   }

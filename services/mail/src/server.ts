@@ -34,8 +34,15 @@ export interface MailServer {
   smtp: SMTPServer;
 }
 
-function smtpError(code: number, message: string): Error {
-  const error = new Error(message) as Error & { responseCode: number };
+/**
+ * An SMTP error reply with its RFC 3463 enhanced code. We write the codes
+ * ourselves (hideENHANCEDSTATUSCODES): the library would pick one from the
+ * reply code alone, so every 550 would read as 5.1.1 "address not found".
+ */
+function smtpError(code: number, enhanced: string, message: string): Error {
+  const error = new Error(`${enhanced} ${message}`) as Error & {
+    responseCode: number;
+  };
   error.responseCode = code;
   return error;
 }
@@ -79,7 +86,8 @@ export function createMailServer(
     // No AUTH: this is an inbound MX, it never relays. STARTTLS is switched on
     // per connection once a certificate is loaded (see onConnect).
     disabledCommands: ["AUTH", "STARTTLS"],
-    hideENHANCEDSTATUSCODES: false,
+    // We send our own enhanced codes, chosen per reason (see smtpError).
+    hideENHANCEDSTATUSCODES: true,
     disableReverseLookup: true,
     size: config.maxMessageBytes,
     rejectOversized: true,
@@ -96,6 +104,7 @@ export function createMailServer(
         return callback(
           smtpError(
             421,
+            "4.7.0",
             "Too many connections from your address, try again later"
           )
         );
@@ -104,7 +113,7 @@ export function createMailServer(
       if (open >= limits.maxConnectionsPerIp) {
         log("connection_rejected", { ip, reason: "concurrency" });
         return callback(
-          smtpError(421, "Too many open connections from your address")
+          smtpError(421, "4.7.0", "Too many open connections from your address")
         );
       }
       openPerIp.set(ip, open + 1);
@@ -126,7 +135,7 @@ export function createMailServer(
     },
 
     onAuth(_auth, _session, callback) {
-      callback(smtpError(502, "Authentication not available"));
+      callback(smtpError(502, "5.5.1", "Authentication not available"));
     },
 
     onMailFrom(_address, session, callback) {
@@ -134,7 +143,11 @@ export function createMailServer(
       if (!messageLimiter.take(ip)) {
         log("message_rejected", { ip, reason: "rate" });
         return callback(
-          smtpError(450, "Too many messages from your address, try again later")
+          smtpError(
+            450,
+            "4.7.0",
+            "Too many messages from your address, try again later"
+          )
         );
       }
       callback();
@@ -142,7 +155,7 @@ export function createMailServer(
 
     onRcptTo(address, _session, callback) {
       if (!acceptRecipient(address.address, config.domains)) {
-        return callback(smtpError(550, "No such recipient here"));
+        return callback(smtpError(550, "5.1.1", "No such recipient here"));
       }
       callback();
     },
@@ -184,7 +197,11 @@ export function createMailServer(
             durationMs: Date.now() - started,
           });
           return callback(
-            smtpError(552, "Message exceeds fixed maximum message size")
+            smtpError(
+              552,
+              "5.3.4",
+              "Message exceeds fixed maximum message size"
+            )
           );
         }
         handleMessage(
@@ -197,13 +214,13 @@ export function createMailServer(
         )
           .then((reply) => {
             if (reply.code === 250) {
-              callback(null, reply.message);
+              callback(null, `${reply.enhanced} ${reply.message}`);
             } else {
-              callback(smtpError(reply.code, reply.message));
+              callback(smtpError(reply.code, reply.enhanced, reply.message));
             }
           })
           .catch(() =>
-            callback(smtpError(451, "Local error, try again later"))
+            callback(smtpError(451, "4.3.0", "Local error, try again later"))
           );
       });
     },
@@ -216,7 +233,11 @@ export function createMailServer(
     mailFrom: string,
     recipients: string[],
     started: number
-  ): Promise<{ code: SmtpReply["code"] | 554; message: string }> {
+  ): Promise<
+    Pick<SmtpReply, "enhanced" | "message"> & {
+      code: SmtpReply["code"] | 554;
+    }
+  > {
     const helo = session.hostNameAppearsAs || "";
     if (config.scan) {
       const scanned = await scanMessage(config.scan, raw);
@@ -236,9 +257,14 @@ export function createMailServer(
           durationMs: Date.now() - started,
         });
         return infected
-          ? { code: 554, message: "Message rejected: it contains malware" }
+          ? {
+              code: 554,
+              enhanced: "5.7.1",
+              message: "Message rejected: it contains malware",
+            }
           : {
               code: 451,
+              enhanced: "4.3.0",
               message: "Can't check the message right now, try again later",
             };
       }

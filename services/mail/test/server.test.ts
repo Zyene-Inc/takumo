@@ -158,6 +158,41 @@ test("webhook 4xx -> 550 with the app's error text", async () => {
   );
 });
 
+test("refused sender: 550 5.7.1 with the reason, never 5.1.1", async () => {
+  const { transport, stop } = await startServer((_req, res) => {
+    res.writeHead(403, { "content-type": "application/json" });
+    res.end('{"error":"a@shop.example isn\'t on the allowed list for this address."}');
+  });
+  after(stop);
+  await assert.rejects(
+    transport.sendMail({
+      envelope: { from: "a@shop.example", to: ["rfq-abcd1234@in.takumo.test"] },
+      raw: RAW,
+    }),
+    (error: { responseCode?: number; response?: string }) => {
+      assert.equal(error.responseCode, 550);
+      assert.match(String(error.response), /^550 5\.7\.1 .*allowed list/);
+      assert.doesNotMatch(String(error.response), /5\.1\.1/);
+      return true;
+    }
+  );
+});
+
+test("webhook 401 (secret out of step) -> 451, the mail isn't lost", async () => {
+  const { transport, stop } = await startServer((_req, res) => {
+    res.writeHead(401, { "content-type": "application/json" });
+    res.end('{"error":"Bad signature."}');
+  });
+  after(stop);
+  await assert.rejects(
+    transport.sendMail({
+      envelope: { from: "a@shop.example", to: ["rfq-abcd1234@in.takumo.test"] },
+      raw: RAW,
+    }),
+    (error: { responseCode?: number }) => error.responseCode === 451
+  );
+});
+
 test("webhook 5xx -> 451 (sender retries)", async () => {
   const { transport, stop } = await startServer((_req, res) => {
     res.writeHead(500);

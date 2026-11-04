@@ -26,6 +26,7 @@ test("mapResponse: 2xx -> 250", () => {
 test("mapResponse: 4xx -> 550 with the JSON error text, else a generic message", () => {
   assert.deepEqual(mapResponse(404, '{"error":"Unknown address"}'), {
     code: 550,
+    enhanced: "5.1.1",
     message: "Unknown address",
     webhookStatus: 404,
   });
@@ -40,6 +41,33 @@ test("mapResponse: 4xx -> 550 with the JSON error text, else a generic message",
     mapResponse(422, '{"error":42}').message,
     "Message rejected by recipient system"
   );
+});
+
+test("mapResponse: each refusal gets the enhanced code for its reason", () => {
+  // A sender who isn't allowed must not read "address not found" (5.1.1).
+  const refused = mapResponse(
+    403,
+    '{"error":"sales@x.example isn\'t on the allowed list for this address."}'
+  );
+  assert.equal(refused.code, 550);
+  assert.equal(refused.enhanced, "5.7.1");
+  assert.match(refused.message, /allowed list/);
+  assert.equal(mapResponse(404, "").enhanced, "5.1.1");
+  assert.equal(mapResponse(422, "").enhanced, "5.6.0");
+  const big = mapResponse(413, '{"error":"Message too large."}');
+  assert.equal(big.code, 552);
+  assert.equal(big.enhanced, "5.3.4");
+});
+
+test("mapResponse: our own 4xx problems are retried, not bounced", () => {
+  // 401: the shared secret is out of step (e.g. mid-rotation). Bouncing
+  // would lose real mail; 451 makes the sender keep it and retry.
+  for (const status of [401, 408, 429]) {
+    const reply = mapResponse(status, '{"error":"Bad signature."}');
+    assert.equal(reply.code, 451, String(status));
+    assert.equal(reply.enhanced, "4.3.0");
+    assert.doesNotMatch(reply.message, /signature/i);
+  }
 });
 
 test("mapResponse: 5xx and other statuses -> 451", () => {
@@ -76,11 +104,13 @@ test("deliver: 2xx, 4xx and 5xx answers from a real HTTP server", async () => {
   const options = { url: hook.url, secret: SECRET, timeoutMs: 5000 };
   assert.deepEqual(await deliver(options, delivery), {
     code: 250,
+    enhanced: "2.0.0",
     message: "OK: message accepted",
     webhookStatus: 204,
   });
   assert.deepEqual(await deliver(options, delivery), {
     code: 550,
+    enhanced: "5.1.1",
     message: "Unknown inbox address",
     webhookStatus: 404,
   });
