@@ -2,8 +2,9 @@
 // Phase 3 end to end against a running engine: shop rows → the app's own
 // request mapping (operators, shifts, time off, material dates) → the
 // engine's HTTP API → an answer that names people and material. Runs only
-// with ENGINE_URL set (e.g. ENGINE_URL=http://127.0.0.1:8077 after starting
-// the engine), so CI without an engine skips it.
+// with TEST_ENGINE_URL set (e.g. TEST_ENGINE_URL=http://127.0.0.1:8077 after starting
+// a local engine). Never ENGINE_URL: in deploy builds that is the real
+// engine, and a test must not call production.
 
 import type {
   CapacityRequest,
@@ -17,7 +18,7 @@ import { buildScheduleRequest } from "../lib/schedule/request";
 
 /** The engine's HTTP API, posted exactly as @repo/engine-client posts it. */
 const post = async <T>(path: string, body: unknown): Promise<T> => {
-  const response = await fetch(new URL(path, process.env.ENGINE_URL), {
+  const response = await fetch(new URL(path, process.env.TEST_ENGINE_URL), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -134,7 +135,7 @@ const material = (qty: number) =>
     parts: new Map([["p1", { materialId: "al", qtyPerUnit: 0.5, unit: "ft" }]]),
   }).get("NEW-1");
 
-describe.skipIf(!process.env.ENGINE_URL)("Phase 3 end to end", () => {
+describe.skipIf(!process.env.TEST_ENGINE_URL)("Phase 3 end to end", () => {
   test("the roster reaches the engine, and a machine nobody's in for is short", async () => {
     // One open order, so there's a plan to look at.
     const built = buildScheduleRequest(
