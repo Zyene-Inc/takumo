@@ -5,7 +5,9 @@ import { models } from "@repo/ai/lib/models";
 import { database, forOrg } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { budgetProblem, recordFailedUsage, recordUsage } from "../ai-usage";
+import { extractPages } from "../knowledge/extract";
 import { inGroups, pdfPages } from "../knowledge/read";
+import { isScanned } from "./attachments";
 import {
   assignParts,
   checkDrawing,
@@ -147,6 +149,7 @@ export const readDrawing = async (
   );
   const units = unitsOf(answers.map((a) => a.answer));
   const readAt = new Date().toISOString();
+  const scanned = await readFromImage(file);
   return mergeParts(parts).map((p) => ({
     ...p,
     fileId: file.id,
@@ -154,9 +157,24 @@ export const readDrawing = async (
     readAt,
     sheets,
     units,
+    scanned,
     flags: [],
     questions: [],
   }));
+};
+
+/** A photo, or a PDF of scanned pages: the reader worked from an image. */
+const readFromImage = async (file: DrawingFile) => {
+  if (file.mediaType !== "application/pdf") {
+    return true;
+  }
+  try {
+    const pages = await extractPages(file.name, file.data.slice());
+    return isScanned(pages.map((p) => p.text));
+  } catch {
+    // Can't be opened for its text: it was read as images.
+    return true;
+  }
 };
 
 const inBatches = async <T, R>(

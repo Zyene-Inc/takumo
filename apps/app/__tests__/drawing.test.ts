@@ -583,3 +583,109 @@ describe("drawing accuracy scoring", () => {
     expect(summary.passes).toBe(false);
   });
 });
+
+describe("tolerances, machine by machine", () => {
+  const envelope = v("10 × 6 × 2", { l: 10, w: 6, h: 2 });
+  const tight = reading({ tolerances: [tol("±.0003", 0.0003)], envelope });
+  const message = (r: ReturnType<typeof checkDrawing>) =>
+    r.flags.find((f) => f.kind === "tolerance")?.message ?? "";
+
+  it("no machine holds it: says which comes closest", () => {
+    const out = checkDrawing(
+      tight,
+      ctx({
+        machines: [
+          { name: "HAAS-VF2", envelope: null, toleranceIn: 0.001 },
+          { name: "HAAS-VF4", envelope: null, toleranceIn: 0.0005 },
+        ],
+      })
+    );
+    expect(message(out)).toContain("tighter than any of your machines");
+    expect(message(out)).toContain("on HAAS-VF4");
+  });
+
+  it("the one machine that holds it is too small for the part", () => {
+    const out = checkDrawing(
+      tight,
+      ctx({
+        machines: [
+          {
+            name: "Grinder",
+            envelope: { x: 8, y: 4, z: 4 },
+            toleranceIn: 0.0002,
+          },
+          {
+            name: "HAAS-VF4",
+            envelope: { x: 40, y: 20, z: 20 },
+            toleranceIn: 0.001,
+          },
+        ],
+      })
+    );
+    expect(message(out)).toBe(
+      "±.0003: only Grinder holds this, and the part is larger than it."
+    );
+  });
+
+  it("a machine that holds it and fits: no flag", () => {
+    const out = checkDrawing(
+      tight,
+      ctx({
+        machines: [
+          {
+            name: "Grinder",
+            envelope: { x: 24, y: 12, z: 8 },
+            toleranceIn: 0.0002,
+          },
+        ],
+      })
+    );
+    expect(kinds(out)).not.toContain("tolerance");
+  });
+
+  it("a machine with no size given might fit: no flag", () => {
+    const out = checkDrawing(
+      tight,
+      ctx({
+        machines: [{ name: "Grinder", envelope: null, toleranceIn: 0.0002 }],
+      })
+    );
+    expect(kinds(out)).not.toContain("tolerance");
+  });
+
+  it("a machine with no tolerance of its own holds the shop's", () => {
+    const ok = reading({ tolerances: [tol("±.0005", 0.0005)] });
+    const machines = [{ name: "Mill", envelope: null, toleranceIn: null }];
+    expect(kinds(checkDrawing(ok, ctx({ machines })))).not.toContain(
+      "tolerance"
+    );
+    expect(
+      kinds(checkDrawing(tight, ctx({ machines: [...machines] })))
+    ).toContain("tolerance");
+  });
+});
+
+describe("scanned drawings", () => {
+  it("are flagged so the numbers get checked", () => {
+    const out = checkDrawing(reading({ scanned: true }), ctx());
+    expect(kinds(out)).toContain("scanned");
+    expect(kinds(checkDrawing(reading(), ctx()))).not.toContain("scanned");
+  });
+
+  it("a hard-to-read tightest tolerance: flagged and asked", () => {
+    const blurry = {
+      ...tol("±.0O05", 0.0005),
+      confidence: "low" as const,
+    };
+    const out = checkDrawing(
+      reading({ scanned: true, tolerances: [blurry] }),
+      ctx()
+    );
+    expect(out.flags.map((f) => f.message)).toContain(
+      'The tightest tolerance was hard to read ("±.0O05"). Check it on the drawing.'
+    );
+    expect(out.questions).toContain(
+      'For 1234-01, please confirm the tightest tolerance: we read it as "±.0O05".'
+    );
+  });
+});

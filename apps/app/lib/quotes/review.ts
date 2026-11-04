@@ -114,6 +114,7 @@ const FLAG_ORDER: DrawingFlag["kind"][] = [
   "outsourced",
   "new_material",
   "units",
+  "scanned",
   "low_confidence",
 ];
 

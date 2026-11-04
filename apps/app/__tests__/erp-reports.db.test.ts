@@ -52,15 +52,21 @@ const ROWS = [
   ["SO-2", "Bluefin", "P-2", "5", "2026-11-25"],
 ];
 
-describe.skipIf(!TEST_DATABASE_URL)("ERP reports (database)", async () => {
-  process.env.DATABASE_URL = TEST_DATABASE_URL;
-  const { database } = await import("@repo/database");
-  const { handleReportSheet, confirmReport } = await import(
-    "../lib/erp/reports"
-  );
+type Reports = typeof import("../lib/erp/reports");
+type Db = typeof import("@repo/database");
+
+describe.skipIf(!TEST_DATABASE_URL)("ERP reports (database)", () => {
   const orgId = `org_reports_${randomUUID().slice(0, 8)}`;
+  // Loaded only when there's a database: the skipped suite still runs this
+  // body, and the database package checks its URL on import.
+  let database: Db["database"];
+  let handleReportSheet: Reports["handleReportSheet"];
+  let confirmReport: Reports["confirmReport"];
 
   beforeAll(async () => {
+    process.env.DATABASE_URL = TEST_DATABASE_URL;
+    ({ database } = await import("@repo/database"));
+    ({ handleReportSheet, confirmReport } = await import("../lib/erp/reports"));
     await database.org.create({ data: { id: orgId, name: "Reports test" } });
   });
   afterAll(async () => {

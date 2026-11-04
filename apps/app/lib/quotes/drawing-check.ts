@@ -282,22 +282,96 @@ const finishFlags = (r: DrawingReading, ctx: CheckContext) =>
       );
     });
 
-const toleranceFlags = (r: DrawingReading, ctx: CheckContext) => {
-  const machineTols = ctx.machines
-    .map((m) => m.toleranceIn)
-    .filter((t): t is number => typeof t === "number" && t > 0);
-  const capability = Math.min(ctx.shopToleranceIn, ...machineTols);
+/** What a machine holds: its own figure, else the shop's. */
+const holds = (m: CheckContext["machines"][number], shopToleranceIn: number) =>
+  typeof m.toleranceIn === "number" && m.toleranceIn > 0
+    ? m.toleranceIn
+    : shopToleranceIn;
+
+/**
+ * F2.2-R5, per machine: the tightest tolerance needs a machine that holds it
+ * and that the part fits on. A machine with no size given might fit.
+ */
+export const toleranceFlags = (r: DrawingReading, ctx: CheckContext) => {
   const tight = tightestTolerance(r);
   const tightIn = tight ? plusMinusInches(tight, r.units) : null;
-  return tight && tightIn !== null && tightIn < capability - 1e-12
-    ? [
-        flagAt(
-          "tolerance",
-          `${tight.text}: tighter than the ${inches(capability)} you hold.`,
-          tight
-        ),
-      ]
-    : [];
+  if (!tight || tightIn === null) {
+    return [];
+  }
+  const within = (t: number) => tightIn >= t - 1e-12;
+  if (ctx.machines.length === 0) {
+    return within(ctx.shopToleranceIn)
+      ? []
+      : [
+          flagAt(
+            "tolerance",
+            `${tight.text}: tighter than the ${inches(ctx.shopToleranceIn)} you hold.`,
+            tight
+          ),
+        ];
+  }
+  const rated = ctx.machines.map((m) => ({
+    ...m,
+    holds: holds(m, ctx.shopToleranceIn),
+  }));
+  const holders = rated.filter((m) => within(m.holds));
+  if (holders.length === 0) {
+    const best = rated.reduce((a, b) => (b.holds < a.holds ? b : a));
+    return [
+      flagAt(
+        "tolerance",
+        `${tight.text}: tighter than any of your machines holds (best: ${inches(best.holds)} on ${best.name}).`,
+        tight
+      ),
+    ];
+  }
+  const size = partSize(r);
+  const roomy = holders.filter((m) => {
+    const envelope = machineEnvelope(m.envelope);
+    return !(size && envelope) || fits(size, envelope);
+  });
+  if (roomy.length === 0) {
+    const names = holders.map((m) => m.name).join(", ");
+    return [
+      flagAt(
+        "tolerance",
+        `${tight.text}: only ${names} ${holders.length === 1 ? "holds" : "hold"} this, and the part is larger than ${holders.length === 1 ? "it" : "them"}.`,
+        tight
+      ),
+    ];
+  }
+  return [];
+};
+
+/**
+ * A drawing read from a scan or a photo: the numbers came from an image.
+ * The tightest tolerance sets the price and who can make it, so if it was
+ * hard to read, ask.
+ */
+const scanChecks = (r: DrawingReading): Found => {
+  const found: Found = { flags: [], questions: [] };
+  const tight = tightestTolerance(r);
+  if (r.scanned) {
+    found.flags.push(
+      flagAt(
+        "scanned",
+        "Scanned drawing: read from an image, not the PDF's text. Check the tolerances, sizes and material against the drawing."
+      )
+    );
+  }
+  if (tight && tight.confidence === "low") {
+    found.flags.push(
+      flagAt(
+        "low_confidence",
+        `The tightest tolerance was hard to read ("${tight.text}"). Check it on the drawing.`,
+        tight
+      )
+    );
+    found.questions.push(
+      `For ${label(r)}, please confirm the tightest tolerance: we read it as "${tight.text}".`
+    );
+  }
+  return found;
 };
 
 const envelopeFlags = (r: DrawingReading, ctx: CheckContext) => {
@@ -444,6 +518,7 @@ export const checkDrawing = (
 ): Found => {
   const unclear = confidenceChecks(reading);
   const conflicts = conflictChecks(reading, ctx);
+  const scan = scanChecks(reading);
   const flags: DrawingFlag[] = [
     ...(reading.units === "mm"
       ? [
@@ -458,10 +533,15 @@ export const checkDrawing = (
     ...toleranceFlags(reading, ctx),
     ...envelopeFlags(reading, ctx),
     ...certificationFlags(reading, ctx),
+    ...scan.flags,
     ...unclear.flags,
     ...conflicts.flags,
   ];
-  const questions = [...unclear.questions, ...conflicts.questions];
+  const questions = [
+    ...scan.questions,
+    ...unclear.questions,
+    ...conflicts.questions,
+  ];
   if (!reading.material) {
     questions.push(
       `What material should ${label(reading)} be made from? The drawing doesn't say.`
