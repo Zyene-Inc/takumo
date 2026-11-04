@@ -22,6 +22,8 @@ export interface ReportView {
   lastSummary: string | null;
   mode: "full" | "changes";
   name: string;
+  /** The confirmed report this is, with columns the ERP renamed. */
+  replaces: { changes: string; complete: boolean; name: string } | null;
   /** First rows of the waiting file, by header, to show example values. */
   sample: Record<string, string>[];
   status: "needs_mapping" | "active" | "paused";
@@ -54,6 +56,83 @@ const SELECT =
 // biome-ignore lint/suspicious/noAlert: a plain confirm is enough here
 const confirmForget = (message: string) => window.confirm(message);
 
+/** Confirm a report's columns; what to tell the admin, and whether it failed. */
+const confirmAndSay = async (
+  input: Parameters<typeof confirmMapping>[0]
+): Promise<[string, boolean]> => {
+  const r = await confirmMapping(input);
+  if (!r.ok) {
+    return [r.error, true];
+  }
+  const res = r.result;
+  return [
+    res
+      ? `Imported: ${res.created} added, ${res.updated} updated, ${res.skipped} skipped${res.closed ? `, ${res.closed} closed` : ""}. Later reports import by themselves.`
+      : "Saved. The next report imports by itself.",
+    false,
+  ];
+};
+
+/**
+ * The ERP renamed some columns of a report the shop already confirmed:
+ * what changed, and one click to keep importing it.
+ */
+const RenamedNote = ({
+  report,
+  onDone,
+}: {
+  report: ReportView;
+  onDone: (text: string, error: boolean) => void;
+}) => {
+  const [pending, start] = useTransition();
+  const replaces = report.replaces;
+  if (!replaces) {
+    return null;
+  }
+  return (
+    <div className="grid gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+      <p>
+        <span className="font-medium">
+          This is {replaces.name} with changed columns:
+        </span>{" "}
+        {replaces.changes}.
+      </p>
+      {replaces.complete ? (
+        <div>
+          <Button
+            disabled={pending}
+            onClick={() =>
+              start(async () => {
+                onDone(
+                  ...(await confirmAndSay({
+                    reportId: report.id,
+                    mode: report.mode,
+                    mapping: {
+                      entity: report.entity,
+                      columns: report.columns,
+                      timeUnits: report.timeUnits,
+                    },
+                    replace: true,
+                  }))
+                );
+              })
+            }
+            size="sm"
+            type="button"
+          >
+            {pending && <Spinner />}
+            Use the same columns
+          </Button>
+        </div>
+      ) : (
+        <p className="text-muted-foreground">
+          A required column is missing: choose it below.
+        </p>
+      )}
+    </div>
+  );
+};
+
 /** Which column feeds each field, with an example value from the report. */
 const MappingEditor = ({
   report,
@@ -66,6 +145,7 @@ const MappingEditor = ({
   const [columns, setColumns] = useState(report.columns);
   const [timeUnits, setTimeUnits] = useState(report.timeUnits);
   const [mode, setMode] = useState(report.mode);
+  const [replace, setReplace] = useState(Boolean(report.replaces));
   const [pending, start] = useTransition();
   const fields = ENTITIES[entity].fields;
   const example = (header: string | null) =>
@@ -198,26 +278,37 @@ const MappingEditor = ({
         </label>
       </fieldset>
 
+      {report.replaces && (
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            checked={replace}
+            className="mt-1"
+            onChange={(e) => setReplace(e.target.checked)}
+            type="checkbox"
+          />
+          <span>
+            <span className="font-medium">
+              This replaces {report.replaces.name}.
+            </span>{" "}
+            <span className="text-muted-foreground">
+              The old one stops being expected; what it imported stays.
+            </span>
+          </span>
+        </label>
+      )}
+
       <div className="flex items-center gap-2">
         <Button
           disabled={pending}
           onClick={() =>
             start(async () => {
-              const r = await confirmMapping({
-                reportId: report.id,
-                mode,
-                mapping: { entity, columns, timeUnits },
-              });
-              if (!r.ok) {
-                onDone(r.error, true);
-                return;
-              }
-              const res = r.result;
               onDone(
-                res
-                  ? `Imported: ${res.created} added, ${res.updated} updated, ${res.skipped} skipped${res.closed ? `, ${res.closed} closed` : ""}. Later reports import by themselves.`
-                  : "Saved. The next report imports by itself.",
-                false
+                ...(await confirmAndSay({
+                  reportId: report.id,
+                  mode,
+                  mapping: { entity, columns, timeUnits },
+                  replace,
+                }))
               );
             })
           }
@@ -237,11 +328,17 @@ const MappingEditor = ({
 export const ReportRow = ({
   report,
   canManage,
+  focused = false,
 }: {
   report: ReportView;
   canManage: boolean;
+  /** Opened from an email about this report: show its columns. */
+  focused?: boolean;
 }) => {
-  const [open, setOpen] = useState(report.status === "needs_mapping");
+  // A renamed report's one click is enough; the columns are there if needed.
+  const [open, setOpen] = useState(
+    focused || (report.status === "needs_mapping" && !report.replaces?.complete)
+  );
   const [message, setMessage] = useState<{
     error: boolean;
     text: string;
@@ -250,7 +347,10 @@ export const ReportRow = ({
   const status = STATUS[report.status];
 
   return (
-    <li className="grid gap-3 rounded-xl border p-4">
+    <li
+      className={`grid scroll-mt-4 gap-3 rounded-xl border p-4${focused ? "ring-2 ring-primary/40" : ""}`}
+      id={`report-${report.id}`}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <p className="font-medium">{report.name}</p>
         <Badge variant={status.tone}>{status.label}</Badge>
@@ -266,6 +366,12 @@ export const ReportRow = ({
         {when(report.lastImportAt)}
         {report.lastSummary ? ` · ${report.lastSummary}` : ""}
       </p>
+      {canManage && !message && (
+        <RenamedNote
+          onDone={(text, error) => setMessage({ text, error })}
+          report={report}
+        />
+      )}
       {message && (
         <p className={message.error ? "text-destructive text-sm" : "text-sm"}>
           {message.text}

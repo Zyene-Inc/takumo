@@ -741,3 +741,23 @@ describe("who the customer draft goes to", () => {
     ).toBe("buyer@acme.com");
   });
 });
+
+describe("an updated draft beside the estimator's edited one", async () => {
+  const { updatedDraftText } = await import("../lib/quotes/reply");
+
+  test("Gmail, in the customer's thread: not marked, but said where it is", () => {
+    const text = updatedDraftText({ provider: "gmail", inThread: true });
+    expect(text).toContain("same Gmail thread");
+    expect(text).toContain("newer of the two");
+    expect(text).not.toContain('marked "(updated)", is');
+  });
+
+  test("Outlook, or a new email: marked (updated)", () => {
+    for (const reply of [
+      { provider: "outlook", inThread: true },
+      { provider: "gmail", inThread: false },
+    ]) {
+      expect(updatedDraftText(reply)).toContain('marked "(updated)"');
+    }
+  });
+});

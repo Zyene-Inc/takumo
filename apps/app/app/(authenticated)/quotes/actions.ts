@@ -23,6 +23,7 @@ import {
   readPasted,
   readRfqUpload,
 } from "@/lib/quotes/read";
+import { updatedDraftText } from "@/lib/quotes/reply";
 import { learnSender } from "@/lib/quotes/screening";
 import { type LineFinal, MAX_QTY_BREAKS, rfqLabel } from "@/lib/quotes/types";
 import { isUploadId, MAX_UPLOAD_BYTES } from "@/lib/quotes/upload-limits";
@@ -876,7 +877,9 @@ export const updateReplyDraft = async (
   const messages: Record<string, string> = {
     created: `The draft is in your ${where}. Check it and send it from there.`,
     replaced: `The draft in your ${where} now has the latest prices.`,
-    added: `You'd edited the draft, so a new one marked "(updated)" is beside it in your ${where}.`,
+    added: result.reply
+      ? updatedDraftText(result.reply)
+      : "You'd edited the draft, so a new one is beside it.",
     unchanged: "The draft is already up to date.",
     pdf_only:
       result.reply?.note ??

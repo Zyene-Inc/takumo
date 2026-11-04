@@ -302,6 +302,7 @@ export interface DrawingFlag {
     | "low_confidence"
     | "conflict"
     | "units"
+    | "scanned"
     | "no_drawing";
   message: string;
   sheet: number | null;
@@ -339,6 +340,8 @@ export interface DrawingReading {
   questions: string[];
   readAt: string;
   requirements: (DrawingValue & { kind: RequirementKind })[];
+  /** Read from an image (a scan, a photo) rather than a PDF's own text. */
+  scanned?: boolean;
   sheets: number;
   stock: {
     form: "bar" | "plate" | "tube" | "sheet" | "other";

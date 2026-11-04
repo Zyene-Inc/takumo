@@ -348,3 +348,21 @@ export const customerAddress = (
   const sender = rfq.source === "email" ? emailAddress(rfq.sender) : null;
   return outside(sender) ?? outside(emailAddress(rfq.contact));
 };
+
+/**
+ * Where an updated draft went when the estimator had edited theirs (F2.5-R4).
+ * A new email, or any Outlook draft, says "(updated)" in its subject. A
+ * Gmail draft only stays in the customer's thread with the thread's exact
+ * subject, so there it's the second draft, below theirs, and is told apart
+ * that way.
+ */
+export const updatedDraftText = (reply: {
+  inThread: boolean;
+  provider: string;
+}) => {
+  if (reply.provider === "gmail" && reply.inThread) {
+    return "You'd edited the draft, so Takumo added a second draft in the same Gmail thread, below yours, with the latest prices. Gmail keeps a draft in the thread only with the thread's subject, so it can't be marked \"(updated)\": it's the newer of the two. Delete the one you don't want.";
+  }
+  const where = reply.provider === "gmail" ? "Gmail" : "Outlook";
+  return `You'd edited the draft, so a new one with the latest prices, marked "(updated)", is beside it in your ${where} drafts. Delete the one you don't want.`;
+};
