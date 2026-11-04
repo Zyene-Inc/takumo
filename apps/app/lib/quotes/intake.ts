@@ -256,13 +256,14 @@ export type IntakeResult =
       /** Files left out (too large, too many). */
       skipped: string[];
     }
-  /** Same sender and files as an RFQ from the last week: nothing new made. */
+  /** The same request as an RFQ from the last week: nothing new made. */
   | { duplicate: true; id: string; number: number };
 
 /**
  * A new RFQ from any channel, read straight away. Its files are kept. When
- * the same sender sent the same files in the last week, no RFQ is made and
- * the earlier one is returned (F2.1-R7).
+ * the same request came in the last week (the same sender and files, or for
+ * a text-only RFQ the same text, forwarded or not), no RFQ is made and the
+ * earlier one is returned (F2.1-R7).
  */
 export const intakeRfq = async (
   orgId: string,
@@ -274,7 +275,7 @@ export const intakeRfq = async (
   const earlier =
     options.checkDuplicates === false
       ? null
-      : await findDuplicate(orgId, text.sender, files);
+      : await findDuplicate(orgId, text, files);
   if (earlier) {
     return { duplicate: true, id: earlier.id, number: earlier.number };
   }

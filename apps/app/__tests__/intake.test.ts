@@ -8,6 +8,7 @@ import {
   MAX_FILE_BYTES,
   MAX_RFQ_FILES_BYTES,
   MAX_ZIP_ENTRIES,
+  requestText,
   senderAddress,
   sha256Of,
   unpackZip,
@@ -153,6 +154,83 @@ describe("the same RFQ twice", () => {
       duplicateKey("jo@acme.com", ["a", "b"])
     );
     expect(duplicateKey("jo@acme.com", [])).toBeNull();
+  });
+});
+
+describe("the same text-only RFQ twice", () => {
+  const RFQ = `Hi,
+
+Please quote the following:
+Part number: BRK-2201 Rev C, aluminium 6061-T6 bracket, anodize clear
+Quantities: 50, 100, 250
+Need by: Dec 15 2026
+
+Thanks,
+Jane Buyer`;
+  const original = requestText("RFQ: BRK-2201 bracket", RFQ);
+
+  test("sent again, with other line breaks and spacing: the same", () => {
+    expect(original).not.toBeNull();
+    const rewrapped = RFQ.replace(/\n/g, "\r\n").replace(/: /g, ":   ");
+    expect(requestText("RFQ: BRK-2201 bracket", rewrapped)).toBe(original);
+  });
+
+  test("forwarded from Gmail with a note: the forwarded message only", () => {
+    const gmail = `Can we quote this one by Friday?
+
+---------- Forwarded message ---------
+From: Jane Buyer <buyer@acme-aero.com>
+Date: Tue, Nov 3, 2026 at 9:12 AM
+Subject: RFQ: BRK-2201 bracket
+To: <sales@myshop.com>
+
+${RFQ}`;
+    expect(requestText("Fwd: RFQ: BRK-2201 bracket", gmail)).toBe(original);
+  });
+
+  test("two people forwarding it, from Outlook and Apple Mail, match", () => {
+    const outlook = `FYI, see below.
+
+________________________________
+From: Jane Buyer <buyer@acme-aero.com>
+Sent: Tuesday, November 3, 2026 9:12 AM
+To: Sales <sales@myshop.com>
+Subject: RFQ: BRK-2201 bracket
+
+${RFQ}`;
+    const apple = `Begin forwarded message:
+
+From: Jane Buyer <buyer@acme-aero.com>
+Subject: RFQ: BRK-2201 bracket
+Date: November 3, 2026 at 9:12:00 AM CST
+To: sales@myshop.com
+
+${RFQ}`;
+    expect(requestText("FW: RFQ: BRK-2201 bracket", outlook)).toBe(original);
+    expect(requestText("Fwd: RFQ: BRK-2201 bracket", apple)).toBe(original);
+  });
+
+  test("a reply quoting an old RFQ is a new request", () => {
+    // Outlook's reply looks like its forward; only "FW:" makes it one.
+    const reply = `Please also quote 500 pcs.
+
+________________________________
+From: Jane Buyer <buyer@acme-aero.com>
+Sent: Tuesday, November 3, 2026 9:12 AM
+To: Sales <sales@myshop.com>
+Subject: RFQ: BRK-2201 bracket
+
+${RFQ}`;
+    expect(requestText("RE: RFQ: BRK-2201 bracket", reply)).not.toBe(original);
+  });
+
+  test("a different quantity is a different request", () => {
+    const changed = RFQ.replace("50, 100, 250", "50, 100, 500");
+    expect(requestText("RFQ: BRK-2201 bracket", changed)).not.toBe(original);
+  });
+
+  test("short generic text is never matched", () => {
+    expect(requestText("Quote", "Please quote, thanks. Jane")).toBeNull();
   });
 });
 

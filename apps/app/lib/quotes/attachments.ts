@@ -276,5 +276,40 @@ export const duplicateKey = (sender: string | null, hashes: string[]) => {
   return `${senderAddress(sender) ?? ""}|${unique.join(",")}`;
 };
 
-/** Days within which the same sender and files count as the same RFQ. */
+/** Days within which the same request counts as the same RFQ. */
 export const DUPLICATE_DAYS = 7;
+
+/** Shorter requests ("Please quote, thanks") are too generic to call the same. */
+const MIN_REQUEST_CHARS = 80;
+/** Only ever a forward: Gmail's and Apple Mail's markers. */
+const FORWARD_MARKER =
+  /^[ \t>]*(?:-{2,}\s*forwarded message\s*-{2,}|begin forwarded message:)[ \t]*$/im;
+/** Outlook's: the same line starts a reply, so trusted only under "FW:". */
+const OUTLOOK_MARKER =
+  /^[ \t>]*(?:-{2,}\s*original message\s*-{2,}|_{10,})[ \t]*$/im;
+const FORWARD_SUBJECT = /^\s*(?:fwd?|fw)\s*:/i;
+/** The header lines a forward repeats: who, when, to whom. */
+const FORWARD_HEADER =
+  /^[ \t>]*(?:from|sent|date|to|cc|subject|reply-to)\s*:.*$/gim;
+const NOT_LETTER_OR_DIGIT = /[^a-z0-9]+/g;
+
+/**
+ * The request itself, for spotting the same text-only RFQ twice (F2.1-R7):
+ * for a forward, only the forwarded message (the note and the From/To lines
+ * dropped), so two people forwarding one customer email match each other and
+ * the original. Lower-cased letters and digits only, so line breaks and
+ * punctuation that mail programs change don't matter. Compared for equality,
+ * never "contains": a reply quoting an old RFQ is a new request. Null when
+ * the text is too short to tell.
+ */
+export const requestText = (subject: string | null, body: string) => {
+  const marker =
+    body.match(FORWARD_MARKER) ??
+    (FORWARD_SUBJECT.test(subject ?? "") ? body.match(OUTLOOK_MARKER) : null);
+  const message =
+    marker?.index === undefined
+      ? body
+      : body.slice(marker.index + marker[0].length).replace(FORWARD_HEADER, "");
+  const text = message.toLowerCase().replace(NOT_LETTER_OR_DIGIT, "");
+  return text.length >= MIN_REQUEST_CHARS ? text : null;
+};

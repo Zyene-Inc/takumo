@@ -317,12 +317,12 @@ const laneNote = (
     : `RFQ: ${what}`;
 };
 
-/** The sync note for an RFQ that's already in Takumo (same sender and files). */
+/** The sync note for an RFQ that's already in Takumo (the same request this week). */
 const sameRfqNote = (
   text: { sender: string | null; subject: string | null },
   number: number
 ) =>
-  `Skipped ${text.subject ?? "a message"} from ${text.sender ?? "an unknown sender"}: same sender and files as ${rfqLabel(number)}, received in the last week.`;
+  `Skipped ${text.subject ?? "a message"} from ${text.sender ?? "an unknown sender"}: the same request as ${rfqLabel(number)}, received in the last week.`;
 
 /** Why a fetched message isn't read into an RFQ, or null to read it. */
 const skipReason = async (

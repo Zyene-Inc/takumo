@@ -87,7 +87,7 @@ const detailText = (detail: unknown) => {
       : `Customer PO ${poLabel(d.po)}, ready to check and enter in your ERP.`;
   }
   if (d.duplicateOf) {
-    return `Same as ${rfqLabel(d.duplicateOf)}: same sender and files this week, so no new RFQ.`;
+    return `Same as ${rfqLabel(d.duplicateOf)}: the same request arrived earlier this week, so no new RFQ.`;
   }
   if (d.rfq) {
     return d.skipped?.length

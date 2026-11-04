@@ -125,7 +125,8 @@ export type SubmitResult =
 
 /**
  * A new RFQ from an uploaded package, pasted text or a call. Read straight
- * away; the same sender and files within a week link to the earlier RFQ.
+ * away; the same request within a week (same sender and files, or the same
+ * text) links to the earlier RFQ.
  */
 export const submitRfq = async (form: FormData): Promise<SubmitResult> => {
   const access = await authorize("quotes:write");
@@ -155,7 +156,7 @@ export const submitRfq = async (form: FormData): Promise<SubmitResult> => {
     if (rfq.duplicate) {
       return {
         ok: false,
-        error: `This is the same as ${rfqLabel(rfq.number)}: same sender and files, received in the last week.`,
+        error: `This is the same as ${rfqLabel(rfq.number)}: the same request, received in the last week.`,
         existing: { id: rfq.id, label: rfqLabel(rfq.number) },
       };
     }

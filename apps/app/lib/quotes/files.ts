@@ -10,6 +10,7 @@ import {
   type IncomingFile,
   kindOf,
   mediaTypeOf,
+  requestText,
   senderAddress,
   sha256Of,
   withinLimits,
@@ -68,25 +69,59 @@ export const prepareFiles = async (
   return { files, skipped: [...expanded.skipped, ...skipped] };
 };
 
+/** How many recent text-only RFQs the text comparison looks through. */
+const TEXT_CANDIDATES = 300;
+
+const duplicateSince = () =>
+  new Date(Date.now() - DUPLICATE_DAYS * 24 * 60 * 60 * 1000);
+
 /**
- * An RFQ from the last week with the same sender and the same files (F2.1-R7),
- * or null. Compared on the whole set of files, so one extra drawing makes it
- * a new RFQ.
+ * A text-only RFQ from the last week asking the same thing (F2.1-R7): the
+ * customer sent it again, or two people forwarded it. Any sender, since a
+ * forward comes from the person forwarding; the request text must match
+ * exactly (requestText).
+ */
+const findSameText = async (
+  orgId: string,
+  text: { body: string; subject: string | null }
+) => {
+  const wanted = requestText(text.subject, text.body);
+  if (!wanted) {
+    return null;
+  }
+  const recent = await forOrg(database, orgId).rfq.findMany({
+    where: { receivedAt: { gte: duplicateSince() }, files: { none: {} } },
+    orderBy: { receivedAt: "desc" },
+    take: TEXT_CANDIDATES,
+    select: { id: true, number: true, subject: true, body: true },
+  });
+  // The earliest one, so every repeat points at the RFQ people work on.
+  return (
+    recent.reverse().find((r) => requestText(r.subject, r.body) === wanted) ??
+    null
+  );
+};
+
+/**
+ * An earlier RFQ from the last week that this one repeats (F2.1-R7), or
+ * null. With files: the same sender and the same set of files, so one extra
+ * drawing makes it a new RFQ. Without: the same request text.
  */
 export const findDuplicate = async (
   orgId: string,
-  sender: string | null,
+  text: { body: string; sender: string | null; subject: string | null },
   files: PreparedFile[]
 ) => {
+  const { sender } = text;
   const key = duplicateKey(
     sender,
     files.map((f) => f.sha256)
   );
   if (!key) {
-    return null;
+    return await findSameText(orgId, text);
   }
   const db = forOrg(database, orgId);
-  const since = new Date(Date.now() - DUPLICATE_DAYS * 24 * 60 * 60 * 1000);
+  const since = duplicateSince();
   const matches = await db.rfqFile.findMany({
     where: {
       sha256: { in: files.map((f) => f.sha256) },
