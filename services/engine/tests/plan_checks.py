@@ -88,3 +88,46 @@ def working_days(start, n):
             days.append(d)
         d += timedelta(days=1)
     return days
+
+
+def assert_staffed_plan(request: ScheduleRequest, response: ScheduleResponse) -> None:
+    """With a roster: no machine works more than its people cover (F3.3-R7).
+
+    Re-derived from the roster, not from staffing.py: a machine some operator
+    lists, on a day none of them works at all, carries no load; and a
+    machine-day never carries more than its own hours or its staffed hours.
+    """
+    from datetime import timedelta
+
+    assert_valid_plan(request, response)
+    listed = {name for o in request.operators for name in o.work_centers}
+    wcs = {wc.name: wc for wc in request.work_centers}
+
+    def works(operator, day) -> bool:
+        off = next((t for t in operator.time_off if t.date == day), None)
+        if off is not None and off.hours == 0:
+            return False
+        if not operator.shifts:
+            return True
+        # A shift starting the day before can run past midnight into this day.
+        return any(
+            d.weekday() in shift.days
+            for shift in operator.shifts
+            for d in (day, day - timedelta(days=1))
+            if d == day or shift.end <= shift.start
+        )
+
+    for load in response.load:
+        assert load.machine_minutes is not None
+        assert load.capacity_minutes <= load.machine_minutes, load
+        assert load.load_minutes <= load.capacity_minutes, load
+        if load.work_center not in listed:
+            continue
+        people = [o for o in request.operators if load.work_center in o.work_centers]
+        if wcs[load.work_center].unattended_runs and any(
+            o.unattended and works(o, load.date) for o in people
+        ):
+            continue
+        if not any(works(o, load.date) for o in people):
+            assert load.load_minutes == 0, load
+            assert load.capacity_minutes == 0, load

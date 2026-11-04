@@ -164,11 +164,11 @@ def _place_orders(
     timelines: dict[str, Timeline],
     machines: dict[str, "_Machine"],
     result: DispatchResult,
-    start,
+    plan_start,
 ) -> None:
     for order in sorted(selected, key=order_sort_key):
         # Shop minute the previous operation finishes (or the material arrives).
-        ready = release_minute(order, start)
+        ready = release_minute(order, plan_start)
         previous_seq: int | None = None
         for op in sorted(parts[order.part_no].routing, key=lambda o: o.seq):
             key = (order.order_no, op.seq)

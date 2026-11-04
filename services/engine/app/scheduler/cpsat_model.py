@@ -35,6 +35,7 @@ from app.models import (
 )
 from app.scheduler.calendar import DAY, Timeline, day_index, to_datetime
 from app.scheduler.dispatch import Placement, candidates, dispatch, release_minute
+from app.scheduler.staffing import staff
 
 LATENESS_WEIGHT = 1000
 ALT_MACHINE_PENALTY = 1
@@ -104,7 +105,12 @@ def build_response(
     placements: dict[tuple[str, int], Placement],
     timelines: dict[str, Timeline],
     conflicts: list[Conflict] | None = None,
+    machine_timelines: dict[str, Timeline] | None = None,
 ) -> ScheduleResponse:
+    """`machine_timelines`: the machines' own hours before staffing (default:
+    the same as `timelines`), reported as DayLoad.machine_minutes so days
+    without enough people show up (F3.1-R5)."""
+    machines = machine_timelines or timelines
     parts = {p.part_no: p for p in request.parts}
     operations: list[ScheduledOperation] = []
     results: list[OrderResult] = []
@@ -150,16 +156,19 @@ def build_response(
             )
         )
 
+    for timeline in machines.values():
+        timeline.ensure(last_day + 1)
     day_loads = [
         DayLoad(
             work_center=name,
             date=request.start_date + timedelta(days=day),
             load_minutes=load.get((name, day), 0),
             capacity_minutes=timeline.minutes[day],
+            machine_minutes=machines[name].minutes[day],
         )
         for name, timeline in timelines.items()
         for day in range(min(last_day + 1, timeline.days))
-        if timeline.minutes[day] or load.get((name, day))
+        if timeline.minutes[day] or machines[name].minutes[day] or load.get((name, day))
     ]
 
     return ScheduleResponse(
@@ -234,20 +243,60 @@ def solve_schedule(
     keep: dict[tuple[str, int], tuple[str, int]] | None = None,
     first: set[str] | None = None,
     num_workers: int = 8,
+    machine_request: ScheduleRequest | None = None,
+    dispatch_only: bool = False,
 ) -> ScheduleResponse:
     """Plan every order.
 
+    With operators, machines' hours are first cut to what their people cover
+    (staffing.py); the plan's load then reports both the staffed capacity and
+    the machines' own hours, plus notices about the roster.
+
     Internal options for the capacity check: `lateness_caps` forbids orders from
     finishing more days late than given ("without slipping anyone"); `keep`
-    and `first` warm-start from an earlier plan (see dispatch)."""
+    and `first` warm-start from an earlier plan (see dispatch);
+    `machine_request` is the request before it was staffed, when the caller
+    staffed it already (its machines' own hours go in the load);
+    `dispatch_only` skips CP-SAT (the caller knows it can't finish in time)."""
     _validate(request)
+    notices: list[str] = []
+    if request.operators:
+        machine_request = request
+        request, report = staff(request)
+        notices = report.notices
+    response = _solve(
+        request, lateness_caps, keep, first, num_workers, machine_request, dispatch_only
+    )
+    response.notices = notices
+    return response
+
+
+def _solve(
+    request: ScheduleRequest,
+    lateness_caps: dict[str, int] | None,
+    keep: dict[tuple[str, int], tuple[str, int]] | None,
+    first: set[str] | None,
+    num_workers: int,
+    machine_request: ScheduleRequest | None,
+    dispatch_only: bool = False,
+) -> ScheduleResponse:
     if not request.orders:
         return ScheduleResponse(status="OPTIMAL")
 
     parts = {p.part_no: p for p in request.parts}
     timelines = _timelines(request)
+    machine_timelines = (
+        {
+            wc.name: Timeline(wc, request.start_date, request.capacity_factor)
+            for wc in machine_request.work_centers
+        }
+        if machine_request is not None
+        else None
+    )
     greedy = dispatch(request, timelines, parts, keep, first)
-    fallback = build_response(request, "HEURISTIC", greedy.placements, timelines)
+    fallback = build_response(
+        request, "HEURISTIC", greedy.placements, timelines, machine_timelines=machine_timelines
+    )
 
     def fallback_or(status: str) -> ScheduleResponse:
         if lateness_caps and any(
@@ -260,7 +309,9 @@ def solve_schedule(
         hinted = False
     else:
         hinted = True
-        if sum(len(parts[o.part_no].routing) for o in request.orders) > MAX_CP_OPERATIONS:
+        if dispatch_only or (
+            sum(len(parts[o.part_no].routing) for o in request.orders) > MAX_CP_OPERATIONS
+        ):
             # Too big to optimise in the time limit: the dispatch plan is valid.
             return fallback_or("UNKNOWN")
 
@@ -418,7 +469,13 @@ def solve_schedule(
                 solver.value(c.end),
                 pinned=key in pins,
             )
-        return build_response(request, solver.status_name(status), placements, timelines)
+        return build_response(
+            request,
+            solver.status_name(status),
+            placements,
+            timelines,
+            machine_timelines=machine_timelines,
+        )
 
     if greedy.conflicts:
         return ScheduleResponse(status="INFEASIBLE", conflicts=greedy.conflicts)

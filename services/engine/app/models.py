@@ -49,10 +49,25 @@ class WorkCenter(BaseModel):
     unattended_runs: bool = False
 
     def hours_on(self, day: date) -> float:
-        for exception in self.exceptions:
-            if exception.date == day:
-                return exception.hours
+        exception = self._exceptions_by_day().get(day)
+        if exception is not None:
+            return exception
         return self.hours_per_day if day.weekday() in self.working_days else 0.0
+
+    def _exceptions_by_day(self) -> dict[date, float]:
+        """Exceptions by date. Staffing adds one per short-staffed day for a
+        year ahead, so a linear scan per day would dominate planning time.
+        Cached against the list object itself: model_copy(update=...) with new
+        exceptions gets a fresh list and so a fresh cache. The first exception
+        for a date wins, as before."""
+        cached = self.__dict__.get("_by_day_cache")
+        if cached is not None and cached[0] is self.exceptions:
+            return cached[1]
+        by_day: dict[date, float] = {}
+        for exception in self.exceptions:
+            by_day.setdefault(exception.date, exception.hours)
+        object.__setattr__(self, "_by_day_cache", (self.exceptions, by_day))
+        return by_day
 
 
 class Operator(BaseModel):
