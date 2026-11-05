@@ -61,7 +61,7 @@ const claudeModels = (): Models => {
   };
 };
 
-// See docs/TAKUMO.md section 7. The agent never computes numbers itself:
+// The agent never computes numbers itself:
 // it calls engine tools and explains their results with citations.
 //   agent: multi-step planning (capacity questions, quote reasoning)
 //   chat: most chat turns

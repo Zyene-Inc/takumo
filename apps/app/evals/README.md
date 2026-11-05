@@ -4,7 +4,7 @@ Three suites run against the demo shop (`seed/acme-precision`) with the real mod
 and engine:
 
 - **Ask Takumo** (`ask.eval.ts`): 33 golden questions in `golden.ts`. Phase 3 is done when its
-  30 are answered correctly with sources (docs/TAKUMO.md section 13); Phase 4 added two that ask
+  30 are answered correctly with sources; Phase 4 added two that ask
   for quote prices, checked against the engine's own estimate, and Phase 5 one about data the
   shop doesn't have.
 - **Quote Copilot** (`quote.eval.ts`): eight RFQs in `rfqs/` (plain and HTML-only email, an

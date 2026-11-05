@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Status | Phases 1–3 built; Phase 0 waits on design partners; Phases 4–6 not started. Details: [STATUS.md](STATUS.md) |
+| Status | Phases 1–4 and 6 built and live; Phase 0 waits on design partners; Phase 5 is built per ERP for paying shops. Details: [STATUS.md](STATUS.md) |
 | Owner | Product (Ashish) |
-| Last updated | 2026-11-04 |
-| Supersedes | Nothing; changes priorities in [TAKUMO.md](TAKUMO.md) from Phase 7 onward |
+| Last updated | 2026-11-05 |
+| Supersedes | The original build spec (v0.1). Its market, competitor and pricing sections are kept in [MARKET.md](MARKET.md) |
 | Audience | Everyone building Takumo |
 
 ---

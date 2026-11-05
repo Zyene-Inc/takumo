@@ -20,7 +20,7 @@ import { ExtendTrial } from "./extend-trial";
 
 export const metadata: Metadata = { title: "Admin · Takumo" };
 
-/** Phase 6 is done with this many paying shops (docs/TAKUMO.md section 13). */
+/** The paid-launch goal: this many paying shops. */
 const PAYING_GOAL = 3;
 const WEEK_MS = 7 * 86_400_000;
 /** Quoting metrics per shop look this far back. */

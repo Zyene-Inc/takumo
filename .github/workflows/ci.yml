@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   web:
-    name: Typecheck and test (TypeScript)
+    name: Lint, typecheck and test (TypeScript)
     runs-on: ubuntu-latest
     env:
       SKIP_ENV_VALIDATION: "true"
@@ -27,6 +27,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Generate Prisma client
         run: pnpm --filter @repo/database build
+      - name: Lint and format
+        run: pnpm check
+      - name: File size limits
+        run: pnpm check:size
       - run: pnpm typecheck
       - run: pnpm test
 
@@ -83,7 +87,7 @@ jobs:
         run: pnpm test:db
 
   engine:
-    name: Test scheduling engine (Python)
+    name: Lint and test scheduling engine (Python)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -94,6 +98,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen
+      - name: Lint and format
+        run: uv run ruff check . && uv run ruff format --check .
       - run: uv run pytest -q
 
   engine-image:
