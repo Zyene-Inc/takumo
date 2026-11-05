@@ -103,7 +103,8 @@ describe("WorkOS webhook", () => {
       update: { name: "Acme Precision" },
     });
     // A 30-day trial.
-    const created = database.org.upsert.mock.calls[0][0].create.trialEndsAt as Date;
+    const created = database.org.upsert.mock.calls[0][0].create
+      .trialEndsAt as Date;
     expect(Math.round((created.getTime() - Date.now()) / 86_400_000)).toBe(30);
   });
 

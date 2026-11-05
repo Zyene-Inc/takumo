@@ -88,6 +88,4 @@ def load_demo_shop(start_date: date) -> ScheduleRequest:
         for row in _rows("orders.csv")
     ]
 
-    return ScheduleRequest(
-        start_date=start_date, work_centers=work_centers, parts=parts, orders=orders
-    )
+    return ScheduleRequest(start_date=start_date, work_centers=work_centers, parts=parts, orders=orders)

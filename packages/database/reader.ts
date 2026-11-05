@@ -18,7 +18,10 @@ export { QueryError } from "./sql-guard";
 
 const MAX_ROWS = 200;
 
-type QueryRow = Record<string, string | number | boolean | null | (string | number | null)[]>;
+type QueryRow = Record<
+  string,
+  string | number | boolean | null | (string | number | null)[]
+>;
 
 interface QueryResult {
   columns: string[];

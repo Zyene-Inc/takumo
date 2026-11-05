@@ -143,8 +143,7 @@ const IntegrationsPage = async ({
           <span className="font-medium">Notes by text →</span>
           <span className="text-muted-foreground text-sm">
             Operators send voice notes and texts from their phone (SMS or
-            WhatsApp); Takumo reads them for facts and texts back what it
-            found.
+            WhatsApp); Takumo reads them for facts and texts back what it found.
           </span>
         </Link>
         <div className="grid gap-4 lg:grid-cols-2">

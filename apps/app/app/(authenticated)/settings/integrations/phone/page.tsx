@@ -6,7 +6,7 @@ import { getAccess } from "@/lib/access";
 import { phoneConfigured, shopNumbers } from "@/lib/phone/client";
 import { displayPhone } from "@/lib/phone/twilio";
 import { Header } from "../../../components/header";
-import { type PhoneView, Phones } from "./phones";
+import { Phones, type PhoneView } from "./phones";
 
 export const metadata: Metadata = { title: "Notes by text · Takumo" };
 
@@ -42,18 +42,15 @@ const PhoneSettingsPage = async () => {
 
   return (
     <>
-      <Header
-        page="Notes by text"
-        pages={["Settings", "Integrations"]}
-      />
+      <Header page="Notes by text" pages={["Settings", "Integrations"]} />
       <div className="flex max-w-3xl flex-1 flex-col gap-4 p-4 pt-0">
         <p className="text-muted-foreground text-sm">
-          Operators can send a voice note or a text from their phone, by SMS
-          or WhatsApp, instead of opening Takumo. Each one becomes a note on
-          Knowledge → Voice notes, read for facts like one left in the app,
-          and Takumo texts back what it found for a supervisor to review.
-          Only phones registered and confirmed here are listened to; messages
-          from any other number are ignored and not kept.
+          Operators can send a voice note or a text from their phone, by SMS or
+          WhatsApp, instead of opening Takumo. Each one becomes a note on
+          Knowledge → Voice notes, read for facts like one left in the app, and
+          Takumo texts back what it found for a supervisor to review. Only
+          phones registered and confirmed here are listened to; messages from
+          any other number are ignored and not kept.
         </p>
         {configured ? (
           <div className="grid gap-1 rounded-lg border px-3 py-3 text-sm">

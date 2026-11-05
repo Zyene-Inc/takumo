@@ -161,7 +161,9 @@ test("webhook 4xx -> 550 with the app's error text", async () => {
 test("refused sender: 550 5.7.1 with the reason, never 5.1.1", async () => {
   const { transport, stop } = await startServer((_req, res) => {
     res.writeHead(403, { "content-type": "application/json" });
-    res.end('{"error":"a@shop.example isn\'t on the allowed list for this address."}');
+    res.end(
+      '{"error":"a@shop.example isn\'t on the allowed list for this address."}'
+    );
   });
   after(stop);
   await assert.rejects(

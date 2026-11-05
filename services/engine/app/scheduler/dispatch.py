@@ -48,9 +48,7 @@ class _Machine:
 
 
 def candidates(op, timelines: dict[str, Timeline]) -> list[str]:
-    return [op.work_center] + [
-        alt for alt in op.alt_work_centers if alt in timelines and alt != op.work_center
-    ]
+    return [op.work_center] + [alt for alt in op.alt_work_centers if alt in timelines and alt != op.work_center]
 
 
 def release_minute(order: Order, start) -> int:
@@ -105,23 +103,22 @@ def dispatch(
                     Conflict(
                         order_no=pin.order_no,
                         seq=pin.seq,
-                        message=(
-                            f"{pin.work_center} is already full on {pin.start_date} "
-                            "with other pinned work."
-                        ),
+                        message=(f"{pin.work_center} is already full on {pin.start_date} with other pinned work."),
                     )
                 )
                 start = timeline.cum[day]
         machine.book(start, start + minutes)
-        result.placements[(pin.order_no, pin.seq)] = Placement(
-            pin.work_center, start, start + minutes, pinned=True
-        )
+        result.placements[(pin.order_no, pin.seq)] = Placement(pin.work_center, start, start + minutes, pinned=True)
 
     # 2. Rush orders, ahead of everything kept from an earlier plan.
     if first:
         _place_orders(
             [o for o in request.orders if o.order_no in first],
-            parts, timelines, machines, result, request.start_date,
+            parts,
+            timelines,
+            machines,
+            result,
+            request.start_date,
         )
 
     # 3. Operations kept from an earlier plan, in time order.
@@ -139,9 +136,7 @@ def dispatch(
                 finish = timelines[done.work_center].abs_end(done.end)
                 ready[order.order_no] = max(ready.get(order.order_no, 0), finish)
         released = release_minute(order, request.start_date)
-        earliest = machine.timeline.pos_at_or_after(
-            max(abs_start, ready.get(order.order_no, released))
-        )
+        earliest = machine.timeline.pos_at_or_after(max(abs_start, ready.get(order.order_no, released)))
         start = machine.earliest_fit(earliest, minutes)
         machine.book(start, start + minutes)
         result.placements[key] = Placement(name, start, start + minutes)
@@ -150,7 +145,11 @@ def dispatch(
     # 4. Everything else, most urgent order first.
     _place_orders(
         [o for o in request.orders if not first or o.order_no not in first],
-        parts, timelines, machines, result, request.start_date,
+        parts,
+        timelines,
+        machines,
+        result,
+        request.start_date,
     )
     return result
 
@@ -178,10 +177,7 @@ def _place_orders(
                         Conflict(
                             order_no=order.order_no,
                             seq=op.seq,
-                            message=(
-                                f"Op {op.seq} is pinned to start before op {previous_seq} "
-                                "can finish."
-                            ),
+                            message=(f"Op {op.seq} is pinned to start before op {previous_seq} can finish."),
                         )
                     )
                 ready = max(ready, timeline.abs_end(placed.end))
@@ -201,4 +197,3 @@ def _place_orders(
             result.placements[key] = best
             ready = best_end
             previous_seq = op.seq
-

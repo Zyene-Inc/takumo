@@ -1,4 +1,4 @@
-// Takumo factory schema. See docs/TAKUMO.md section 8.
+// Takumo factory schema.
 // Every tenant-owned row carries `orgId` (the WorkOS organization ID).
 // Queries must always filter by orgId; RLS in prisma/sql/ is the backstop.
 

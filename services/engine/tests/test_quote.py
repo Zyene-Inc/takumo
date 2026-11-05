@@ -81,9 +81,11 @@ def test_material_is_calibrated_from_actual_costs_of_the_same_part():
     history, parts = load_demo_quotes()
     wcs = {wc.name: wc for wc in load_demo_shop(START).work_centers}
     other = other_cost(spec, history, {p.part_no: p for p in parts}, wcs)
+
     # Q-9001: 100 pcs cost $3,350; Q-9002: 250 pcs cost $7,600. Less machine time, per part.
     def machine(qty):
         return (45 + 6 * qty) / 0.9 / 60 * 95 + (10 + 1.5 * qty) / 60 * 45
+
     expected = ((3350 - machine(100)) / 100 + (7600 - machine(250)) / 250) / 2
     assert other.per_unit == pytest.approx(expected)
     assert other.sources == ["quote Q-9001", "quote Q-9002"]
@@ -175,8 +177,11 @@ def test_estimators_margin_overrides_history():
 
 def test_price_holds_together_for_every_quantity():
     spec = QuoteSpec(
-        part_no="P-1001", customer="Northwind Robotics", material=AL,
-        routing=routing_of("P-1001"), qty_breaks=[250, 50, 100],
+        part_no="P-1001",
+        customer="Northwind Robotics",
+        material=AL,
+        routing=routing_of("P-1001"),
+        qty_breaks=[250, 50, 100],
     )
     result = estimate_quote(demo_request(spec, lead_times=False))
     assert [b.qty for b in result.breaks] == [50, 100, 250]
@@ -191,7 +196,10 @@ def test_price_holds_together_for_every_quantity():
 
 def test_outside_processing_is_added_or_flagged():
     spec = QuoteSpec(
-        part_no="P-1001", material=AL, routing=routing_of("P-1001"), qty_breaks=[100],
+        part_no="P-1001",
+        material=AL,
+        routing=routing_of("P-1001"),
+        qty_breaks=[100],
         outside=[
             OutsideProcess(description="Anodize, Type II black", cost_per_lot=150, cost_per_unit=1.2),
             OutsideProcess(description="Laser marking"),
@@ -225,7 +233,9 @@ def test_bad_quantities_are_rejected():
 
 
 def test_comparables_rank_the_same_part_first_with_reasons():
-    spec = QuoteSpec(part_no="P-1001", customer="Northwind Robotics", material=AL, routing=routing_of("P-1001"), qty_breaks=[200])
+    spec = QuoteSpec(
+        part_no="P-1001", customer="Northwind Robotics", material=AL, routing=routing_of("P-1001"), qty_breaks=[200]
+    )
     result = estimate_quote(demo_request(spec, lead_times=False))
     top = result.comparables[:2]
     assert {c.quote_no for c in top} == {"Q-9001", "Q-9002"}
@@ -254,8 +264,11 @@ def test_new_part_finds_parts_on_the_same_machines():
 
 def test_lead_time_fits_around_the_plan_and_waits_for_material():
     spec = QuoteSpec(
-        part_no="P-1001", customer="Northwind Robotics", material=AL,
-        routing=routing_of("P-1001"), qty_breaks=[50, 400],
+        part_no="P-1001",
+        customer="Northwind Robotics",
+        material=AL,
+        routing=routing_of("P-1001"),
+        qty_breaks=[50, 400],
         requested_date=date(2026, 11, 13),
     )
     result = estimate_quote(demo_request(spec))
@@ -282,7 +295,8 @@ def test_api_quote_endpoint():
 
 def test_api_rejects_an_unknown_machine_without_scheduling():
     spec = QuoteSpec(
-        part_no="NEW-4", material=AL,
+        part_no="NEW-4",
+        material=AL,
         routing=[QuoteOperation(seq=10, work_center="NOPE", setup_min=1, run_min_per_unit=1)],
         qty_breaks=[5],
     )

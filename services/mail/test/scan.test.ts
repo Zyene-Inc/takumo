@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { createServer, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
+import { createServer, type Server, type Socket } from "node:net";
 import { after, test } from "node:test";
 import nodemailer from "nodemailer";
 import { loadConfig } from "../src/config.js";
@@ -108,7 +108,10 @@ test("parseReply reads clamd's answers", () => {
     status: "infected",
     signature: "Win.Trojan.X-1",
   });
-  assert.equal(parseReply("INSTREAM size limit exceeded. ERROR").status, "error");
+  assert.equal(
+    parseReply("INSTREAM size limit exceeded. ERROR").status,
+    "error"
+  );
   assert.equal(parseReply("").status, "error");
 });
 

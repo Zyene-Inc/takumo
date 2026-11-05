@@ -9,7 +9,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "server-only": path.resolve(import.meta.dirname, "__tests__/server-only.ts"),
+      "server-only": path.resolve(
+        import.meta.dirname,
+        "__tests__/server-only.ts"
+      ),
       "@": path.resolve(import.meta.dirname, "./"),
       "@repo": path.resolve(import.meta.dirname, "../../packages"),
     },

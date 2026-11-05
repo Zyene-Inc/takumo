@@ -24,6 +24,17 @@ const STEPS: { entity: EntityKey; why: string }[] = [
 const isEntity = (value: string | undefined): value is EntityKey =>
   ENTITY_KEYS.includes(value as EntityKey);
 
+/** The sheet type to start on: the one asked for, or the only one allowed. */
+const startingEntity = (
+  type: string | undefined,
+  allowed: readonly EntityKey[]
+): EntityKey | undefined => {
+  if (isEntity(type) && allowed.includes(type)) {
+    return type;
+  }
+  return allowed.length === 1 ? allowed[0] : undefined;
+};
+
 const OnboardingPage = async ({
   searchParams,
 }: {
@@ -79,13 +90,7 @@ const OnboardingPage = async ({
           ) : (
             <ImportWizard
               allowedEntities={allowed}
-              initialEntity={
-                isEntity(type) && allowed.includes(type)
-                  ? type
-                  : allowed.length === 1
-                    ? allowed[0]
-                    : undefined
-              }
+              initialEntity={startingEntity(type, allowed)}
               key={type ?? "any"}
             />
           )}

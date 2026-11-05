@@ -22,7 +22,10 @@ const TRAILING_SEMICOLON = /;\s*$/;
  * permissions are the real guarantee; this just fails fast.
  */
 export const checkSql = (sql: string): string => {
-  const cleaned = sql.replace(BLOCK_COMMENT, " ").replace(LINE_COMMENT, " ").trim();
+  const cleaned = sql
+    .replace(BLOCK_COMMENT, " ")
+    .replace(LINE_COMMENT, " ")
+    .trim();
   const statement = cleaned.replace(TRAILING_SEMICOLON, "");
   if (!statement) {
     throw new QueryError("The query is empty.");
@@ -41,4 +44,3 @@ export const checkSql = (sql: string): string => {
   }
   return statement;
 };
-

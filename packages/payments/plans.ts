@@ -1,6 +1,6 @@
 // Takumo's plans and what each shop may use. Pure (no Stripe calls, no
 // database), shared by the app, the Stripe webhook and the tests.
-// docs/TAKUMO.md section 15.
+// Prices: docs/MARKET.md.
 
 export const PLAN_KEYS = ["trial", "shop", "pro", "plant"] as const;
 export type PlanKey = (typeof PLAN_KEYS)[number];

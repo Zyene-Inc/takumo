@@ -13,13 +13,13 @@
     "typecheck": "turbo typecheck",
     "analyze": "turbo analyze",
     "boundaries": "turbo boundaries",
-    "bump-ui": "pnpm dlx shadcn@latest add --all --overwrite -c packages/design-system",
     "migrate": "cd packages/database && pnpm exec prisma format && pnpm exec prisma generate && pnpm exec prisma migrate dev",
     "migrate:deploy": "cd packages/database && pnpm exec prisma generate && pnpm exec prisma migrate deploy",
     "db:push": "cd packages/database && pnpm exec prisma format && pnpm exec prisma generate && pnpm exec prisma db push",
     "db:seed": "cd packages/database && pnpm exec tsx prisma/seed.ts",
     "clean": "git clean -xdf node_modules",
-    "check:env": "node scripts/check-env.mjs"
+    "check:env": "node scripts/check-env.mjs",
+    "check:size": "node scripts/check-file-size.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.6",

@@ -34,9 +34,7 @@ class WorkCenter(BaseModel):
     name: str
     hours_per_day: float = Field(gt=0, le=24, description="Hours on a normal working day")
     efficiency: float = Field(default=1.0, gt=0, le=1.5)
-    working_days: list[int] = Field(
-        default_factory=lambda: list(WEEKDAYS), description="Weekdays it runs, Monday = 0"
-    )
+    working_days: list[int] = Field(default_factory=lambda: list(WEEKDAYS), description="Weekdays it runs, Monday = 0")
     exceptions: list[DayException] = []
     hourly_rate: float | None = Field(default=None, ge=0)
     # When the machine runs, as clock windows. Empty: `hours_per_day` from the
@@ -98,9 +96,7 @@ class Operation(BaseModel):
 class Part(BaseModel):
     part_no: str
     routing: list[Operation] = Field(min_length=1)
-    material_cost: float | None = Field(
-        default=None, ge=0, description="Material cost per finished part"
-    )
+    material_cost: float | None = Field(default=None, ge=0, description="Material cost per finished part")
 
 
 class Order(BaseModel):

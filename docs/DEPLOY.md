@@ -205,7 +205,7 @@ are identified by WorkOS user id and grouped by shop (group type `company`). Ser
 `rfq_received`, `capacity_checked`, `plan_built`, `fact_proposed`, `fact_reviewed`, `note_saved`,
 `job_logged`, `data_imported`, `connector_connected`, `connector_synced`, `checkout_started`,
 `demo_shop_created`, plus `subscription_started` / `_updated` / `_canceled` and `payment_failed`
-from the Stripe webhook. The north star (docs/TAKUMO.md section 14) is `question_answered` +
+from the Stripe webhook. The north star is `question_answered` +
 `quote_approved` per shop per week; `/admin` shows it from the database too.
 
 ## 7. QuickBooks connector

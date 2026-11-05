@@ -70,9 +70,7 @@ def test_saturday_shift_and_custom_working_days():
 
 
 def test_downtime_pushes_work_out():
-    request = one_machine_shop(
-        exceptions=[DayException(date=START + timedelta(days=i), hours=0) for i in range(2)]
-    )
+    request = one_machine_shop(exceptions=[DayException(date=START + timedelta(days=i), hours=0) for i in range(2)])
     request.orders = [Order(order_no="A", part_no="P", qty=8, due_date=START)]
     response = solve_schedule(request)
     assert_valid_plan(request, response)
@@ -101,7 +99,12 @@ def test_demo_shop_schedules_on_time():
     assert_valid_plan(request, response)
     assert response.status in ("OPTIMAL", "FEASIBLE")
     assert {r.order_no for r in response.orders} == {
-        "SO-5001", "SO-5002", "SO-5003", "SO-5004", "SO-5005", "SO-5006",
+        "SO-5001",
+        "SO-5002",
+        "SO-5003",
+        "SO-5004",
+        "SO-5005",
+        "SO-5006",
     }
     assert response.total_days_late == 0
 
@@ -139,9 +142,7 @@ def test_alternate_machine_used_when_primary_is_full():
         parts=[
             Part(
                 part_no="P",
-                routing=[
-                    Operation(seq=10, work_center="A", setup_min=0, run_min_per_unit=480, alt_work_centers=["B"])
-                ],
+                routing=[Operation(seq=10, work_center="A", setup_min=0, run_min_per_unit=480, alt_work_centers=["B"])],
             )
         ],
         orders=[
@@ -240,7 +241,7 @@ def test_cpsat_plan_is_valid_and_no_worse_than_dispatch_on_random_shops():
 
         greedy = build_response(request, "HEURISTIC", dispatch(request, timelines, parts).placements, timelines)
         weight = {o.order_no: o.priority + 1 for o in request.orders}
-        score = lambda r: sum(weight[o.order_no] * o.days_late for o in r.orders)  # noqa: E731
+        score = lambda r, weight=weight: sum(weight[o.order_no] * o.days_late for o in r.orders)  # noqa: E731
         assert score(response) <= score(greedy)
 
 
@@ -332,7 +333,10 @@ def test_overtime_lever_makes_the_date_and_is_costed():
 def test_split_lot_lever():
     request = ScheduleRequest(
         start_date=START,
-        work_centers=[WorkCenter(name="A", hours_per_day=8, hourly_rate=60), WorkCenter(name="B", hours_per_day=8, hourly_rate=60)],
+        work_centers=[
+            WorkCenter(name="A", hours_per_day=8, hourly_rate=60),
+            WorkCenter(name="B", hours_per_day=8, hourly_rate=60),
+        ],
         parts=[
             Part(
                 part_no="P",

@@ -10,8 +10,7 @@ import {
   senderPasses,
 } from "./rfq-rules";
 
-const GOOGLE_AUTHORIZE_URL =
-  "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";

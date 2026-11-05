@@ -106,7 +106,8 @@ export const SERVICES = {
       MICROSOFT_CLIENT_SECRET: { why: "Outlook connector" },
       INBOUND_EMAIL_SECRET: {
         why: "ERP reports and RFQs by email (services/mail)",
-        check: (v) => (v.length < 32 ? "should be at least 32 characters" : null),
+        check: (v) =>
+          v.length < 32 ? "should be at least 32 characters" : null,
       },
       INBOUND_EMAIL_DOMAIN: { why: "ERP reports and RFQs by email" },
       TWILIO_ACCOUNT_SID: {
@@ -116,7 +117,8 @@ export const SERVICES = {
       TWILIO_AUTH_TOKEN: { why: "notes by text (SMS / WhatsApp)" },
       TWILIO_SMS_FROM: {
         why: "notes by text: the shop number",
-        check: (v) => (v.startsWith("+") ? null : "should be +<country><number>"),
+        check: (v) =>
+          v.startsWith("+") ? null : "should be +<country><number>",
       },
       OPENAI_API_KEY: {
         why: "document vector search, audio-file transcription",

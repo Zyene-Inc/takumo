@@ -4,8 +4,7 @@ import { analytics } from "@repo/analytics/server";
 import { log } from "@repo/observability/log";
 
 // Product events, grouped by shop ("company" in PostHog). The north star is
-// questions answered + quotes drafted per shop per week (docs/TAKUMO.md
-// section 14). Nothing is sent without NEXT_PUBLIC_POSTHOG_KEY.
+// questions answered + quotes drafted per shop per week. Nothing is sent without NEXT_PUBLIC_POSTHOG_KEY.
 const EVENTS = [
   "question_answered",
   "capacity_checked",

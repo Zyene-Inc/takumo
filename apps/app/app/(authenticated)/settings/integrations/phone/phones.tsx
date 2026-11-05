@@ -38,11 +38,16 @@ const PhoneRow = ({ phone }: { phone: PhoneView }) => {
   const [code, setCode] = useState("");
   const [message, setMessage] = useState<Message>(null);
   const [pending, start] = useTransition();
-  const run = (fn: () => Promise<{ ok: boolean; error?: string }>, done: string) =>
+  const run = (
+    fn: () => Promise<{ ok: boolean; error?: string }>,
+    done: string
+  ) =>
     start(async () => {
       const r = await fn();
       setMessage(
-        r.ok ? { error: false, text: done } : { error: true, text: r.error ?? "" }
+        r.ok
+          ? { error: false, text: done }
+          : { error: true, text: r.error ?? "" }
       );
     });
 
@@ -81,9 +86,7 @@ const PhoneRow = ({ phone }: { phone: PhoneView }) => {
           />
           <Button
             disabled={pending || code.trim().length !== 6}
-            onClick={() =>
-              run(() => confirmCode(phone.id, code), "Confirmed.")
-            }
+            onClick={() => run(() => confirmCode(phone.id, code), "Confirmed.")}
             size="sm"
             type="button"
           >

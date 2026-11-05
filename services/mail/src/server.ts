@@ -12,8 +12,8 @@ import { checkAuth, type DnsResolver } from "./auth.js";
 import type { Config } from "./config.js";
 import { log } from "./log.js";
 import { RateLimiter } from "./rate-limit.js";
-import { scanMessage } from "./scan.js";
 import { acceptRecipient, MAX_RECIPIENTS } from "./recipients.js";
+import { scanMessage } from "./scan.js";
 import type { KeyPair } from "./tls.js";
 import { deliver, type SmtpReply } from "./webhook.js";
 

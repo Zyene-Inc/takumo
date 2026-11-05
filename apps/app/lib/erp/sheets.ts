@@ -11,15 +11,7 @@ import {
   toSheet,
 } from "@/app/(authenticated)/onboarding/read-file";
 
-const REPORT_TYPES = [
-  ".csv",
-  ".tsv",
-  ".txt",
-  ".xlsx",
-  ".xls",
-  ".xlsm",
-  ".ods",
-];
+const REPORT_TYPES = [".csv", ".tsv", ".txt", ".xlsx", ".xls", ".xlsm", ".ods"];
 const SPREADSHEET = /\.(xlsx|xlsm|xls|ods)$/;
 const NOT_WORD = /[^a-z0-9]+/g;
 

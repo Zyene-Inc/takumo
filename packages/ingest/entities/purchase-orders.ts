@@ -1,0 +1,97 @@
+import type { EntityDef } from "./types";
+
+export const purchaseOrders: EntityDef = {
+  key: "purchaseOrders",
+  label: "Open purchase orders",
+  description: "Material on order: PO lines with quantity and due date.",
+  identity: ["poNo", "lineNo"],
+  fields: [
+    {
+      key: "poNo",
+      label: "PO number",
+      kind: "text",
+      required: true,
+      synonyms: ["po", "po number", "po no", "purchase order", "po #"],
+    },
+    {
+      key: "lineNo",
+      label: "Line",
+      kind: "integer",
+      synonyms: ["line", "line no", "line number", "po line"],
+    },
+    {
+      key: "material",
+      label: "Material",
+      kind: "text",
+      required: true,
+      synonyms: ["material", "item", "part", "description"],
+    },
+    {
+      key: "supplier",
+      label: "Supplier",
+      kind: "text",
+      synonyms: ["supplier", "vendor", "vendor name"],
+    },
+    {
+      key: "qtyOrdered",
+      label: "Quantity ordered",
+      kind: "number",
+      required: true,
+      positive: true,
+      synonyms: [
+        "qty ordered",
+        "quantity ordered",
+        "order qty",
+        "qty",
+        "quantity",
+      ],
+    },
+    {
+      key: "qtyReceived",
+      label: "Quantity received",
+      kind: "number",
+      synonyms: ["qty received", "received", "quantity received"],
+    },
+    {
+      key: "unit",
+      label: "Unit",
+      kind: "text",
+      synonyms: ["unit", "uom"],
+    },
+    {
+      key: "unitPrice",
+      label: "Unit price",
+      kind: "number",
+      synonyms: [
+        "unit price",
+        "price",
+        "unit cost",
+        "cost",
+        "price per unit",
+        "po price",
+      ],
+      hint: "Price per unit on the PO; used to price material on quotes.",
+    },
+    {
+      key: "orderedAt",
+      label: "Order date",
+      kind: "date",
+      synonyms: ["order date", "po date", "ordered", "date ordered", "issued"],
+    },
+    {
+      key: "dueDate",
+      label: "Due date",
+      kind: "date",
+      required: true,
+      synonyms: [
+        "due date",
+        "due",
+        "promise date",
+        "expected",
+        "eta",
+        "delivery date",
+        "need by",
+      ],
+    },
+  ],
+};

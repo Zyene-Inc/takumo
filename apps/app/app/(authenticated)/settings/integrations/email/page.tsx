@@ -118,8 +118,10 @@ const detailText = (detail: unknown) => {
       : "Answered in Ask Takumo (email sending isn't set up, so no reply went out).";
   }
   if (d.documents) {
-    return [...d.documents, ...(d.skipped ?? []).map((s) => `left out ${s}`)]
-      .join(" · ");
+    return [
+      ...d.documents,
+      ...(d.skipped ?? []).map((s) => `left out ${s}`),
+    ].join(" · ");
   }
   if (d.po) {
     return d.poRepeat
