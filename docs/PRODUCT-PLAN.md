@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Status | Phase 0 built; Phase 1 built (see §5 status column notes) |
+| Status | Phases 1–3 built; Phase 0 waits on design partners; Phases 4–6 not started. Details: [STATUS.md](STATUS.md) |
 | Owner | Product (Ashish) |
-| Last updated | 2026-11-02 |
+| Last updated | 2026-11-04 |
 | Supersedes | Nothing; changes priorities in [TAKUMO.md](TAKUMO.md) from Phase 7 onward |
 | Audience | Everyone building Takumo |
 
@@ -88,38 +88,38 @@ Every feature below follows these. A feature that breaks one is not done.
 
 ## 5. Roadmap at a glance
 
-| Phase | Feature | ID | Priority | Effort (eng-weeks) |
-|---|---|---|---|---|
-| 0. Design partners | Design-partner program and answer keys | F0.1 | P0 | 0.5 |
-| | Quote and feasibility evaluation harness | F0.2 | P0 | 1 |
-| 1. Data comes in by itself | Outlook (Microsoft 365) connection | F1.1 | P0 | 1.5 |
-| | Gmail: drafting permission and verification | F1.2 | P0 | 0.5 (+ Google review time) |
-| | ERP report inbox | F1.3 | P0 | 2 |
-| | ERP-owned fields are read-only, with provenance | F1.4 | P0 | 0.5 |
-| | Stock and purchase orders | F1.5 | P1 | 1 |
-| | Sync health and alerts | F1.6 | P1 | 0.5 |
-| 2. Quote in the thread | RFQ intake from every channel | F2.1 | P0 | 1 |
-| | Drawing reading | F2.2 | P0 | 2.5 |
-| | Operations from the drawing | F2.3 | P0 | 1 |
-| | Pricing with ERP costs | F2.4 | P0 | 1 |
-| | Draft reply in the email thread | F2.5 | P0 | 1 |
-| | One-screen quote review | F2.6 | P0 | 1 |
-| | Quote outcomes and metrics | F2.7 | P1 | 0.5 |
-| 3. Can we ship by Friday? | Operators, shifts and skills | F3.1 | P0 | 1 |
-| | Material availability | F3.2 | P0 | 1 |
-| | Engine: labor and material constraints | F3.3 | P0 | 2 |
-| | Answer by email | F3.4 | P0 | 1 |
-| 4. Morning brief | Daily brief by role | F4.1 | P1 | 1 |
-| | Approve from email | F4.2 | P1 | 1 |
-| | Alerts | F4.3 | P2 | 1 |
-| 5. Native ERP connectors | Epicor Kinetic | F5.1 | P1 (on first Epicor customer) | 3 |
-| | Oracle NetSuite | F5.2 | P1 (on first NetSuite customer) | 3 |
-| | JobBOSS² | F5.3 | P2 | 3 |
-| | ProShop | F5.4 | P2 | 3 |
-| | SAP | F5.5 | P3 | 4+ |
-| | Quote write-back to the ERP | F5.6 | P2 | 1 per ERP |
-| 6. Knowledge in their channels | WhatsApp / SMS voice notes | F6.1 | P2 | 1.5 |
-| | Document drop by email or shared folder | F6.2 | P2 | 1 |
+| Phase | Feature | ID | Priority | Effort (eng-weeks) | Status |
+|---|---|---|---|---|---|
+| 0. Design partners | Design-partner program and answer keys | F0.1 | P0 | 0.5 | Kit ready; no shops signed yet |
+| | Quote and feasibility evaluation harness | F0.2 | P0 | 1 | Built |
+| 1. Data comes in by itself | Outlook (Microsoft 365) connection | F1.1 | P0 | 1.5 | Built; live test needs the Entra app |
+| | Gmail: drafting permission and verification | F1.2 | P0 | 0.5 (+ Google review time) | Built; Google verification pending |
+| | ERP report inbox | F1.3 | P0 | 2 | Built; goes live with the inbound domain |
+| | ERP-owned fields are read-only, with provenance | F1.4 | P0 | 0.5 | Built (ERP ids on operators only) |
+| | Stock and purchase orders | F1.5 | P1 | 1 | Built |
+| | Sync health and alerts | F1.6 | P1 | 0.5 | Built |
+| 2. Quote in the thread | RFQ intake from every channel | F2.1 | P0 | 1 | Built |
+| | Drawing reading | F2.2 | P0 | 2.5 | Built; accuracy not yet measured |
+| | Operations from the drawing | F2.3 | P0 | 1 | Built |
+| | Pricing with ERP costs | F2.4 | P0 | 1 | Built (no shop default margin yet) |
+| | Draft reply in the email thread | F2.5 | P0 | 1 | Built (email; Teams later) |
+| | One-screen quote review | F2.6 | P0 | 1 | Built |
+| | Quote outcomes and metrics | F2.7 | P1 | 0.5 | Built |
+| 3. Can we ship by Friday? | Operators, shifts and skills | F3.1 | P0 | 1 | Built |
+| | Material availability | F3.2 | P0 | 1 | Built |
+| | Engine: labor and material constraints | F3.3 | P0 | 2 | Built (v1 capacity per qualification, v2 named operators on jobs) |
+| | Answer by email | F3.4 | P0 | 1 | Built; goes live with the inbound domain |
+| 4. Morning brief | Daily brief by role | F4.1 | P1 | 1 | Not started |
+| | Approve from email | F4.2 | P1 | 1 | Not started |
+| | Alerts | F4.3 | P2 | 1 | Not started |
+| 5. Native ERP connectors | Epicor Kinetic | F5.1 | P1 (on first Epicor customer) | 3 | Not started |
+| | Oracle NetSuite | F5.2 | P1 (on first NetSuite customer) | 3 | Not started |
+| | JobBOSS² | F5.3 | P2 | 3 | Not started |
+| | ProShop | F5.4 | P2 | 3 | Not started |
+| | SAP | F5.5 | P3 | 4+ | Not started |
+| | Quote write-back to the ERP | F5.6 | P2 | 1 per ERP | Not started |
+| 6. Knowledge in their channels | WhatsApp / SMS voice notes | F6.1 | P2 | 1.5 | Not started |
+| | Document drop by email or shared folder | F6.2 | P2 | 1 | Not started |
 
 Priorities: **P0** is needed for design partners, **P1** for paying shops, **P2** once usage is proven, **P3** later.
 
@@ -574,16 +574,16 @@ Built when a paying customer runs that ERP. Each replaces the nightly report (F1
 ## 9. Owner actions and external dependencies
 
 | # | Item | Needed for | Lead time | Owner |
-|---|---|---|---|---|
+|---|---|---|---|---|---|
 | 1 | Sign 3–5 design-partner shops; collect data (F0.1) | Everything | 1–3 weeks | Ashish |
-| 2 | Microsoft Entra app registration (multi-tenant), publisher verification | F1.1 | 1–2 weeks | Ashish |
+| 2 | Microsoft Entra app registration (multi-tenant), publisher verification | F1.1 | 1–2 weeks | Ashish | Built; live test needs the Entra app |
 | 3 | Google OAuth verification for `gmail.readonly` + `gmail.compose`, including CASA security assessment | F1.2 for shops outside our domain | 4–8 weeks; start now | Ashish |
 | 4 | Domain for the app (e.g. `app.takumo.ai`) and inbound mail domain (`in.takumo.ai`) with MX records | F1.3, F2.1, F3.4 | Days | Ashish |
-| 5 | Choose the inbound email provider (Postmark / SendGrid / SES / Resend) and create the account | F1.3 | Days | Ashish |
+| 5 | Choose the inbound email provider (Postmark / SendGrid / SES / Resend) and create the account | F1.3 | Days | Ashish | Built; goes live with the inbound domain |
 | 6 | Roll the WorkOS webhook secret (exposed earlier) | Security | Minutes | Ashish |
 | 7 | Replace the Vertex service-account key that was pasted in chat; budget alert on the Google Cloud project | Security, cost | Minutes | Ashish |
 | 8 | WorkOS production environment, Supabase Pro, Vercel secrets as "Secret" type | Paying customers | Days | Ashish |
-| 9 | Twilio / WhatsApp Business account | F6.1 | 1–2 weeks (WhatsApp approval) | Ashish |
+| 9 | Twilio / WhatsApp Business account | F6.1 | 1–2 weeks (WhatsApp approval) | Ashish | Not started |
 | 10 | ERP API access per customer (integration user) | F5.x | Per customer | Customer's ERP admin |
 
 ---

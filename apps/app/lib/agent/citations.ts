@@ -97,11 +97,11 @@ export const cite = {
     label: "Current plan",
     href: "/schedule",
   }),
-  check: (orderNo: string): Source => ({
+  check: (orderNo: string, runId?: string): Source => ({
     id: `check ${orderNo}`,
     kind: "check",
     label: `Capacity check ${orderNo}`,
-    href: "/schedule/check",
+    href: runId ? `/schedule/check?run=${runId}` : "/schedule/check",
   }),
   query: (n: number, purpose: string, sql: string): Source => ({
     id: `query ${n}`,

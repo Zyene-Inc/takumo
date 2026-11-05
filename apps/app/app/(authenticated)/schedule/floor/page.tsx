@@ -12,6 +12,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { erpFeeds } from "@/lib/erp/feeds";
+import {
+  byOperation,
+  clock,
+  crewNames,
+  firstDayFrom,
+  onDay,
+  opKey,
+  type PersonDay,
+} from "@/lib/schedule/crew";
+import { latestPlan } from "@/lib/schedule/plan";
 import { Header } from "../../components/header";
 import { EmptyState } from "../../shop/components/format";
 import { LogButton, type LoggableOp, PlanLink, UndoButton } from "./log-form";
@@ -26,6 +36,47 @@ const SHOWN = 60;
 /** Planned clock times are stored as shop-local time without a zone. */
 const local = (value: Date | null) =>
   value ? value.toISOString().slice(0, 16).replace("T", " ") : "—";
+
+/** One person's stretches on the day: when, which machine, which job. */
+const PersonCard = ({ person }: { person: PersonDay }) => (
+  <div className="rounded-xl border p-3 text-sm">
+    <p className="font-medium">
+      {person.operator}
+      <span className="ml-2 font-normal text-muted-foreground text-xs">
+        {Math.round((person.minutes / 60) * 10) / 10} h booked
+      </span>
+    </p>
+    <ul className="mt-1 grid gap-0.5">
+      {person.items.map((a) => (
+        <li key={`${a.order_no}#${a.seq}@${a.start_at}`}>
+          <span className="text-muted-foreground tabular-nums">
+            {clock(a.start_at)}–{clock(a.end_at)}
+          </span>{" "}
+          {a.work_center} · {a.order_no} op {a.seq}
+          {a.setup_only && (
+            <span className="text-muted-foreground"> (setup only)</span>
+          )}
+        </li>
+      ))}
+    </ul>
+  </div>
+);
+
+/** The plan's people for one day: who runs what, when (F3.3 v2). */
+const WhoIsOnWhat = ({ day, people }: { day: string; people: PersonDay[] }) =>
+  people.length === 0 ? null : (
+    <section className="grid gap-2">
+      <h2 className="font-medium">
+        Who's on what{" "}
+        <span className="font-normal text-muted-foreground">· {day}</span>
+      </h2>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {people.map((p) => (
+          <PersonCard key={p.operatorId} person={p} />
+        ))}
+      </div>
+    </section>
+  );
 
 /** The ERP sends actual job times: shown instead of the log form. */
 const FromErp = ({ at }: { at: Date | null }) => (
@@ -62,6 +113,11 @@ const FloorPage = async () => {
     return <FromErp at={feeds.jobs ?? null} />;
   }
   const db = forOrg(database, orgId);
+  const plan = await latestPlan(orgId);
+  const assignments = plan?.output.assignments ?? [];
+  const crews = byOperation(assignments);
+  // Today, or the next day the plan has people on (a weekend, a holiday).
+  const day = firstDayFrom(assignments, new Date().toISOString().slice(0, 10));
   const [planned, recent] = await Promise.all([
     db.job.findMany({
       where: {
@@ -157,6 +213,7 @@ const FloorPage = async () => {
           </Link>
           ), and re-planning schedules only the operations still left.
         </p>
+        {day && <WhoIsOnWhat day={day} people={onDay(assignments, day)} />}
         <h2 className="font-medium">Planned operations</h2>
         {ops.length === 0 ? (
           <EmptyState>
@@ -169,6 +226,7 @@ const FloorPage = async () => {
                 <TableRow>
                   <TableHead>Planned start</TableHead>
                   <TableHead>Machine</TableHead>
+                  {crews.size > 0 && <TableHead>Who</TableHead>}
                   <TableHead>Order</TableHead>
                   <TableHead>Part</TableHead>
                   <TableHead className="text-right">Op</TableHead>
@@ -181,6 +239,13 @@ const FloorPage = async () => {
                   <TableRow key={op.id}>
                     <TableCell>{local(op.plannedStart)}</TableCell>
                     <TableCell>{op.machine}</TableCell>
+                    {crews.size > 0 && (
+                      <TableCell>
+                        {crewNames(
+                          crews.get(opKey(op.orderNo, op.seq)) ?? []
+                        ) || "—"}
+                      </TableCell>
+                    )}
                     <TableCell className="font-medium">{op.orderNo}</TableCell>
                     <TableCell>{op.partNo}</TableCell>
                     <TableCell className="text-right">{op.seq}</TableCell>

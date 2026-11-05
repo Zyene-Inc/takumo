@@ -65,6 +65,14 @@ const exists = async (
       return (await db.order.count({ where: { orderNo: v.orderNo } })) > 0;
     case "quotes":
       return (await db.quote.count({ where: { quoteNo: v.quoteNo } })) > 0;
+    case "operators":
+      return (
+        (await db.operator.count({
+          where: v.employeeId
+            ? { externalId: v.employeeId }
+            : { name: { equals: v.name, mode: "insensitive" } },
+        })) > 0
+      );
     default:
       return false;
   }
@@ -113,6 +121,15 @@ const syncedByIdentity = async (
       return (
         await db.order.findFirst({ where: { orderNo: v.orderNo }, select })
       )?.syncedAt;
+    case "operators":
+      return (
+        await db.operator.findFirst({
+          where: v.employeeId
+            ? { externalId: v.employeeId }
+            : { name: { equals: v.name, mode: "insensitive" } },
+          select,
+        })
+      )?.syncedAt;
     default:
       return null;
   }
@@ -135,6 +152,8 @@ const syncedById = async (orgId: string, entity: EntityKey, id: string) => {
       return (await db.routing.findFirst({ where, select }))?.syncedAt;
     case "orders":
       return (await db.order.findFirst({ where, select }))?.syncedAt;
+    case "operators":
+      return (await db.operator.findFirst({ where, select }))?.syncedAt;
     default:
       return null;
   }
@@ -241,6 +260,8 @@ const deleteById = (
       return db.order.deleteMany(where);
     case "quotes":
       return db.quote.deleteMany(where);
+    case "operators":
+      return db.operator.deleteMany(where);
     default:
       throw new Error("Unknown record type.");
   }

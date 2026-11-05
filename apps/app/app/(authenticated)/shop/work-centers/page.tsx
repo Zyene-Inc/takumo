@@ -96,6 +96,7 @@ const WorkCentersPage = async ({
                   <TableHead className="text-right">Rate / hour</TableHead>
                   <TableHead className="text-right">Efficiency</TableHead>
                   <TableHead className="text-right">Hours / day</TableHead>
+                  <TableHead className="text-right">People</TableHead>
                   <TableHead className="text-right">Size / tolerance</TableHead>
                   <TableHead className="text-right">Operations</TableHead>
                   <TableHead className="w-24" />
@@ -122,6 +123,16 @@ const WorkCentersPage = async ({
                       </TableCell>
                       <TableCell className="text-right">
                         {hours ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right text-xs">
+                        {m.operatorsPerMachine === 1
+                          ? "1 per machine"
+                          : `${m.operatorsPerMachine} per machine`}
+                        {m.unattendedRuns && (
+                          <span className="block text-muted-foreground">
+                            runs lights-out
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground text-xs">
                         {[
@@ -153,6 +164,10 @@ const WorkCentersPage = async ({
                               hourlyRate: formValue(m.hourlyRate),
                               efficiency: formValue(m.efficiency),
                               hoursPerDay: formValue(hours),
+                              operatorsPerMachine: formValue(
+                                m.operatorsPerMachine
+                              ),
+                              unattendedRuns: m.unattendedRuns ? "yes" : "no",
                             }}
                             locked={["name"]}
                             title={`Edit ${m.name}`}

@@ -66,6 +66,8 @@ export interface OrderInfo {
 
 interface BoardProps {
   readonly canEdit: boolean;
+  /** Who runs each operation, in words, by `${order_no}#${seq}`. */
+  readonly crews?: Readonly<Record<string, string>>;
   readonly operations: readonly ScheduledOperation[];
   readonly orderInfo: Readonly<Record<string, OrderInfo>>;
   readonly orders: readonly OrderResult[];
@@ -98,6 +100,7 @@ export const Board = ({
   orders,
   orderInfo,
   canEdit,
+  crews = {},
 }: BoardProps) => {
   const router = useRouter();
   const [dayWidth, setDayWidth] = useState<number>(ZOOMS[1].width);
@@ -424,6 +427,7 @@ export const Board = ({
                     return (
                       <OperationBar
                         canEdit={canEdit}
+                        crew={crews[key]}
                         dimmed={Boolean(selected && selected !== op.order_no)}
                         dragOffset={
                           drag?.key === key && moved.current
@@ -524,12 +528,16 @@ export const Board = ({
 const barTitle = (
   op: ScheduledOperation,
   info: OrderInfo | undefined,
-  result: OrderResult | undefined
+  result: OrderResult | undefined,
+  crew: string | undefined
 ) => {
   const lines = [
     `${op.order_no} · op ${op.seq}${op.pinned ? " · pinned" : ""}`,
     `${fmtTime(op.start_at)} → ${fmtTime(op.end_at)} (${fmtHours(op.minutes)})`,
   ];
+  if (crew) {
+    lines.push(`Who: ${crew}`);
+  }
   if (info) {
     const customer = info.customer ? ` for ${info.customer}` : "";
     lines.splice(
@@ -549,6 +557,7 @@ const OperationBar = ({
   op,
   info,
   result,
+  crew,
   geometry,
   hue,
   canEdit,
@@ -561,6 +570,7 @@ const OperationBar = ({
   onPointerUp,
 }: {
   canEdit: boolean;
+  crew: string | undefined;
   dimmed: boolean;
   dragOffset: { x: number; y: number } | null;
   geometry: { left: number; width: number };
@@ -606,7 +616,7 @@ const OperationBar = ({
             : undefined,
         } as React.CSSProperties
       }
-      title={barTitle(op, info, result)}
+      title={barTitle(op, info, result, crew)}
       type="button"
     >
       {op.pinned && <PinIcon className="size-3 shrink-0" />}

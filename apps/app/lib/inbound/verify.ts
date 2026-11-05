@@ -6,7 +6,7 @@
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-export const INBOUND_KINDS = ["erp", "rfq"] as const;
+export const INBOUND_KINDS = ["erp", "rfq", "ask"] as const;
 export type InboundKind = (typeof INBOUND_KINDS)[number];
 
 /** How old a signed request may be (clock skew plus retries). */

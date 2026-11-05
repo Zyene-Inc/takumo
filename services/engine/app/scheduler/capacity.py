@@ -7,11 +7,25 @@
    - put the new order first → when it would ship and which orders slip;
    - the same "nobody slips" plan with overtime, and with the order split
      into two lots → which levers make it on time, and what they cost.
+3. When it's late: the same plan with another qualified person on the
+   machines short of people, and with the material in today → whether hiring
+   in or expediting would make the date.
+
+With operators, the shop is staffed once (staffing.py), weighted by the
+orders including the new one, and every variant above plans on that same
+staffed shop, so "nobody slips" compares like with like. Overtime and the
+extra person re-staff with more supply, which only ever adds hours.
+Time: the baseline gets half the request's time limit and the variants,
+which run in parallel, the other half, so the whole check stays near the
+limit (F3.3-R6). When the baseline couldn't be optimised in its half (a big
+shop: CP-SAT found nothing in time and the dispatch plan stood), the
+variants go straight to dispatch: they'd have waited out their time to the
+same result.
 All numbers come from the solver; the agent only explains them.
 """
 
 import math
-from datetime import date
+from datetime import date, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 from app.models import (
@@ -19,16 +33,19 @@ from app.models import (
     CapacityResponse,
     CostBreakdown,
     Lever,
+    Operator,
     Order,
     OrderResult,
     Part,
     ScheduleRequest,
     ScheduleResponse,
+    ShiftWindow,
     SlippedOrder,
     WorkCenter,
 )
-from app.scheduler.calendar import to_datetime
+from app.scheduler.calendar import day_index, to_datetime
 from app.scheduler.cpsat_model import order_result, solve_schedule
+from app.scheduler.staffing import StaffingReport, staff
 
 OVERTIME_FACTOR = 1.25
 # Overtime costs this share of the machine rate on top of the normal rate.
@@ -37,6 +54,9 @@ RUSH_PRIORITY = 10
 SOLVED = ("OPTIMAL", "FEASIBLE", "HEURISTIC")
 PARALLEL_WORKERS = 4
 MAX_NAMED_SLIPS = 5
+# Machines named in the "not enough people" sentence.
+MAX_SHORT_MACHINES = 2
+EXTRA_OPERATOR_ID = "extra"
 
 
 def _keep(response: ScheduleResponse, request: ScheduleRequest):
@@ -151,6 +171,75 @@ def _days(n: int) -> str:
     return f"{n} day{'s' if n != 1 else ''}"
 
 
+def _clock(minute: int) -> str:
+    """Clock minutes from midnight as HH:MM (24:00 for midnight at a window's end)."""
+    if minute % 1440 == 0 and minute > 0:
+        return "24:00"
+    minute %= 1440
+    return f"{minute // 60:02d}:{minute % 60:02d}"
+
+
+def _windows_text(windows: list[tuple[int, int]]) -> str:
+    return " and ".join(f"{_clock(s)}–{_clock(e)}" for s, e in windows)
+
+
+def _machine_shifts(wc: WorkCenter, day_start: str) -> list[ShiftWindow]:
+    """A machine's running hours as shifts (for a person to cover them)."""
+    if wc.shifts:
+        return wc.shifts
+    hours, minutes = (int(x) for x in day_start.split(":"))
+    end = (hours * 60 + minutes + round(wc.hours_per_day * 60)) % 1440
+    return [
+        ShiftWindow(days=wc.working_days, start=day_start, end=_clock(end).replace("24:00", "00:00"))
+    ]
+
+
+def _short_days(
+    report: StaffingReport, machines: set[str], last_day: int, first_day: int = 0
+) -> dict[str, int]:
+    """For each machine, the first day in [first_day, last_day] it has fewer
+    people than hours."""
+    found: dict[str, int] = {}
+    for name in sorted(machines):
+        for day in range(max(0, first_day), min(last_day, report.days - 1) + 1):
+            if report.short(name, day):
+                found[name] = day
+                break
+    return found
+
+
+def _labor_sentence(
+    report: StaffingReport,
+    request: ScheduleRequest,
+    spans: list[tuple[str, int, int]],
+) -> str | None:
+    """'HAAS-VF2 has people for 8 of its 16 hours on Thu Nov 12: no one
+    qualified on it works 15:30–24:00.' For the new order's machines, on a
+    day the order could have used them: from when it could start (material)
+    to when that operation finished. `spans`: (machine, first day, last day)."""
+    short: dict[str, int] = {}
+    for name, first, last in spans:
+        if name not in short:
+            short.update(_short_days(report, {name}, last, first))
+    parts = []
+    for name in list(dict.fromkeys(n for n, _, _ in spans if n in short))[:MAX_SHORT_MACHINES]:
+        day = short[name]
+        machine = report.machine_minutes[(name, day)] / 60
+        staffed = report.staffed_minutes.get((name, day), 0) / 60
+        when = _d(request.start_date + timedelta(days=day))
+        gaps = report.uncovered.get((name, day))
+        why = (
+            f"no one qualified on it is in {_windows_text(gaps)}"
+            if gaps
+            else "the people qualified on it are needed on other machines too"
+        )
+        parts.append(
+            f"{name} has people for {round(staffed, 1):g} of its {round(machine, 1):g} hours "
+            f"on {when}: {why}"
+        )
+    return "; ".join(parts) + "." if parts else None
+
+
 def check_capacity(request: CapacityRequest) -> CapacityResponse:
     new = request.new_order
     if any(o.order_no == new.order_no for o in request.orders):
@@ -159,15 +248,23 @@ def check_capacity(request: CapacityRequest) -> CapacityResponse:
     if new.part_no not in parts:
         raise ValueError(f"Unknown part {new.part_no}")
     part = parts[new.part_no]
-    rates = {wc.name: wc for wc in request.work_centers}
 
     routing_machines = {
         name for op in part.routing for name in [op.work_center, *op.alt_work_centers]
     }
-    base_request = ScheduleRequest(**request.model_dump(exclude={"new_order"}))
-    with_new = base_request.model_copy(update={"orders": [*request.orders, new]})
+    half_time = max(1.0, request.time_limit_s / 2)
+    plain = ScheduleRequest(
+        **request.model_dump(exclude={"new_order"}) | {"time_limit_s": half_time}
+    )
+    plain_with_new = plain.model_copy(update={"orders": [*request.orders, new]})
+    # Staffed once, weighted by the orders including the new one (see above).
+    with_new, report = staff(plain_with_new)
+    base_request = with_new.model_copy(update={"orders": list(request.orders)})
+    rates = {wc.name: wc for wc in base_request.work_centers}
 
     baseline = solve_schedule(base_request)
+    # CP-SAT found nothing in time: the variants won't either.
+    dispatch_only = baseline.status == "HEURISTIC"
     if baseline.status not in SOLVED:
         return CapacityResponse(
             status=baseline.status,
@@ -187,6 +284,18 @@ def check_capacity(request: CapacityRequest) -> CapacityResponse:
         new.model_copy(update={"order_no": f"{new.order_no}-A", "qty": new.qty - half}),
         new.model_copy(update={"order_no": f"{new.order_no}-B", "qty": half}),
     ]
+    if plain.operators:
+        # More hours on the machines and for the people who run them.
+        overtime_request, _ = staff(
+            with_overtime(plain_with_new, routing_machines),
+            weights_from=plain_with_new,
+            overtime_operators={
+                o.id for o in plain.operators if routing_machines & set(o.work_centers)
+            },
+            overtime_factor=OVERTIME_FACTOR,
+        )
+    else:
+        overtime_request = with_overtime(with_new, routing_machines)
     jobs = {
         "fit": (with_new, caps, keep),
         "rush": (
@@ -201,11 +310,7 @@ def check_capacity(request: CapacityRequest) -> CapacityResponse:
             None,
             keep,
         ),
-        "overtime": (
-            with_overtime(with_new, routing_machines),
-            caps,
-            keep,
-        ),
+        "overtime": (overtime_request, caps, keep),
     }
     if half > 0:
         jobs["split"] = (
@@ -213,6 +318,44 @@ def check_capacity(request: CapacityRequest) -> CapacityResponse:
             caps,
             keep,
         )
+
+    # Only used when the order is late, but planned now, alongside the rest,
+    # so a "no" costs one round of solving, not two.
+    look_until = max(
+        [day_index(request.start_date, new.due_date)]
+        + [day_index(request.start_date, r.completion_date) for r in baseline.orders]
+    ) + 14
+    short = _short_days(report, routing_machines, look_until) if plain.operators else {}
+    extra: Operator | None = None
+    if short:
+        extra = Operator(
+            id=EXTRA_OPERATOR_ID,
+            name="another qualified operator",
+            work_centers=sorted(short),
+            shifts=[
+                window
+                for name in sorted(short)
+                for window in _machine_shifts(rates[name], request.day_start)
+            ],
+        )
+        extra_request, _ = staff(
+            plain_with_new.model_copy(update={"operators": [*plain.operators, extra]}),
+            weights_from=plain_with_new,
+            extra_last={EXTRA_OPERATOR_ID},
+        )
+        jobs["extra_operator"] = (extra_request, caps, keep)
+    late_material = new.release_date is not None and new.release_date > request.start_date
+    if late_material:
+        jobs["expedite_material"] = (
+            with_new.model_copy(
+                update={
+                    "orders": [*request.orders, new.model_copy(update={"release_date": None})]
+                }
+            ),
+            caps,
+            keep,
+        )
+
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         futures = {
             name: pool.submit(
@@ -222,6 +365,7 @@ def check_capacity(request: CapacityRequest) -> CapacityResponse:
                 keep=kept,
                 first={new.order_no} if name == "rush" else None,
                 num_workers=PARALLEL_WORKERS,
+                dispatch_only=dispatch_only,
             )
             for name, (req, lat, kept) in jobs.items()
         }
@@ -266,27 +410,34 @@ def check_capacity(request: CapacityRequest) -> CapacityResponse:
             )
         )
 
+    tried: list[str] = []
     if not can_take:
+        tried = ["overtime"] + (["splitting the lot"] if half > 0 else [])
         overtime = results["overtime"]
         overtime_new = order_result(overtime, new) if overtime.status in SOLVED else None
         if overtime_new:
             hours = overtime_hours(overtime, base_request, overtime_new.completion_date)
-            extra = sum(
+            extra_cost = sum(
                 h * (rates[name].hourly_rate or 0) * OVERTIME_PREMIUM for name, h in hours.items()
             )
             where = ", ".join(f"{h:g} h on {name}" for name, h in sorted(hours.items()))
+            who = (
+                " and for the people who run them"
+                if plain.operators and routing_machines & report.listed
+                else ""
+            )
             levers.append(
                 Lever(
                     kind="overtime",
                     description=(
-                        f"Overtime on this part's machines (up to +"
+                        f"Overtime on this part's machines{who} (up to +"
                         f"{round((OVERTIME_FACTOR - 1) * 100)}% hours): "
                         + (where or "no extra hours needed")
                         + "."
                     ),
                     on_time=overtime_new.days_late == 0,
                     completion_date=overtime_new.completion_date,
-                    extra_cost=round(extra, 2)
+                    extra_cost=round(extra_cost, 2)
                     if all(rates[n].hourly_rate is not None for n in hours)
                     else None,
                 )
@@ -321,6 +472,57 @@ def check_capacity(request: CapacityRequest) -> CapacityResponse:
                     else None,
                 )
             )
+        if extra is not None:
+            tried.append("another person")
+            lever = _better(results["extra_operator"], new, fit_new)
+            if lever:
+                first_short = sorted(short, key=lambda n: (short[n], n))[0]
+                gaps = report.uncovered.get((first_short, short[first_short]))
+                working = f" working {_windows_text(gaps)}" if gaps else ""
+                levers.append(
+                    Lever(
+                        kind="extra_operator",
+                        description=(
+                            f"Another person qualified on {', '.join(sorted(short))}{working}: "
+                            f"done {_d(lever.completion_date)}."
+                        ),
+                        on_time=lever.days_late == 0,
+                        completion_date=lever.completion_date,
+                        # What a person costs isn't in the request: not guessed.
+                        extra_cost=None,
+                    )
+                )
+        if late_material:
+            assert new.release_date is not None
+            tried.append("faster material")
+            lever = _better(results["expedite_material"], new, fit_new)
+            if lever:
+                levers.append(
+                    Lever(
+                        kind="expedite_material",
+                        description=(
+                            f"Expedite the material: if it came today instead of "
+                            f"{_d(new.release_date)}, it would be done {_d(lever.completion_date)}."
+                        ),
+                        on_time=lever.days_late == 0,
+                        completion_date=lever.completion_date,
+                        extra_cost=None,
+                    )
+                )
+
+    # Only ways that help: on time, or at least sooner than fitting it in as
+    # it is. Overtime or a split that changes nothing (the machine has no
+    # people, the material isn't in) would only be noise.
+    levers = [
+        lv
+        for lv in levers
+        if lv.on_time
+        or lv.kind == "alternate_machine"
+        or (
+            lv.completion_date is not None
+            and lv.completion_date < fit_new.completion_date
+        )
+    ]
 
     # Cheapest on-time lever first.
     levers.sort(
@@ -330,7 +532,33 @@ def check_capacity(request: CapacityRequest) -> CapacityResponse:
         )
     )
 
-    explanation = _explain(new, can_take, fit_new, rush_new, slipped, levers, cost)
+    context: list[str] = []
+    if new.release_note:
+        material = f"Material: {new.release_note.rstrip('.')}."
+        first_op = min(
+            _ops_for(fit, {new.order_no}), key=lambda op: op.start_at, default=None
+        )
+        if (
+            first_op is not None
+            and new.release_date is not None
+            and new.release_date > request.start_date
+            and first_op.start_date == new.release_date
+        ):
+            material += f" Work on it can't start before {_d(new.release_date)}."
+        context.append(material)
+    if not can_take and plain.operators:
+        ready = (
+            max(0, day_index(request.start_date, new.release_date)) if new.release_date else 0
+        )
+        spans = [
+            (op.work_center, ready, day_index(request.start_date, op.end_date))
+            for op in sorted(_ops_for(fit, {new.order_no}), key=lambda o: o.seq)
+        ]
+        labor = _labor_sentence(report, request, spans)
+        if labor:
+            context.append(labor)
+
+    explanation = _explain(new, can_take, fit_new, rush_new, slipped, levers, cost, context, tried)
     return CapacityResponse(
         status=fit.status,
         can_take=can_take,
@@ -343,6 +571,20 @@ def check_capacity(request: CapacityRequest) -> CapacityResponse:
     )
 
 
+def _better(response: ScheduleResponse, new: Order, fit: OrderResult) -> OrderResult | None:
+    """The new order's result in a lever's plan, if that lever helps at all."""
+    if response.status not in SOLVED:
+        return None
+    result = order_result(response, new)
+    if result is None:
+        return None
+    if result.completion_date < fit.completion_date or (
+        result.days_late == 0 and fit.days_late > 0
+    ):
+        return result
+    return None
+
+
 def _explain(
     new: Order,
     can_take: bool,
@@ -351,7 +593,11 @@ def _explain(
     slipped: list[SlippedOrder],
     levers: list[Lever],
     cost: CostBreakdown,
+    context: list[str] | None = None,
+    tried: list[str] | None = None,
 ) -> str:
+    """`context`: material and people sentences, after the yes or no.
+    `tried`: the options planned, named when none of them makes the date."""
     sentences: list[str] = []
     if can_take:
         sentences.append(
@@ -363,6 +609,8 @@ def _explain(
             f"Not without changes. Fitted around today's orders, {new.part_no} finishes "
             f"{_d(fit.completion_date)}, {_days(fit.days_late)} after the {_d(fit.due_date)} due date."
         )
+    sentences.extend(context or [])
+    if not can_take:
         if rush and rush.days_late == 0 and slipped:
             worst = sorted(
                 slipped, key=lambda s: s.days_late_before - s.days_late_after
@@ -392,7 +640,17 @@ def _explain(
                 f"{best.description[1:].rstrip('.')}{price}."
             )
         else:
-            sentences.append("Overtime and splitting the lot don't make the date on their own.")
+            options = list(tried or ["overtime", "splitting the lot"])
+            named = (
+                options[0]
+                if len(options) == 1
+                else ", ".join(options[:-1]) + " or " + options[-1]
+            )
+            sentences.append(
+                f"{named[0].upper()}{named[1:]} don't make the date on their own."
+                if len(options) > 1
+                else f"{named[0].upper()}{named[1:]} doesn't make the date on its own."
+            )
     if cost.margin is not None and cost.margin_pct is not None:
         sentences.append(
             f"Estimated cost ${cost.total:,.0f} against ${cost.price:,.0f}: "

@@ -120,6 +120,10 @@ const data = {
           url: "/shop/work-centers",
         },
         {
+          title: "Operators",
+          url: "/shop/operators",
+        },
+        {
           title: "Parts & routings",
           url: "/shop/parts",
         },

@@ -11,7 +11,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
+import { byOperation, crewText } from "@/lib/schedule/crew";
 import { hashFingerprint, latestPlan, loadShop } from "@/lib/schedule/plan";
+import { type ShortStaffed, shortStaffed } from "@/lib/schedule/staffing";
 import { Header } from "../components/header";
 import { EmptyState } from "../shop/components/format";
 import { Board, type OrderInfo } from "./board";
@@ -48,6 +50,39 @@ const ago = (date: Date) => {
   return hours < 48 ? `${hours} h ago` : `${Math.round(hours / 24)} days ago`;
 };
 
+/** Machine-days short of qualified people, and roster notices (F3.1-R5). */
+const PeopleAlert = ({
+  staffing,
+  notices,
+}: {
+  notices: string[];
+  staffing: ShortStaffed[];
+}) =>
+  staffing.length === 0 && notices.length === 0 ? null : (
+    <Alert>
+      <AlertTitle>People</AlertTitle>
+      <AlertDescription>
+        <ul className="list-disc pl-4">
+          {staffing.map((s) => (
+            <li key={s.machine}>
+              {s.machine} has fewer qualified people than hours on{" "}
+              {s.days.join(", ")}
+              {s.more ? ` and ${s.more} more days` : ""}; it's planned only for
+              the hours someone is in.
+            </li>
+          ))}
+          {notices.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+        <Link className="underline" href="/shop/operators">
+          See who runs what
+        </Link>
+        .
+      </AlertDescription>
+    </Alert>
+  );
+
 const SchedulePage = async () => {
   const { orgId, canEditShop } = await getAccess();
   if (!orgId) {
@@ -55,6 +90,10 @@ const SchedulePage = async () => {
   }
 
   const plan = await latestPlan(orgId);
+  // Machine-days the plan could only partly staff (F3.1-R5).
+  const staffing = plan
+    ? shortStaffed(plan.output.load, new Date().toISOString().slice(0, 10))
+    : [];
   const db = forOrg(database, orgId);
   const openOrders = await db.order.count({
     where: { status: { in: ["open", "in_progress"] } },
@@ -206,6 +245,8 @@ const SchedulePage = async () => {
           </Alert>
         )}
 
+        <PeopleAlert notices={plan.output.notices ?? []} staffing={staffing} />
+
         {plan.input.assumptions.length > 0 && (
           <Alert>
             <AlertTitle>Assumptions</AlertTitle>
@@ -225,6 +266,11 @@ const SchedulePage = async () => {
 
         <Board
           canEdit={canEditShop}
+          crews={Object.fromEntries(
+            [...byOperation(plan.output.assignments ?? [])].map(
+              ([key, list]) => [key, crewText(list)]
+            )
+          )}
           operations={plan.output.operations}
           orderInfo={orderInfo}
           orders={plan.output.orders}

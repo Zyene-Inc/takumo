@@ -12,6 +12,11 @@ import {
 } from "@repo/engine-client";
 import { log } from "@repo/observability/log";
 import {
+  type MaterialOrder,
+  type MaterialReady,
+  materialReady,
+} from "./material";
+import {
   type BuildOptions,
   type BuiltRequest,
   buildScheduleRequest,
@@ -65,14 +70,126 @@ export interface SavedCheck {
 export const hashFingerprint = (request: ScheduleRequest) =>
   createHash("sha256").update(planFingerprint(request)).digest("hex");
 
+/** Material for the orders (F3.2): stock, open POs, lead times. */
+const loadMaterial = async (
+  orgId: string,
+  partIds: string[],
+  orders: MaterialOrder[],
+  startDate: string,
+  extra: MaterialOrder | null
+) => {
+  const db = forOrg(database, orgId);
+  const parts = await db.part.findMany({
+    where: { id: { in: partIds } },
+    select: {
+      id: true,
+      materialId: true,
+      materialQtyPerUnit: true,
+      materialUnit: true,
+    },
+  });
+  const materialIds = [
+    ...new Set(parts.flatMap((p) => (p.materialId ? [p.materialId] : []))),
+  ];
+  const [materials, stock, pos] = await Promise.all([
+    db.material.findMany({
+      where: { id: { in: materialIds } },
+      select: { id: true, name: true, unit: true, leadTimeDays: true },
+    }),
+    db.stockLevel.findMany({
+      where: { materialId: { in: materialIds } },
+      select: {
+        materialId: true,
+        qtyOnHand: true,
+        qtyAllocated: true,
+        unit: true,
+      },
+    }),
+    db.purchaseOrderLine.findMany({
+      where: {
+        materialId: { in: materialIds },
+        status: { in: ["open", "partial"] },
+      },
+      select: {
+        poNo: true,
+        materialId: true,
+        qtyOrdered: true,
+        qtyReceived: true,
+        unit: true,
+        status: true,
+        dueDate: true,
+      },
+    }),
+  ]);
+  return materialReady({
+    today: startDate,
+    orders,
+    extra,
+    stock,
+    pos,
+    materials: new Map(
+      materials.map((m) => [
+        m.id,
+        { name: m.name, unit: m.unit, leadTimeDays: m.leadTimeDays },
+      ])
+    ),
+    parts: new Map(
+      parts.map((p) => [
+        p.id,
+        {
+          materialId: p.materialId,
+          qtyPerUnit: p.materialQtyPerUnit,
+          unit: p.materialUnit,
+        },
+      ])
+    ),
+  });
+};
+
+/** Material-ready for every open order (the Orders page, F3.2-R4). */
+export const orderMaterial = async (orgId: string, today: string) => {
+  const orders = await forOrg(database, orgId).order.findMany({
+    where: { status: { in: ["open", "in_progress"] } },
+    select: {
+      orderNo: true,
+      partId: true,
+      qty: true,
+      dueDate: true,
+      status: true,
+      _count: { select: { jobs: { where: { actualEnd: { not: null } } } } },
+    },
+  });
+  return loadMaterial(
+    orgId,
+    [...new Set(orders.map((o) => o.partId))],
+    orders.map((o) => ({
+      orderNo: o.orderNo,
+      partId: o.partId,
+      qty: o.qty,
+      dueDate: o.dueDate,
+      started: o.status === "in_progress" || o._count.jobs > 0,
+    })),
+    today,
+    null
+  );
+};
+
+/** A new order (the capacity check's): its material comes after the rest. */
+export interface ExtraOrder {
+  dueDate: string;
+  orderNo: string;
+  partId: string;
+  qty: number;
+}
+
 /** Everything the scheduler needs about a shop, as of `startDate`. */
 export const loadShop = async (
   orgId: string,
   startDate: string,
-  options: BuildOptions = {}
+  options: BuildOptions & { extra?: ExtraOrder } = {}
 ) => {
   const db = forOrg(database, orgId);
-  const [workCenters, orders, pins] = await Promise.all([
+  const [workCenters, orders, pins, operators] = await Promise.all([
     db.workCenter.findMany({
       orderBy: { name: "asc" },
       select: {
@@ -80,6 +197,8 @@ export const loadShop = async (
         name: true,
         efficiency: true,
         hourlyRate: true,
+        operatorsPerMachine: true,
+        unattendedRuns: true,
         shifts: true,
         calendar: {
           where: { date: { gte: new Date(startDate) } },
@@ -96,6 +215,7 @@ export const loadShop = async (
         dueDate: true,
         priority: true,
         price: true,
+        status: true,
         jobs: {
           where: { actualEnd: { not: null } },
           select: { routingSeq: true },
@@ -109,6 +229,21 @@ export const loadShop = async (
         workCenterId: true,
         plannedStart: true,
         order: { select: { orderNo: true } },
+      },
+    }),
+    db.operator.findMany({
+      where: { active: true },
+      select: {
+        id: true,
+        name: true,
+        active: true,
+        shifts: true,
+        workCenterIds: true,
+        canRunUnattended: true,
+        days: {
+          where: { date: { gte: new Date(startDate) } },
+          select: { date: true, hours: true, reason: true },
+        },
       },
     }),
   ]);
@@ -137,11 +272,36 @@ export const loadShop = async (
     },
   });
 
-  return buildScheduleRequest(
+  const extra = options.extra
+    ? {
+        orderNo: options.extra.orderNo,
+        partId: options.extra.partId,
+        qty: options.extra.qty,
+        dueDate: new Date(`${options.extra.dueDate}T00:00:00Z`),
+        started: false,
+      }
+    : null;
+  const release: Map<string, MaterialReady> = await loadMaterial(
+    orgId,
+    partIds,
+    orders.map((o) => ({
+      orderNo: o.orderNo,
+      partId: o.partId,
+      qty: o.qty,
+      dueDate: o.dueDate,
+      // Material is on the floor once an order has started.
+      started: o.status === "in_progress" || o.jobs.length > 0,
+    })),
+    startDate,
+    extra
+  );
+  const built = buildScheduleRequest(
     {
       workCenters,
       parts,
-      orders: orders.map(({ jobs, ...order }) => ({
+      operators,
+      release,
+      orders: orders.map(({ jobs, status: _status, ...order }) => ({
         ...order,
         doneSeqs: jobs.map((j) => j.routingSeq),
       })),
@@ -161,6 +321,30 @@ export const loadShop = async (
     startDate,
     options
   );
+  const unknown = [...release.entries()].filter(
+    ([no, r]) => r.unknown && no !== extra?.orderNo
+  );
+  const notOrdered = [...release.entries()].filter(
+    ([no, r]) => r.notOrdered && no !== extra?.orderNo
+  );
+  if (unknown.length) {
+    built.assumptions.push(
+      `${unknown.length} order${unknown.length === 1 ? "" : "s"} (e.g. ${unknown[0]?.[0]}): material isn't checked. ${unknown[0]?.[1].note}`
+    );
+  }
+  if (notOrdered.length) {
+    built.assumptions.push(
+      `${notOrdered.length} order${notOrdered.length === 1 ? "" : "s"} wait for material that isn't ordered yet: ${notOrdered
+        .slice(0, 3)
+        .map(([no]) => no)
+        .join(", ")}${notOrdered.length > 3 ? " and more" : ""}.`
+    );
+  }
+  return {
+    ...built,
+    /** The new order's material, for the capacity check. */
+    extraRelease: extra ? (release.get(extra.orderNo) ?? null) : null,
+  };
 };
 
 /** A message for people when the engine can't be reached or refuses. */

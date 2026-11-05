@@ -15,6 +15,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { erpFeeds } from "@/lib/erp/feeds";
+import { type MaterialReady, shortDay } from "@/lib/schedule/material";
+import { orderMaterial } from "@/lib/schedule/plan";
 import { Header } from "../../components/header";
 import { DeleteButton } from "../components/delete-button";
 import { ErpFeedNote } from "../components/erp-feed-note";
@@ -40,6 +42,41 @@ const VIEWS: { key: string; label: string; statuses: OrderStatus[] }[] = [
   { key: "done", label: "Done", statuses: ["done"] },
   { key: "cancelled", label: "Cancelled", statuses: ["cancelled"] },
 ];
+
+/** An order's material in a few words; the full note on hover. */
+const MaterialCell = ({
+  ready,
+  started,
+}: {
+  ready: MaterialReady | undefined;
+  started: boolean;
+}) => {
+  if (!ready) {
+    return (
+      <span className="text-muted-foreground text-xs">
+        {started ? "on the floor" : "—"}
+      </span>
+    );
+  }
+  let label = "on hand";
+  let tone = "text-muted-foreground";
+  if (ready.unknown) {
+    label = "not checked";
+  } else if (ready.notOrdered) {
+    label = ready.date
+      ? `not ordered · ${shortDay(ready.date)}`
+      : "not ordered";
+    tone = "text-destructive";
+  } else if (ready.date) {
+    label = `arrives ${shortDay(ready.date)}`;
+    tone = "text-amber-700 dark:text-amber-400";
+  }
+  return (
+    <span className={`text-xs ${tone}`} title={ready.note}>
+      {label}
+    </span>
+  );
+};
 
 const OrdersPage = async ({
   searchParams,
@@ -89,6 +126,8 @@ const OrdersPage = async ({
     customer: customers.map((c) => c.name),
   };
   const today = new Date(new Date().toISOString().slice(0, 10));
+  // Where each open order's material stands (F3.2-R4).
+  const material = await orderMaterial(orgId, isoDate(today));
 
   return (
     <>
@@ -146,6 +185,7 @@ const OrdersPage = async ({
                   <TableHead>Due</TableHead>
                   <TableHead className="text-right">Value</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Material</TableHead>
                   <TableHead className="w-24" />
                 </TableRow>
               </TableHeader>
@@ -189,6 +229,12 @@ const OrdersPage = async ({
                         {money(o.price)}
                       </TableCell>
                       <TableCell>{o.status.replace("_", " ")}</TableCell>
+                      <TableCell>
+                        <MaterialCell
+                          ready={material.get(o.orderNo)}
+                          started={o.status === "in_progress"}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div className="flex justify-end">
                           <RecordDialog

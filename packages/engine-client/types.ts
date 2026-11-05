@@ -8,14 +8,42 @@ export interface DayException {
   reason?: string | null;
 }
 
+/** Clock hours on given weekdays (Monday = 0); an end at or before the
+ * start runs past midnight. */
+export interface ShiftWindow {
+  days?: number[];
+  end: string;
+  start: string;
+}
+
 export interface WorkCenter {
   efficiency?: number;
   exceptions?: DayException[];
   hourly_rate?: number | null;
   hours_per_day: number;
   name: string;
+  /** People needed while it runs: 0.5 = one person runs two machines. */
+  operators_per_machine?: number;
+  /** Clock windows it runs; empty = hours_per_day from day_start. */
+  shifts?: ShiftWindow[];
+  /** Runs need nobody once set up (lights-out). */
+  unattended_runs?: boolean;
   /** Weekdays it runs, Monday = 0. Defaults to Monday–Friday. */
   working_days?: number[];
+}
+
+/** Someone who runs machines (F3.1); their hours limit the machines'. */
+export interface Operator {
+  id: string;
+  name: string;
+  /** Empty: any time a machine they run is running. */
+  shifts?: ShiftWindow[];
+  /** Vacation, sick (hours 0) or short days. */
+  time_off?: DayException[];
+  /** Can set up a machine and leave it running. */
+  unattended?: boolean;
+  /** Machines they're qualified to run (work center names). */
+  work_centers: string[];
 }
 
 export interface Operation {
@@ -42,6 +70,8 @@ export interface Order {
   qty: number;
   /** No operation starts before this day (e.g. when the material arrives). */
   release_date?: string | null;
+  /** Where the material comes from, in words (F3.2-R4). */
+  release_note?: string | null;
 }
 
 export interface Pin {
@@ -54,6 +84,8 @@ export interface Pin {
 export interface ScheduleRequest {
   capacity_factor?: number;
   day_start?: string;
+  /** The shop's people; empty = machines' hours aren't limited by staff. */
+  operators?: Operator[];
   orders: Order[];
   parts: Part[];
   pins?: Pin[];
@@ -74,6 +106,21 @@ export interface ScheduledOperation {
   work_center: string;
 }
 
+/** Who runs an operation, and when (F3.3 v2): one stretch of one person's
+ * time on one machine, at real shift clock times. */
+export interface OperatorAssignment {
+  end_at: string;
+  minutes: number;
+  operator: string;
+  operator_id: string;
+  order_no: string;
+  seq: number;
+  /** Only the setup: the machine then runs with nobody (lights-out). */
+  setup_only: boolean;
+  start_at: string;
+  work_center: string;
+}
+
 export interface OrderResult {
   completion_date: string;
   days_late: number;
@@ -85,6 +132,9 @@ export interface DayLoad {
   capacity_minutes: number;
   date: string;
   load_minutes: number;
+  /** The machine's own hours (before staffing); more than capacity_minutes
+   * means not enough qualified people on shift that day. */
+  machine_minutes?: number | null;
   work_center: string;
 }
 
@@ -103,8 +153,12 @@ export type SolverStatus =
   | "MODEL_INVALID";
 
 export interface ScheduleResponse {
+  /** Who runs what, when (with operators; plans made before v2 have none). */
+  assignments?: OperatorAssignment[];
   conflicts: Conflict[];
   load: DayLoad[];
+  /** Notes about the inputs, e.g. machines nobody is listed to run. */
+  notices?: string[];
   operations: ScheduledOperation[];
   orders: OrderResult[];
   status: SolverStatus;
@@ -125,7 +179,12 @@ export interface Lever {
   completion_date: string | null;
   description: string;
   extra_cost: number | null;
-  kind: "overtime" | "alternate_machine" | "split_lot";
+  kind:
+    | "overtime"
+    | "alternate_machine"
+    | "split_lot"
+    | "extra_operator"
+    | "expedite_material";
   on_time: boolean;
 }
 
