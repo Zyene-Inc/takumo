@@ -105,6 +105,8 @@ model Org {
   alertWatch         AlertWatch?
   alertEvents        AlertEvent[]
   alertSent          AlertSent[]
+  phoneNumbers       PhoneNumber[]
+  phoneMessages      PhoneMessage[]
 }
 
 model Member {
@@ -747,6 +749,10 @@ model Note {
   // reading | done | failed
   status      String   @default("reading")
   error       String?
+  // Where it came from: null (the app), "sms" or "whatsapp" (F6.1), and who
+  // sent it when that wasn't someone signed in (an operator's phone).
+  channel     String?
+  senderName  String?
   createdAt   DateTime @default(now())
 
   facts Fact[]
@@ -867,7 +873,7 @@ model InboundAddress {
   id             String    @id @default(uuid())
   orgId          String
   org            Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  kind           String // erp | rfq
+  kind           String // erp | rfq | ask | docs
   token          String    @unique
   // Who may send to it: addresses ("reports@shop.com") or domains ("@shop.com").
   allowedSenders String[]  @default([])
@@ -1052,4 +1058,51 @@ model AlertSent {
   sentAt DateTime
 
   @@id([orgId, userId, type])
+// Notes by text message (F6.1)
+// ---------------------------------------------------------------------------
+
+// A phone that may send voice notes and texts to the shop's Takumo number.
+// Registered in the app, then confirmed with a code sent to it by SMS.
+model PhoneNumber {
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // E.164, e.g. +15551234567.
+  phone         String
+  // Who it belongs to: their name, and their Takumo login or roster entry.
+  name          String
+  userId        String?
+  operatorId    String?
+  // The confirmation code (hashed), while it's being confirmed.
+  codeHash      String?
+  codeSentAt    DateTime?
+  codeExpiresAt DateTime?
+  attempts      Int       @default(0)
+  verifiedAt    DateTime?
+  addedBy       String?
+  createdAt     DateTime  @default(now())
+
+  messages PhoneMessage[]
+
+  @@unique([orgId, phone])
+  @@index([phone])
+}
+
+// One message from a registered phone, once (Twilio retries by MessageSid).
+model PhoneMessage {
+  id         String      @id @default(uuid())
+  orgId      String
+  org        Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  phoneId    String
+  phone      PhoneNumber @relation(fields: [phoneId], references: [id], onDelete: Cascade)
+  sid        String      @unique
+  // sms | whatsapp
+  channel    String
+  // received | processed | failed
+  status     String      @default("received")
+  noteId     String?
+  error      String?
+  receivedAt DateTime    @default(now())
+
+  @@index([orgId, receivedAt])
 }

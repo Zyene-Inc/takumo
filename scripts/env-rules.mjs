@@ -109,6 +109,15 @@ export const SERVICES = {
         check: (v) => (v.length < 32 ? "should be at least 32 characters" : null),
       },
       INBOUND_EMAIL_DOMAIN: { why: "ERP reports and RFQs by email" },
+      TWILIO_ACCOUNT_SID: {
+        why: "notes by text (SMS / WhatsApp)",
+        check: (v) => (v.startsWith("AC") ? null : "should start with AC"),
+      },
+      TWILIO_AUTH_TOKEN: { why: "notes by text (SMS / WhatsApp)" },
+      TWILIO_SMS_FROM: {
+        why: "notes by text: the shop number",
+        check: (v) => (v.startsWith("+") ? null : "should be +<country><number>"),
+      },
       OPENAI_API_KEY: {
         why: "document vector search, audio-file transcription",
         skip: usesVertex,

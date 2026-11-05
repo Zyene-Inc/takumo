@@ -42,6 +42,14 @@ export const env = createEnv({
     // Signs the links in emails (brief approve buttons, unsubscribe, link
     // clicks). Without it the brief and alerts go out with plain app links.
     EMAIL_LINK_SECRET: z.string().min(32).optional(),
+    // Notes by text message (F6.1, docs/DEPLOY.md): the shop number's
+    // Twilio account, the numbers it sends from, and (optional) the exact
+    // public URL Twilio posts to, which its signatures are computed over.
+    TWILIO_ACCOUNT_SID: z.string().startsWith("AC").optional(),
+    TWILIO_AUTH_TOKEN: z.string().min(16).optional(),
+    TWILIO_SMS_FROM: z.string().min(4).optional(),
+    TWILIO_WHATSAPP_FROM: z.string().min(4).optional(),
+    TWILIO_WEBHOOK_URL: z.url().optional(),
     // Takumo staff (WorkOS user ids, comma separated) who can see /admin.
     ADMIN_USER_IDS: z.string().optional(),
     // Claude spend cap per shop per month, in USD (unset = no cap).
@@ -64,6 +72,11 @@ export const env = createEnv({
     INBOUND_EMAIL_SECRET: process.env.INBOUND_EMAIL_SECRET,
     INBOUND_EMAIL_DOMAIN: process.env.INBOUND_EMAIL_DOMAIN,
     EMAIL_LINK_SECRET: process.env.EMAIL_LINK_SECRET,
+    TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
+    TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
+    TWILIO_SMS_FROM: process.env.TWILIO_SMS_FROM,
+    TWILIO_WHATSAPP_FROM: process.env.TWILIO_WHATSAPP_FROM,
+    TWILIO_WEBHOOK_URL: process.env.TWILIO_WEBHOOK_URL,
     ADMIN_USER_IDS: process.env.ADMIN_USER_IDS,
     AI_MONTHLY_BUDGET_USD: process.env.AI_MONTHLY_BUDGET_USD,
   },

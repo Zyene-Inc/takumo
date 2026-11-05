@@ -36,6 +36,7 @@ const MESSAGE_KIND: Record<string, string> = {
   erp: "ERP report",
   rfq: "RFQ",
   ask: "Question",
+  docs: "Documents",
 };
 
 const ADDRESS_COPY: Record<
@@ -66,6 +67,15 @@ const ADDRESS_COPY: Record<
       "If the part, quantity or date isn't clear, Takumo replies with one question instead of guessing.",
     ],
   },
+  docs: {
+    title: "Documents",
+    description:
+      "Email setup sheets, SOPs, quality manuals, customer specs or a photo of a traveler here. Takumo reads each attachment like an upload on the Knowledge page, links it to the parts, machines and customers it names, proposes its facts for review, and replies with what it found.",
+    help: [
+      "PDF, Word, text and photos, up to 20 MB each and 10 per email.",
+      "Forward a customer's spec straight from your inbox: the attachments are read, the email itself isn't kept.",
+    ],
+  },
 };
 
 const cell = (value: unknown) => {
@@ -86,6 +96,7 @@ const summary = (result: unknown) => {
 const detailText = (detail: unknown) => {
   const d = detail as {
     answered?: boolean;
+    documents?: string[];
     duplicateOf?: number;
     emailed?: boolean;
     error?: string;
@@ -105,6 +116,10 @@ const detailText = (detail: unknown) => {
     return d.emailed
       ? "Answered by email; the conversation is in Ask Takumo."
       : "Answered in Ask Takumo (email sending isn't set up, so no reply went out).";
+  }
+  if (d.documents) {
+    return [...d.documents, ...(d.skipped ?? []).map((s) => `left out ${s}`)]
+      .join(" · ");
   }
   if (d.po) {
     return d.poRepeat
@@ -210,7 +225,7 @@ const EmailIntegrationsPage = async ({
         </p>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          {(["erp", "rfq", "ask"] as const).map((kind) => {
+          {(["erp", "rfq", "ask", "docs"] as const).map((kind) => {
             const a = addresses.find((x) => x.kind === kind);
             return (
               <AddressCard

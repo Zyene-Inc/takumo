@@ -88,8 +88,9 @@ describe("inbound email: signed delivery from services/mail", () => {
     expect(parseAddress("erp-abcd1234@evil.com", DOMAIN)).toBeNull();
     expect(parseAddress(`erp-short@${DOMAIN}`, DOMAIN)).toBeNull();
     expect(parseAddress(`sales@${DOMAIN}`, DOMAIN)).toBeNull();
-    // Reserved for later features, not accepted yet.
-    expect(parseAddress(`docs-abcd1234@${DOMAIN}`, DOMAIN)).toBeNull();
+    // Documents by email (F6.2) and questions (F3.4).
+    expect(parseAddress(`docs-abcd1234@${DOMAIN}`, DOMAIN)?.kind).toBe("docs");
+    expect(parseAddress(`ask-abcd1234@${DOMAIN}`, DOMAIN)?.kind).toBe("ask");
   });
 
   test("senders: exact addresses and whole domains", () => {
