@@ -33,9 +33,9 @@ from app.models import (
     ScheduleRequest,
     ScheduleResponse,
 )
+from app.scheduler.assign import assign_operators
 from app.scheduler.calendar import DAY, Timeline, day_index, to_datetime
 from app.scheduler.dispatch import Placement, candidates, dispatch, release_minute
-from app.scheduler.assign import assign_operators
 from app.scheduler.staffing import staff
 
 LATENESS_WEIGHT = 1000
@@ -67,9 +67,7 @@ def _validate(request: ScheduleRequest) -> None:
             raise ValueError(f"Order {order.order_no}: unknown part {order.part_no}")
         for op in parts[order.part_no].routing:
             if op.work_center not in work_centers:
-                raise ValueError(
-                    f"Part {order.part_no} op {op.seq}: unknown work center {op.work_center}"
-                )
+                raise ValueError(f"Part {order.part_no} op {op.seq}: unknown work center {op.work_center}")
     for pin in request.pins:
         order = next((o for o in request.orders if o.order_no == pin.order_no), None)
         if order is None:
@@ -81,18 +79,14 @@ def _validate(request: ScheduleRequest) -> None:
             raise ValueError(f"Pin for {pin.order_no} op {pin.seq}: unknown work center {pin.work_center}")
         if pin.work_center not in [op.work_center, *op.alt_work_centers]:
             raise ValueError(
-                f"{pin.order_no} op {pin.seq} can't run on {pin.work_center} "
-                "(not its machine or an alternate)"
+                f"{pin.order_no} op {pin.seq} can't run on {pin.work_center} (not its machine or an alternate)"
             )
         if pin.start_date < request.start_date:
             raise ValueError(f"Pin for {pin.order_no} op {pin.seq} is before the plan start")
 
 
 def _timelines(request: ScheduleRequest) -> dict[str, Timeline]:
-    timelines = {
-        wc.name: Timeline(wc, request.start_date, request.capacity_factor)
-        for wc in request.work_centers
-    }
+    timelines = {wc.name: Timeline(wc, request.start_date, request.capacity_factor) for wc in request.work_centers}
     for timeline in timelines.values():
         timeline.ensure(60)
         if timeline.cum[-1] == 0 and not timeline.work_center.working_days:
@@ -141,9 +135,7 @@ def build_response(
                 )
             )
             for day in range(start_day, end_day + 1):
-                overlap = min(placed.end, timeline.cum[day + 1]) - max(
-                    placed.start, timeline.cum[day]
-                )
+                overlap = min(placed.end, timeline.cum[day + 1]) - max(placed.start, timeline.cum[day])
                 if overlap > 0:
                     load[(placed.work_center, day)] += overlap
         last_day = max(last_day, end_day)
@@ -269,13 +261,9 @@ def solve_schedule(
         machine_request = request
         request, report = staff(request)
         notices = report.notices
-    response = _solve(
-        request, lateness_caps, keep, first, num_workers, machine_request, dispatch_only
-    )
+    response = _solve(request, lateness_caps, keep, first, num_workers, machine_request, dispatch_only)
     if assign and report is not None and machine_request is not None:
-        response.assignments, unassigned = assign_operators(
-            machine_request, request, response.operations, report
-        )
+        response.assignments, unassigned = assign_operators(machine_request, request, response.operations, report)
         notices = [*notices, *unassigned]
     response.notices = notices
     return response
@@ -296,22 +284,15 @@ def _solve(
     parts = {p.part_no: p for p in request.parts}
     timelines = _timelines(request)
     machine_timelines = (
-        {
-            wc.name: Timeline(wc, request.start_date, request.capacity_factor)
-            for wc in machine_request.work_centers
-        }
+        {wc.name: Timeline(wc, request.start_date, request.capacity_factor) for wc in machine_request.work_centers}
         if machine_request is not None
         else None
     )
     greedy = dispatch(request, timelines, parts, keep, first)
-    fallback = build_response(
-        request, "HEURISTIC", greedy.placements, timelines, machine_timelines=machine_timelines
-    )
+    fallback = build_response(request, "HEURISTIC", greedy.placements, timelines, machine_timelines=machine_timelines)
 
     def fallback_or(status: str) -> ScheduleResponse:
-        if lateness_caps and any(
-            r.days_late > lateness_caps.get(r.order_no, r.days_late) for r in fallback.orders
-        ):
+        if lateness_caps and any(r.days_late > lateness_caps.get(r.order_no, r.days_late) for r in fallback.orders):
             return ScheduleResponse(status=status)
         return fallback
 
@@ -319,15 +300,11 @@ def _solve(
         hinted = False
     else:
         hinted = True
-        if dispatch_only or (
-            sum(len(parts[o.part_no].routing) for o in request.orders) > MAX_CP_OPERATIONS
-        ):
+        if dispatch_only or (sum(len(parts[o.part_no].routing) for o in request.orders) > MAX_CP_OPERATIONS):
             # Too big to optimise in the time limit: the dispatch plan is valid.
             return fallback_or("UNKNOWN")
 
-    last_greedy_day = max(
-        timelines[p.work_center].day_of(p.end - 1) for p in greedy.placements.values()
-    )
+    last_greedy_day = max(timelines[p.work_center].day_of(p.end - 1) for p in greedy.placements.values())
     latest_due = max(day_index(request.start_date, o.due_date) for o in request.orders)
     horizon = max(last_greedy_day, latest_due, 0) + 1
     horizon += horizon // 5 + 5
@@ -374,9 +351,7 @@ def _solve(
                 }
                 presence = model.new_bool_var(f"{tag}_p")
                 intervals[name].append(
-                    model.new_optional_interval_var(
-                        v["start"], minutes, v["end"], presence, f"{tag}_i"
-                    )
+                    model.new_optional_interval_var(v["start"], minutes, v["end"], presence, f"{tag}_i")
                 )
                 day_domain = cp_model.Domain.from_values(working)
                 most = max(t.minutes) * 100 + t.scale100
@@ -432,9 +407,7 @@ def _solve(
                         Conflict(
                             order_no=order.order_no,
                             seq=op.seq,
-                            message=(
-                                f"None of op {op.seq}'s machines are running in the plan window."
-                            ),
+                            message=(f"None of op {op.seq}'s machines are running in the plan window."),
                         )
                     ],
                 )

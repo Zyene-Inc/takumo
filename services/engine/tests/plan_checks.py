@@ -9,6 +9,7 @@ they were pinned.
 
 from collections import defaultdict
 from datetime import datetime, timedelta
+from itertools import pairwise
 
 from app.models import ScheduleRequest, ScheduleResponse
 
@@ -21,9 +22,7 @@ def assert_valid_plan(request: ScheduleRequest, response: ScheduleResponse) -> N
     ops = {(op.order_no, op.seq): op for op in response.operations}
 
     # Every operation of every order is planned exactly once.
-    expected = {
-        (o.order_no, r.seq) for o in request.orders for r in parts[o.part_no].routing
-    }
+    expected = {(o.order_no, r.seq) for o in request.orders for r in parts[o.part_no].routing}
     assert set(ops) == expected
     assert len(ops) == len(response.operations)
 
@@ -54,7 +53,7 @@ def assert_valid_plan(request: ScheduleRequest, response: ScheduleResponse) -> N
 
     for machine_ops in by_machine.values():
         machine_ops.sort(key=lambda op: op.start_at)
-        for a, b in zip(machine_ops, machine_ops[1:]):
+        for a, b in pairwise(machine_ops):
             assert a.end_at <= b.start_at, (a, b)
 
     # Daily load never exceeds what the machine has that day.
@@ -124,9 +123,7 @@ def assert_staffed_plan(request: ScheduleRequest, response: ScheduleResponse) ->
         if load.work_center not in listed:
             continue
         people = [o for o in request.operators if load.work_center in o.work_centers]
-        if wcs[load.work_center].unattended_runs and any(
-            o.unattended and works(o, load.date) for o in people
-        ):
+        if wcs[load.work_center].unattended_runs and any(o.unattended and works(o, load.date) for o in people):
             continue
         if not any(works(o, load.date) for o in people):
             assert load.load_minutes == 0, load

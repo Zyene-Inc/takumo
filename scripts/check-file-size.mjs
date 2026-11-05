@@ -45,7 +45,9 @@ for (const file of files) {
 
 if (tooLong.length) {
   console.error("Files over the size limit (split them by responsibility):");
-  for (const { file, lines, limit } of tooLong.sort((a, b) => b.lines - a.lines)) {
+  for (const { file, lines, limit } of tooLong.sort(
+    (a, b) => b.lines - a.lines
+  )) {
     console.error(`  ${file}: ${lines} lines (limit ${limit})`);
   }
   process.exit(1);

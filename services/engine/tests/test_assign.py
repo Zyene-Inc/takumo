@@ -4,6 +4,7 @@ import random
 import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from itertools import pairwise
 
 from app.models import (
     DayException,
@@ -13,7 +14,6 @@ from app.models import (
     Part,
     ScheduleRequest,
     ScheduleResponse,
-    ShiftWindow,
     WorkCenter,
 )
 from app.scheduler.cpsat_model import solve_schedule
@@ -55,9 +55,7 @@ def _windows(operator: Operator, day: date) -> list[tuple[datetime, datetime]]:
     for s in operator.shifts:
         if day.weekday() not in s.days:
             continue
-        start = datetime.combine(day, datetime.min.time()) + timedelta(
-            hours=int(s.start[:2]), minutes=int(s.start[3:])
-        )
+        start = datetime.combine(day, datetime.min.time()) + timedelta(hours=int(s.start[:2]), minutes=int(s.start[3:]))
         end = datetime.combine(day, datetime.min.time()) + timedelta(hours=int(s.end[:2]), minutes=int(s.end[3:]))
         if end <= start:
             end += timedelta(days=1)
@@ -95,7 +93,7 @@ def assert_assignments_valid(request: ScheduleRequest, response: ScheduleRespons
             assert running <= 1 + 1e-6, (operator, running)
     for machine, spans in per_machine.items():
         spans.sort()
-        for (s1, e1, op1), (s2, _, op2) in zip(spans, spans[1:]):
+        for (_s1, e1, op1), (s2, _, op2) in pairwise(spans):
             assert s2 >= e1 or op1 == op2, (machine, op1, op2)
     by_op: dict[tuple[str, int], int] = defaultdict(int)
     crews = {wc.name: max(1, -(-wc.operators_per_machine // 1)) for wc in request.work_centers}
@@ -193,7 +191,9 @@ def test_nobody_is_assigned_on_their_day_off():
     off = DayException(date=START, hours=0, reason="vacation")
     sam = Operator(id="sam", name="Sam", work_centers=["VF2"], shifts=[DAY_SHIFT], time_off=[off])
     ana = Operator(id="ana", name="Ana", work_centers=["VF2"], shifts=[DAY_SHIFT])
-    request = _shop([sam, ana], WorkCenter(name="VF2", hours_per_day=8, shifts=[DAY_SHIFT]), orders=[_order("O1", "VF2", 10)])
+    request = _shop(
+        [sam, ana], WorkCenter(name="VF2", hours_per_day=8, shifts=[DAY_SHIFT]), orders=[_order("O1", "VF2", 10)]
+    )
     response = solve_schedule(request, assign=True)
     assert_assignments_valid(request, response)
     assert {a.operator for a in response.assignments if a.start_at.date() == START} == {"Ana"}

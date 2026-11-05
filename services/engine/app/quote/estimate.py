@@ -91,9 +91,14 @@ def _lead_times(request: QuoteRequest) -> tuple[str, dict[int, Order], dict, str
     base = base.model_copy(update={"parts": [*base.parts, part]})
     baseline = solve_schedule(base)
     if baseline.status not in SOLVED:
-        return baseline.status, {}, {}, (
-            "No lead time: the current plan can't be built "
-            f"({'; '.join(c.message for c in baseline.conflicts) or baseline.status})."
+        return (
+            baseline.status,
+            {},
+            {},
+            (
+                "No lead time: the current plan can't be built "
+                f"({'; '.join(c.message for c in baseline.conflicts) or baseline.status})."
+            ),
         )
     caps = _late(baseline)
     keep = _keep(baseline, base)
@@ -125,11 +130,7 @@ def _lead_times(request: QuoteRequest) -> tuple[str, dict[int, Order], dict, str
     note = (
         "Lead time: calendar days from today to the earliest finish that doesn't make any "
         "open order later"
-        + (
-            f", with {material.name} in {material.lead_time_days} days (its lead time)"
-            if release and material
-            else ""
-        )
+        + (f", with {material.name} in {material.lead_time_days} days (its lead time)" if release and material else "")
         + "."
     )
     return status, orders, results, note
@@ -162,9 +163,7 @@ def estimate_quote(request: QuoteRequest) -> QuoteResponse:
                 kind="material",
                 label=other.label,
                 amount=None if other.per_unit is None else round(other.per_unit * qty, 2),
-                basis=other.basis
-                if other.per_unit is None
-                else f"{money(other.per_unit)}/ea × {qty:,}. {other.basis}",
+                basis=other.basis if other.per_unit is None else f"{money(other.per_unit)}/ea × {qty:,}. {other.basis}",
                 sources=other.sources,
             )
         )
@@ -201,11 +200,7 @@ def estimate_quote(request: QuoteRequest) -> QuoteResponse:
         status, orders, results, note = _lead_times(request)
         for row in breaks:
             result = results.get(row.qty)
-            done = (
-                order_result(result, orders[row.qty])
-                if result is not None and result.status in SOLVED
-                else None
-            )
+            done = order_result(result, orders[row.qty]) if result is not None and result.status in SOLVED else None
             if done:
                 row.completion_date = done.completion_date
                 row.lead_time_days = (done.completion_date - request.start_date).days

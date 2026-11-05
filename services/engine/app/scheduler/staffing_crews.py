@@ -6,6 +6,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
 from app.models import Operator, WorkCenter
@@ -211,7 +212,7 @@ def _crew_for(
         | {int(x) for p in others for s, e in p.free_at(d, machine.share) for x in (s, e) if start < x < end}
     )
     pieces = []
-    for lo, hi in zip(cuts, cuts[1:]):
+    for lo, hi in pairwise(cuts):
         free = sorted(
             (p for p in others if any(s <= lo and hi <= e for s, e in p.free_at(d, machine.share))),
             key=lambda p: (len(p.machines), p.operator.id),

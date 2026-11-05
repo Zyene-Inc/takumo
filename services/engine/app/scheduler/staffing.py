@@ -248,7 +248,7 @@ def _replay(
         report.uncovered[(n, d)] = gaps
     for n, hours in known["hours"].items():
         staffed_hours[n][day] = hours
-    for person, spans in zip(order, known["spans"]):
+    for person, spans in zip(order, known["spans"], strict=False):
         for rel, kept in spans.items():
             if d + rel in person.spans:
                 person.spans[d + rel] = [[s + offset, e + offset, f] for s, e, f in kept]

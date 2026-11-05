@@ -42,9 +42,7 @@ def machine_minutes(op: Operation, qty: int, wc: WorkCenter) -> float:
     return (op.setup_min + op.run_min_per_unit * qty) / wc.efficiency
 
 
-def machine_cost(
-    routing: list[Operation], qty: int, wcs: dict[str, WorkCenter]
-) -> float | None:
+def machine_cost(routing: list[Operation], qty: int, wcs: dict[str, WorkCenter]) -> float | None:
     total = 0.0
     for op in routing:
         wc = wcs.get(op.work_center)
@@ -54,9 +52,7 @@ def machine_cost(
     return total
 
 
-def machine_lines(
-    spec: QuoteSpec, qty: int, wcs: dict[str, WorkCenter]
-) -> tuple[list[CostLine], list[str]]:
+def machine_lines(spec: QuoteSpec, qty: int, wcs: dict[str, WorkCenter]) -> tuple[list[CostLine], list[str]]:
     lines: list[CostLine] = []
     missing: list[str] = []
     for op in sorted(spec.routing, key=lambda o: o.seq):
@@ -67,10 +63,7 @@ def machine_lines(
         minutes = machine_minutes(op, qty, wc)
         hours = minutes / 60
         effic = f" ÷ {wc.efficiency * 100:.0f}% efficiency" if wc.efficiency != 1 else ""
-        times = (
-            f"{op.setup_min:g} min setup + {op.run_min_per_unit:g} min/ea × {qty:,}{effic}"
-            f" = {hours:.1f} h"
-        )
+        times = f"{op.setup_min:g} min setup + {op.run_min_per_unit:g} min/ea × {qty:,}{effic} = {hours:.1f} h"
         if op.source == "actuals":
             times += " (average of jobs actually run)"
         elif op.source == "comparable":
@@ -182,14 +175,10 @@ def other_cost(
             per_unit=value,
             label="Material & other costs",
             basis=(
-                f"{money(value)}/ea: the estimated cost of {_names(found)}, less machine time"
-                " (no actual cost recorded)"
+                f"{money(value)}/ea: the estimated cost of {_names(found)}, less machine time (no actual cost recorded)"
             ),
             sources=[f"quote {q.quote_no}" for q, _ in found],
-            warning=(
-                f"Material and other costs for {spec.part_no} come from past estimates, "
-                "not actual costs."
-            ),
+            warning=(f"Material and other costs for {spec.part_no} come from past estimates, not actual costs."),
         )
 
     if material:
@@ -254,11 +243,7 @@ def margin_policy(spec: QuoteSpec, history: list[PastQuote]) -> MarginPolicy:
     ]
     pool, basis = actual, "actual"
     if not pool:
-        pool = [
-            (q, min(m, MAX_MARGIN))
-            for q in won
-            if (m := margin_of(q)[0]) is not None and m < 1
-        ]
+        pool = [(q, min(m, MAX_MARGIN)) for q in won if (m := margin_of(q)[0]) is not None and m < 1]
         basis = "quoted"
     for_customer = [(q, m) for q, m in pool if spec.customer and q.customer == spec.customer]
     if len(for_customer) >= 2:
@@ -273,10 +258,7 @@ def margin_policy(spec: QuoteSpec, history: list[PastQuote]) -> MarginPolicy:
                 target=spec.default_margin,
                 low=spec.default_margin,
                 high=spec.default_margin,
-                basis=(
-                    f"Shop default margin {pct(spec.default_margin)}: "
-                    "no won quotes with a known cost yet."
-                ),
+                basis=(f"Shop default margin {pct(spec.default_margin)}: no won quotes with a known cost yet."),
             )
         if spec.target_margin is None:
             return MarginPolicy(
@@ -294,9 +276,7 @@ def margin_policy(spec: QuoteSpec, history: list[PastQuote]) -> MarginPolicy:
 
     margins = [m for _, m in pool]
     low, high = (
-        (_quantile(margins, 0.25), _quantile(margins, 0.75))
-        if len(margins) >= 3
-        else (min(margins), max(margins))
+        (_quantile(margins, 0.25), _quantile(margins, 0.75)) if len(margins) >= 3 else (min(margins), max(margins))
     )
     median = statistics.median(margins)
     described = (
