@@ -17,6 +17,7 @@ import { intakeRfq } from "../quotes/intake";
 import { readRfqFile } from "../quotes/read";
 import { triageEmail } from "../quotes/triage";
 import { memberAddresses, processAsk } from "./ask";
+import { processDocs } from "./docs";
 import {
   authenticated,
   emailAddress,
@@ -44,6 +45,9 @@ export const ensureAddresses = async (orgId: string) => {
   return existing;
 };
 
+/** Addresses only the shop's own people use: questions and documents. */
+const MEMBERS_ONLY = new Set(["ask", "docs"]);
+
 /** Why this sender can't use the address, or null when it can. */
 const refusal = (
   allowed: string[],
@@ -52,8 +56,10 @@ const refusal = (
   mailFrom: string,
   kind: string
 ) => {
-  if (kind === "ask" && !senderAllowed(from, allowed)) {
-    return `${from ?? "This sender"} isn't someone in this shop on Takumo. Ask from the address you sign in with.`;
+  if (MEMBERS_ONLY.has(kind) && !senderAllowed(from, allowed)) {
+    return kind === "ask"
+      ? `${from ?? "This sender"} isn't someone in this shop on Takumo. Ask from the address you sign in with.`
+      : `${from ?? "This sender"} isn't someone in this shop on Takumo. Send documents from the address you sign in with.`;
   }
   if (allowed.length === 0) {
     return `Nobody is allowed to send to this address yet. Add ${from ?? "the sender"} under Settings → Integrations → Email & ERP reports.`;
@@ -117,11 +123,10 @@ export const receiveMessage = async (input: {
 
   for (const address of matched) {
     const db = forOrg(database, address.orgId);
-    // The ask address takes questions from the shop's own people only.
-    const allowed =
-      address.kind === "ask"
-        ? await memberAddresses(address.orgId)
-        : address.allowedSenders;
+    // The ask and docs addresses take mail from the shop's own people only.
+    const allowed = MEMBERS_ONLY.has(address.kind)
+      ? await memberAddresses(address.orgId)
+      : address.allowedSenders;
     const problem = refusal(
       allowed,
       from,
@@ -360,6 +365,8 @@ export const processMessage = async (accepted: Accepted, raw: Uint8Array) => {
       await processReport(accepted.orgId, accepted.messageId, raw);
     } else if (accepted.kind === "ask") {
       await processAsk(accepted.orgId, accepted.messageId, raw);
+    } else if (accepted.kind === "docs") {
+      await processDocs(accepted.orgId, accepted.messageId, raw);
     } else {
       const sha256 = createHash("sha256").update(raw).digest("hex");
       await processRfq(accepted.orgId, accepted.messageId, raw, sha256);

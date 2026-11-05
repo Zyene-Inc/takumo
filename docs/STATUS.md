@@ -2,7 +2,7 @@
 
 Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); its §5 table has a one-line status per feature. This page gives the detail.
 
-**In one line:** Phases 1, 2 and 3 are built and tested, Phase 3 including who runs each job (v2). Nothing has run on a real shop's data yet. That needs the inbound domain and design partners (Phase 0), which are owner actions. Phases 4–6 haven't started.
+**In one line:** Phases 1, 2, 3, 4 and 6 are built and tested; Phase 3 includes who runs each job (v2). Phases 1 and 2 are live; the rest wait on their database migrations. Nothing has run on a real shop's data yet. That needs the inbound domain, a Twilio number and design partners (Phase 0), which are owner actions. Phase 5 (native ERP connectors) is built per ERP when a paying shop uses it.
 
 ## Phases
 
@@ -12,9 +12,9 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 | 1. Data comes in by itself | Built. Audited requirement by requirement on 2026-11-04 and fixed (see below). |
 | 2. Quote in the email thread | Built. Audited the same way and fixed. |
 | 3. Can we ship by Friday? | Built on 2026-11-04 (details below). |
-| 4. Morning brief | Not started. |
+| 4. Morning brief | Built on 2026-11-05 (details below). Sends once the email service (`RESEND_*`) is set; buttons need `EMAIL_LINK_SECRET`. |
 | 5. Native ERP connectors | Not started. Reports by email (F1.3) cover every ERP until then. |
-| 6. Knowledge in their channels | Not started. |
+| 6. Knowledge in their channels | Built on 2026-11-05 (details below), not yet live: texts and voice notes need a Twilio number, documents by email need the inbound domain. The watched shared folder (F6.2-R2, P3) is left for later. |
 
 ## Phase 3: what was built
 
@@ -71,6 +71,53 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 - 387 app tests, including the material rules, email formatting, who's-on-what, and an end-to-end test that runs the app's real request mapping against the real engine (including the names).
 - 34 import tests, including a roster and bill-of-materials import against a real database.
 
+## Phase 4: what was built (2026-11-05)
+
+- **Morning brief (F4.1).** One email per person on weekdays at the time and time zone they
+  choose (default 06:30, America/Chicago), from `/api/cron/notify` every 15 minutes.
+  - Sections by role: owners and admins get all; planners get late or at risk, the bottleneck,
+    facts and material; estimators get quotes; operators get none.
+  - Late or at risk: from the latest saved plan, with the cause (material, people or machine) and
+    the best lever (expedite, another qualified person, an alternate machine, or overtime).
+  - Quotes waiting: drafts not sent after 24 h, RFQs 2 days old with no draft, and quotes sent
+    7+ days ago with no answer (with Won / Lost buttons).
+  - Facts to approve: the count and the oldest 3, with Approve / Reject buttons.
+  - Material short this week, and sync problems (admins and owners only).
+  - Only sections with something in them; nothing is sent when every section is empty.
+  - Unsubscribe from each section or everything (a confirmation page, plus one-click unsubscribe
+    for mail apps). Settings → Notifications sets the time, the zone and the sections.
+  - Link clicks are counted (`BriefClick`); there are no open pixels.
+- **Approve from email (F4.2).** Signed links (HMAC, `EMAIL_LINK_SECRET`) that expire after
+  72 hours, are bound to the person, and work once (`EmailLinkUse`).
+  - Opening a link shows what will change; only the confirm button changes anything (a POST).
+  - The same role checks as the app: `knowledge:review` for facts, `quotes:write` for quotes.
+  - A link someone else opens while signed in is refused.
+- **Alerts (F4.3).** Every 15 minutes, for:
+  - a new order that makes another order late (two short what-if plans, only when new orders
+    arrived);
+  - a machine marked down in the next 2 weeks (not shop-wide holidays);
+  - material now arriving after an order's planned start;
+  - an RFQ from a top-10 customer (by ordered value over the last year).
+
+  Each is found once (`AlertEvent`). A shop's first check records what's already true without
+  alerting. Each type can be turned off per person, and at most one email per type per hour
+  goes out, batched. Alerts go by email only; Teams can be added later as another channel
+  (`lib/alerts/channels.ts`).
+- **Migration** `20261112090000_morning_brief`: six new tables with row-level security; no
+  existing table changes.
+- **Not yet checked:**
+  - nothing has been sent to a real inbox (no email service is set up yet);
+  - the 15-minute cron needs a Vercel plan that allows crons more often than daily (the hourly
+    connector cron already needs that);
+  - the "new order makes another late" alert is tested on its own logic, not end to end with
+    the engine.
+
+## Database change (2026-11-05, migration `20261111090000_erp_ids_margin_open_ops`)
+
+- **ERP ids.** Machines, customers and materials take the ERP's own id (an "ERP id" column, e.g. "Cust ID"). A record renamed in the ERP is renamed here instead of becoming a second one; a record first typed in learns its id from the next report. A rename onto a name another record already has is left alone and reported. Parts and orders are already keyed by the ERP's part and order numbers; operators already had employee ids.
+- **Default margin.** Settings → Quoting has a default margin (25% until changed). Drafts use it only while the shop has no won quotes with known costs, and the price build-up says so; the estimator's margin on a line still wins.
+- **Open operations.** A new report type, "Open operations" (order, operation, status, parts through or parts left). Steps closed in the ERP, or left off a listed order, aren't planned; a step with parts already through plans no setup and only the parts left. Orders with progress become "in progress".
+
 ## Audit gaps closed (2026-11-04, live)
 
 - **The ERP renames a column.** A report that arrives with new columns but mostly matches one you confirmed is recognised. Your column choices move over, the admin is emailed what changed with a link straight to it, and **Use the same columns** imports it and retires the old report. The daily check says "your ERP changed its columns", not "stopped arriving".
@@ -103,6 +150,22 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
   - Mail is retried, not lost, if the mail server and the app ever stop sharing the same key.
   - Resent or forwarded text-only RFQs are linked to the first one.
 
+## Phase 6: what was built
+
+- **Notes by text (F6.1).**
+  - One shop number (Twilio) for every shop; a message is routed by the sender's phone.
+  - Settings → Integrations → Notes by text: anyone registers their own phone, an owner or admin registers anyone's (an operator on the roster, someone on Takumo, or a name). Takumo texts a 6-digit code (10 minutes, 5 tries, one resend a minute); typing it in confirms the phone. A phone can be confirmed for one shop only.
+  - `/api/twilio` checks Twilio's signature, ignores unregistered phones without a reply or a stored row, and reads each message once (by Twilio's message id).
+  - A voice note is transcribed with the shop's part and machine names, then goes through the same reading as a note left in the app (`saveNote`). Voice notes shows it as "By text" or "WhatsApp" with the sender's name.
+  - The sender gets "Got it: 2 facts for your supervisor to review (F-12, F-13)", or what went wrong. Photos get pointed at the documents address.
+- **Documents by email (F6.2-R1).**
+  - Each shop gets a `docs-…@` address next to the ERP, RFQ and ask addresses. Only the shop's own people can use it, verified like the ask address.
+  - Up to 10 attachments per email (PDF, Word, text, photos; signature images skipped) go through the same reading as an upload (`ingestDocument`). Someone who can't replace documents can't overwrite one with the same name, as on the Knowledge page.
+  - The reply, in the same thread, lists for each document what it was identified as, what it was linked to and the facts proposed, plus anything left out and why.
+- **Not built:** a watched SharePoint, OneDrive or Google Drive folder (F6.2-R2, P3).
+- **Migration** `20261113090000_knowledge_channels`: `PhoneNumber` and `PhoneMessage` tables (with row-level security) and `Note.channel`, `Note.senderName`.
+- **Tests:** Twilio signature, phone numbers, codes and replies; the docs address and its reply; on a database, registering and confirming a phone, unknown and unconfirmed numbers ignored, one shop per phone, retries read once, and a member's emailed document read and answered while an outsider is bounced.
+
 ## Pending
 
 **Owner actions (needed before real use)**
@@ -112,14 +175,11 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 4. Rotate the WorkOS key.
 5. Sign 2–3 design partners and collect their answer keys (Phase 0).
 6. Approve the paid drawing-accuracy test (about $0.03 per drawing).
-7. Stripe, later.
+7. For notes by text: a Twilio number (A2P 10DLC registration in the US) and, for WhatsApp, a WhatsApp Business sender (docs/DEPLOY.md section 9b).
+8. Stripe, later.
 
 **Engineering, next**
 1. Set up the mail server on the domain and test the whole email flow live (Gmail, Outlook and the ask address).
-2. One database change that needs a decision:
-   - ERP ids on every record, so renames don't create duplicates (operators already have one);
-   - a default margin per shop, so new shops get drafts;
-   - open operations from the ERP's open-jobs report.
-3. Tune the drawing checks (scans, per-machine tolerances) on real drawings from design partners.
+2. Tune the drawing checks (scans, per-machine tolerances) on real drawings from design partners.
 
-**Not started:** Phase 4 (morning brief), Phase 5 (native ERP connectors), Phase 6 (WhatsApp, SMS and shared-folder knowledge), Teams.
+**Not started:** Phase 5 (native ERP connectors, built per ERP when a paying shop uses it), the watched shared folder (F6.2-R2), Teams.

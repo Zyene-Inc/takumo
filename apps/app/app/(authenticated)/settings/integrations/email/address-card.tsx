@@ -20,7 +20,7 @@ export interface AddressView {
   description: string;
   /** How to point portals, website forms and the like at this address. */
   help?: string[];
-  kind: "erp" | "rfq" | "ask";
+  kind: "erp" | "rfq" | "ask" | "docs";
   title: string;
 }
 
@@ -86,7 +86,7 @@ export const AddressCard = ({
           </ul>
         )}
         <div className="grid gap-2">
-          {view.kind === "ask" ? (
+          {view.kind === "ask" || view.kind === "docs" ? (
             <p className="text-muted-foreground text-xs">
               Only people in your shop can use it: mail from the address they
               sign in to Takumo with, verified as really theirs. Anyone else is
@@ -118,7 +118,11 @@ export const AddressCard = ({
           {canManage && (
             <div className="flex flex-wrap items-center gap-2">
               <Button
-                className={view.kind === "ask" ? "hidden" : undefined}
+                className={
+                  view.kind === "ask" || view.kind === "docs"
+                    ? "hidden"
+                    : undefined
+                }
                 disabled={pending}
                 onClick={() =>
                   start(async () => {

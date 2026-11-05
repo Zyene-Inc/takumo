@@ -136,7 +136,11 @@ export const clearLog = async (
       },
     });
     const left = await tx.job.count({
-      where: { orgId, orderId: job.orderId, actualEnd: { not: null } },
+      where: {
+        orgId,
+        orderId: job.orderId,
+        OR: [{ actualEnd: { not: null } }, { closedAt: { not: null } }],
+      },
     });
     await tx.order.update({
       where: { id: job.orderId },

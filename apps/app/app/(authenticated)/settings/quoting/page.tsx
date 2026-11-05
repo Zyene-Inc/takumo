@@ -20,6 +20,7 @@ const QuotingSettingsPage = async () => {
     quoteValidityDays: text(s.quoteValidityDays),
     materialMarkupPct: text(Math.round(s.materialMarkup * 10_000) / 100),
     laborRate: text(s.laborRate),
+    defaultMarginPct: text(Math.round(s.defaultMargin * 10_000) / 100),
     toleranceIn: text(s.toleranceIn),
     certifications: s.certifications.join("\n"),
     signature: s.signature ?? "",

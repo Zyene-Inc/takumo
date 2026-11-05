@@ -268,6 +268,7 @@ export interface HistoryPart {
 
 export interface QuoteSpec {
   customer?: string | null;
+  default_margin?: number | null;
   material?: QuoteMaterial | null;
   outside?: OutsideProcess[];
   part_no: string;

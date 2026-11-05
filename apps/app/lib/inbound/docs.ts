@@ -1,0 +1,189 @@
+import "server-only";
+
+import { can } from "@repo/auth/permissions";
+import { listShopMembers } from "@repo/auth/server";
+import { database, forOrg } from "@repo/database";
+import { resend } from "@repo/email";
+import { keys as emailKeys } from "@repo/email/keys";
+import { log } from "@repo/observability/log";
+import { env } from "@/env";
+import { track } from "../analytics";
+import { featureProblem } from "../billing";
+import { ingestDocument } from "../knowledge/ingest";
+import { parseEmail } from "../quotes/email";
+import { replySubject, threadHeaders } from "./ask-email";
+import { type DocOutcome, docsReply, pickDocuments } from "./docs-email";
+import { emailAddress } from "./verify";
+
+// Documents emailed to the shop's docs-…@ address (F6.2-R1): someone in the
+// shop sends a setup sheet, SOP or spec; each attachment goes through the
+// same reading as an upload on the Knowledge page, and Takumo replies with
+// what it linked and the facts it proposed.
+
+const finish = (
+  orgId: string,
+  messageId: string,
+  status: string,
+  detail: object
+) =>
+  forOrg(database, orgId).inboundMessage.updateMany({
+    where: { id: messageId },
+    data: { status, detail },
+  });
+
+const send = async (
+  to: string,
+  subject: string,
+  text: string,
+  headers: Record<string, string>
+) => {
+  const from = emailKeys().RESEND_FROM;
+  if (!(resend && from)) {
+    return false;
+  }
+  await resend.emails.send({ from, to, subject, text, headers });
+  return true;
+};
+
+/** Read one document; never throws. */
+const readOne = async (
+  orgId: string,
+  userId: string,
+  file: { name: string; bytes: Uint8Array },
+  mayReplace: boolean
+): Promise<DocOutcome> => {
+  if (!mayReplace) {
+    // Like an upload: only people who can remove documents replace one.
+    const existing = await forOrg(database, orgId).source.findFirst({
+      where: { name: file.name, type: "upload", profile: "document" },
+      select: { id: true },
+    });
+    if (existing) {
+      return {
+        ok: false,
+        name: file.name,
+        error:
+          "there's already a document with this name. Rename the file, or ask an admin to replace it.",
+      };
+    }
+  }
+  const steps: string[] = [];
+  let done: Extract<DocOutcome, { ok: true }> | null = null;
+  try {
+    await ingestDocument(orgId, userId, file, (event) => {
+      if (event.type === "step") {
+        steps.push(event.text);
+      } else if (event.type === "done") {
+        done = {
+          ok: true,
+          name: event.name,
+          facts: event.facts,
+          linked: event.linked,
+          passages: event.passages,
+          steps,
+        };
+      }
+    });
+  } catch (error) {
+    log.warn("Reading an emailed document failed", {
+      orgId,
+      error: String(error),
+    });
+    const message =
+      error instanceof Error && error.message.startsWith("No text found")
+        ? "no text found in it."
+        : "Takumo couldn't read it just now. Upload it on the Knowledge page instead.";
+    return { ok: false, name: file.name, error: message };
+  }
+  return (
+    done ?? {
+      ok: false,
+      name: file.name,
+      error: "Takumo couldn't read it just now.",
+    }
+  );
+};
+
+/** Read every document in one email to the docs address; never throws. */
+export const processDocs = async (
+  orgId: string,
+  messageId: string,
+  raw: Uint8Array
+) => {
+  const email = parseEmail(new TextDecoder().decode(raw));
+  const sender = emailAddress(email.from);
+  const subject = replySubject(email.subject);
+  const headers = threadHeaders(email.headers);
+  try {
+    const member = (await listShopMembers(orgId)).find(
+      (m) => m.email?.toLowerCase() === sender
+    );
+    if (!(member && sender && can(member.role, "knowledge:share"))) {
+      await finish(orgId, messageId, "rejected", {
+        error: "Only people in the shop can send documents.",
+      });
+      return;
+    }
+    const blocked = await featureProblem(orgId, "knowledge");
+    if (blocked) {
+      await send(sender, subject, blocked, headers);
+      await finish(orgId, messageId, "failed", { error: blocked });
+      return;
+    }
+    const { read, left } = pickDocuments(email.attachments);
+    const mayReplace = can(member.role, "knowledge:write");
+    const outcomes: DocOutcome[] = [];
+    for (const file of read) {
+      outcomes.push(await readOne(orgId, member.userId, file, mayReplace));
+    }
+    const emailed = await send(
+      sender,
+      subject,
+      docsReply({
+        outcomes,
+        left,
+        knowledgeUrl: `${env.NEXT_PUBLIC_APP_URL}/knowledge`,
+        factsUrl: `${env.NEXT_PUBLIC_APP_URL}/knowledge/facts`,
+      }),
+      headers
+    );
+    const failed = outcomes.filter((o) => !o.ok).length;
+    const status =
+      outcomes.length > 0 && failed < outcomes.length ? "processed" : "failed";
+    await finish(orgId, messageId, status, {
+      documents: outcomes.map((o) =>
+        o.ok
+          ? `${o.name}: ${o.facts.length} fact${o.facts.length === 1 ? "" : "s"} proposed`
+          : `${o.name}: ${o.error}`
+      ),
+      ...(left.length ? { skipped: left } : {}),
+      ...(outcomes.length === 0 ? { error: "No document attached." } : {}),
+      emailed,
+    });
+    track("document_emailed", {
+      orgId,
+      userId: member.userId,
+      properties: {
+        documents: outcomes.length,
+        failed,
+        facts: outcomes.reduce((n, o) => n + (o.ok ? o.facts.length : 0), 0),
+      },
+    });
+  } catch (error) {
+    log.error("Processing emailed documents failed", {
+      orgId,
+      error: String(error),
+    });
+    await finish(orgId, messageId, "failed", {
+      error: "Takumo couldn't read these documents. It's been logged.",
+    });
+    if (sender) {
+      await send(
+        sender,
+        subject,
+        "Takumo couldn't read your documents just now. Try again in a few minutes, or upload them on the Knowledge page.",
+        headers
+      ).catch(() => undefined);
+    }
+  }
+};

@@ -156,7 +156,19 @@ export const orderMaterial = async (orgId: string, today: string) => {
       qty: true,
       dueDate: true,
       status: true,
-      _count: { select: { jobs: { where: { actualEnd: { not: null } } } } },
+      _count: {
+        select: {
+          jobs: {
+            where: {
+              OR: [
+                { actualEnd: { not: null } },
+                { closedAt: { not: null } },
+                { qtyDone: { gt: 0 } },
+              ],
+            },
+          },
+        },
+      },
     },
   });
   return loadMaterial(
@@ -217,8 +229,19 @@ export const loadShop = async (
         price: true,
         status: true,
         jobs: {
-          where: { actualEnd: { not: null } },
-          select: { routingSeq: true },
+          where: {
+            OR: [
+              { actualEnd: { not: null } },
+              { closedAt: { not: null } },
+              { qtyDone: { gt: 0 } },
+            ],
+          },
+          select: {
+            routingSeq: true,
+            actualEnd: true,
+            closedAt: true,
+            qtyDone: true,
+          },
         },
       },
     }),
@@ -303,7 +326,14 @@ export const loadShop = async (
       release,
       orders: orders.map(({ jobs, status: _status, ...order }) => ({
         ...order,
-        doneSeqs: jobs.map((j) => j.routingSeq),
+        doneSeqs: jobs
+          .filter((j) => j.actualEnd || j.closedAt)
+          .map((j) => j.routingSeq),
+        progress: Object.fromEntries(
+          jobs
+            .filter((j) => !(j.actualEnd || j.closedAt) && j.qtyDone)
+            .map((j) => [j.routingSeq, j.qtyDone as number])
+        ),
       })),
       pins: pins.flatMap((p) =>
         p.plannedStart && p.workCenterId

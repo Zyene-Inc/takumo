@@ -155,6 +155,17 @@ def test_a_zero_actual_cost_is_not_a_hundred_percent_margin():
     assert price_at(100, 1.0, 1)[0] == 1000  # capped at 90%, never divides by zero
 
 
+def test_a_new_shop_prices_at_its_default_margin():
+    spec = QuoteSpec(part_no="P-1001", routing=routing_of("P-1001"), qty_breaks=[1], default_margin=0.25)
+    policy = margin_policy(spec, [])
+    assert policy.target == 0.25
+    assert "Shop default margin 25" in policy.basis
+    # The estimator's margin still wins, and won quotes replace the default.
+    assert margin_policy(spec.model_copy(update={"target_margin": 0.4}), []).target == 0.4
+    history, _ = load_demo_quotes()
+    assert "default" not in margin_policy(spec, history).basis
+
+
 def test_estimators_margin_overrides_history():
     spec = QuoteSpec(part_no="P-1001", material=AL, routing=routing_of("P-1001"), qty_breaks=[100], target_margin=0.3)
     row = estimate_quote(demo_request(spec, lead_times=False)).breaks[0]

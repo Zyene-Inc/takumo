@@ -99,6 +99,14 @@ model Org {
   customerPoFiles    CustomerPoFile[]
   uploadParts        UploadPart[]
   shopSettings       ShopSettings?
+  notifyPrefs        NotifyPrefs[]
+  emailLinkUses      EmailLinkUse[]
+  briefClicks        BriefClick[]
+  alertWatch         AlertWatch?
+  alertEvents        AlertEvent[]
+  alertSent          AlertSent[]
+  phoneNumbers       PhoneNumber[]
+  phoneMessages      PhoneMessage[]
 }
 
 model Member {
@@ -122,6 +130,9 @@ model WorkCenter {
   orgId               String
   org                 Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name                String
+  // The record's id in the shop's ERP: a rename there updates this record
+  // instead of creating a second one.
+  externalId          String?
   type                String? // e.g. "cnc_mill", "lathe", "press_brake"
   hourlyRate          Decimal?   @db.Decimal(10, 2)
   efficiency          Float      @default(1.0)
@@ -145,6 +156,7 @@ model WorkCenter {
   calendar CalendarDay[]
   routings Routing[]
 
+  @@unique([orgId, externalId])
   @@unique([orgId, name])
   @@index([orgId])
 }
@@ -215,6 +227,9 @@ model Material {
   orgId        String
   org          Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name         String
+  // The record's id in the shop's ERP: a rename there updates this record
+  // instead of creating a second one.
+  externalId   String?
   spec         String?
   unitCost     Decimal?   @db.Decimal(12, 4)
   unit         String     @default("ea")
@@ -228,6 +243,7 @@ model Material {
   stock              StockLevel[]
   purchaseOrderLines PurchaseOrderLine[]
 
+  @@unique([orgId, externalId])
   @@unique([orgId, name])
   @@index([orgId])
 }
@@ -237,6 +253,9 @@ model Customer {
   orgId           String
   org             Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name            String
+  // The record's id in the shop's ERP: a rename there updates this record
+  // instead of creating a second one.
+  externalId      String?
   paymentTermDays Int?
   // Lowest margin the owner accepts for this customer (0.25 = 25%).
   marginFloor     Float?
@@ -254,6 +273,7 @@ model Customer {
   rfqs        Rfq[]
   customerPos CustomerPo[]
 
+  @@unique([orgId, externalId])
   @@unique([orgId, name])
   @@index([orgId])
 }
@@ -379,6 +399,10 @@ model Job {
   // A planner fixed this operation to workCenterId and plannedStart's day on
   // the schedule board; re-planning keeps it there.
   pinned               Boolean   @default(false)
+  // From the ERP's open-operations report: the operation is closed there
+  // (finished or cancelled), or this many parts are already through it.
+  closedAt             DateTime?
+  qtyDone              Int?
   // Last time the shop's ERP report updated it; read-only in Takumo then.
   syncedAt             DateTime?
 
@@ -621,6 +645,9 @@ model ShopSettings {
   quoteValidityDays Int?
   materialMarkup    Float?
   laborRate         Float?
+  // Margin for drafts when the shop has no won quotes with costs yet
+  // (0.25 = 25%); the estimator can still change it per line.
+  defaultMargin     Float?
   toleranceIn       Float?
   certifications    String[] @default([])
   // [{ process, supplier, leadTimeDays, costPerPart, lotCharge }]
@@ -722,6 +749,10 @@ model Note {
   // reading | done | failed
   status      String   @default("reading")
   error       String?
+  // Where it came from: null (the app), "sms" or "whatsapp" (F6.1), and who
+  // sent it when that wasn't someone signed in (an operator's phone).
+  channel     String?
+  senderName  String?
   createdAt   DateTime @default(now())
 
   facts Fact[]
@@ -842,7 +873,7 @@ model InboundAddress {
   id             String    @id @default(uuid())
   orgId          String
   org            Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  kind           String // erp | rfq
+  kind           String // erp | rfq | ask | docs
   token          String    @unique
   // Who may send to it: addresses ("reports@shop.com") or domains ("@shop.com").
   allowedSenders String[]  @default([])
@@ -940,4 +971,141 @@ model PurchaseOrderLine {
 
   @@unique([orgId, poNo, lineNo])
   @@index([orgId, dueDate])
+}
+
+// ---------------------------------------------------------------------------
+// Morning brief and alerts (docs/PRODUCT-PLAN.md Phase 4)
+// ---------------------------------------------------------------------------
+
+// One person's brief and alert settings in one shop. No row: the defaults
+// (brief on at 06:30, every section and alert on).
+model NotifyPrefs {
+  orgId       String
+  org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId      String // WorkOS user ID
+  briefOn     Boolean  @default(true)
+  // Local time the brief goes out, HH:MM, on weekdays.
+  briefTime   String   @default("06:30")
+  // IANA time zone, e.g. America/Chicago.
+  timeZone    String   @default("America/Chicago")
+  // Brief sections turned off (late, bottleneck, quotes, facts, material, sync).
+  briefOff    String[] @default([])
+  // Alert types turned off (late, down, material, rfq).
+  alertsOff   String[] @default([])
+  // Local date (YYYY-MM-DD) of the last brief, sent or empty, so it goes once a day.
+  lastBriefOn String?
+  updatedAt   DateTime @updatedAt
+
+  @@id([orgId, userId])
+}
+
+// Approve / reject / won / lost links in emails are single use: the nonce of
+// each one used.
+model EmailLinkUse {
+  nonce  String   @id
+  orgId  String
+  org    Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId String
+  action String
+  usedAt DateTime @default(now())
+
+  @@index([orgId])
+}
+
+// A link in a brief someone clicked (how often briefs are read; no open pixels).
+model BriefClick {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId    String
+  section   String
+  clickedAt DateTime @default(now())
+
+  @@index([orgId, clickedAt])
+}
+
+// When alerts last looked at a shop: orders and RFQs newer than this are new.
+model AlertWatch {
+  orgId     String   @id
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  checkedAt DateTime
+}
+
+// Something worth an alert, found once (type + key never repeat). `quiet`:
+// found on the shop's first check, so it was already true before alerts began.
+model AlertEvent {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // late | down | material | rfq
+  type      String
+  key       String
+  message   String
+  path      String
+  quiet     Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, type, key])
+  @@index([orgId, createdAt])
+}
+
+// When each person last got each type of alert (at most one an hour).
+model AlertSent {
+  orgId  String
+  org    Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId String
+  type   String
+  sentAt DateTime
+
+  @@id([orgId, userId, type])
+}
+
+// ---------------------------------------------------------------------------
+// Notes by text message (F6.1)
+// ---------------------------------------------------------------------------
+
+// A phone that may send voice notes and texts to the shop's Takumo number.
+// Registered in the app, then confirmed with a code sent to it by SMS.
+model PhoneNumber {
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // E.164, e.g. +15551234567.
+  phone         String
+  // Who it belongs to: their name, and their Takumo login or roster entry.
+  name          String
+  userId        String?
+  operatorId    String?
+  // The confirmation code (hashed), while it's being confirmed.
+  codeHash      String?
+  codeSentAt    DateTime?
+  codeExpiresAt DateTime?
+  attempts      Int       @default(0)
+  verifiedAt    DateTime?
+  addedBy       String?
+  createdAt     DateTime  @default(now())
+
+  messages PhoneMessage[]
+
+  @@unique([orgId, phone])
+  @@index([phone])
+}
+
+// One message from a registered phone, once (Twilio retries by MessageSid).
+model PhoneMessage {
+  id         String      @id @default(uuid())
+  orgId      String
+  org        Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  phoneId    String
+  phone      PhoneNumber @relation(fields: [phoneId], references: [id], onDelete: Cascade)
+  sid        String      @unique
+  // sms | whatsapp
+  channel    String
+  // received | processed | failed
+  status     String      @default("received")
+  noteId     String?
+  error      String?
+  receivedAt DateTime    @default(now())
+
+  @@index([orgId, receivedAt])
 }

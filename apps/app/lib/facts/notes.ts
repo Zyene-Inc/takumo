@@ -224,6 +224,9 @@ export const saveNote = async (
     durationSec?: number | null;
     jobId?: string | null;
     source?: FactSource;
+    /** Sent by text message (F6.1): "sms" or "whatsapp", and from whom. */
+    channel?: "sms" | "whatsapp" | null;
+    senderName?: string | null;
     /** Why the note can't be read now (plan or AI budget): saved as failed. */
     paused?: string | null;
   }
@@ -236,6 +239,8 @@ export const saveNote = async (
       durationSec: note.durationSec ?? null,
       jobId: note.jobId ?? null,
       createdBy: userId,
+      channel: note.channel ?? null,
+      senderName: note.senderName?.slice(0, 120) ?? null,
       ...(note.paused ? { status: "failed", error: note.paused } : {}),
     },
     select: { id: true },

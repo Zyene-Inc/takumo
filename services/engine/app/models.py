@@ -312,6 +312,8 @@ class QuoteSpec(BaseModel):
     qty_breaks: list[int] = Field(min_length=1, max_length=6)
     outside: list[OutsideProcess] = []
     target_margin: float | None = Field(default=None, ge=0, lt=0.9)
+    # The shop's margin for when it has no won quotes with a known cost yet.
+    default_margin: float | None = Field(default=None, ge=0, lt=0.9)
     requested_date: date | None = None
 
 

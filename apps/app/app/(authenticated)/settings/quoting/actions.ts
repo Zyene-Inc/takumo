@@ -30,6 +30,7 @@ export const saveQuoteSettings = async (
     quoteValidityDays: v.quoteValidityDays,
     materialMarkup: Math.round(v.materialMarkupPct * 100) / 10_000,
     laborRate: v.laborRate,
+    defaultMargin: Math.round(v.defaultMarginPct * 100) / 10_000,
     toleranceIn: v.toleranceIn,
     certifications: [...new Set(v.certifications)],
     outsideProcesses: v.outsideProcesses as object[],

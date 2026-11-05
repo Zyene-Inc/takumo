@@ -22,6 +22,7 @@ export const EVENTS = [
   "fact_proposed",
   "fact_reviewed",
   "note_saved",
+  "document_emailed",
   "job_logged",
   "data_imported",
   "connector_connected",

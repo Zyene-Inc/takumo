@@ -380,6 +380,7 @@ export interface OutsideSupplier {
 /** How a shop quotes, with defaults filled in (lib/quotes/settings.ts). */
 export interface QuoteSettings {
   certifications: string[];
+  defaultMargin: number;
   laborRate: number;
   materialMarkup: number;
   outsideProcesses: OutsideSupplier[];

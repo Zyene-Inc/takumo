@@ -190,119 +190,216 @@ const yesNo = (value: Value | undefined) =>
 /** A number above zero, else null (left unset). */
 const positive = (n: number | null) => (n !== null && n > 0 ? n : null);
 
-const saveWorkCenters = async (
-  ctx: Context,
-  records: ParsedRecord[],
-  c: Counter
+// Machines, customers and materials are named records. A row is matched by
+// the ERP's id when it has one, so a rename in the ERP renames the record
+// here instead of adding a second one; else by name (any case).
+type NamedKind = "workCenter" | "customer" | "material";
+
+interface NamedRow {
+  externalId: string | null;
+  id: string;
+  name: string;
+}
+
+// The Prisma calls the three models share, typed loosely so one function
+// serves all three.
+interface NamedDelegate {
+  create(args: { data: Record<string, unknown> }): Promise<unknown>;
+  findMany(args: {
+    where: { orgId: string };
+    select: Record<string, true>;
+  }): Promise<(NamedRow & Record<string, unknown>)[]>;
+  update(args: {
+    where: { id: string };
+    data: Record<string, unknown>;
+  }): Promise<unknown>;
+}
+
+const delegate = (db: PrismaClient, kind: NamedKind) =>
+  db[kind] as unknown as NamedDelegate;
+
+/** What to do with each row: create it, or update a record (maybe renamed). */
+export const planNamed = (
+  existing: readonly NamedRow[],
+  rows: readonly { externalId: string | null; name: string }[]
 ) => {
-  const { db, orgId } = ctx;
-  const shiftsByName = new Map(
-    (
-      await db.workCenter.findMany({
-        where: { orgId },
-        select: { name: true, shifts: true },
-      })
-    ).map((r) => [r.name, (r.shifts as Record<string, unknown> | null) ?? {}])
-  );
-  await inBatches(records, async ({ values: v }) => {
-    const name = str(v.name) as string;
-    let efficiency = num(v.efficiency);
-    // "90" means 90%; 1.2 is already a fraction (120%, a fast machine).
-    if (efficiency !== null && efficiency > MAX_EFFICIENCY) {
-      efficiency /= 100;
+  const byExternal = new Map<string, NamedRow>();
+  const byName = new Map<string, NamedRow>();
+  for (const r of existing) {
+    if (r.externalId) {
+      byExternal.set(r.externalId, r);
     }
-    const hoursPerDay = num(v.hoursPerDay);
-    const data = defined({
-      type: str(v.type),
-      hourlyRate: num(v.hourlyRate),
-      efficiency,
-      operatorsPerMachine: positive(num(v.operatorsPerMachine)),
-      unattendedRuns: yesNo(v.unattendedRuns),
-      // Keep the working days already set; only the hours come from the file.
-      shifts:
-        hoursPerDay === null
-          ? null
-          : { ...shiftsByName.get(name), hoursPerDay },
-    });
-    await db.workCenter.upsert({
-      where: { orgId_name: { orgId, name } },
-      create: {
-        orgId,
-        name,
-        sourceId: ctx.sourceId,
-        provenance: ctx.provenance,
-        ...data,
-        ...synced(ctx),
-      },
-      update: { ...data, provenance: ctx.provenance, ...synced(ctx) },
-    });
-    count(c, shiftsByName.has(name));
+    byName.set(r.name.toLowerCase(), r);
+  }
+  const renamed: string[] = [];
+  const clashes: string[] = [];
+  const plans = rows.map(({ name, externalId }) => {
+    const known = externalId ? byExternal.get(externalId) : undefined;
+    if (known) {
+      if (known.name === name) {
+        return { id: known.id, data: {} };
+      }
+      const other = byName.get(name.toLowerCase());
+      if (other && other.id !== known.id) {
+        // Another record already has the new name: keep both as they are.
+        clashes.push(`${known.name} → ${name}`);
+        return { id: known.id, data: {} };
+      }
+      renamed.push(`${known.name} → ${name}`);
+      byName.delete(known.name.toLowerCase());
+      const moved = { ...known, name };
+      byName.set(name.toLowerCase(), moved);
+      byExternal.set(known.externalId as string, moved);
+      return { id: known.id, data: { name } };
+    }
+    const named = byName.get(name.toLowerCase());
+    if (named) {
+      // Learns the ERP id the first time a report gives one.
+      const learn =
+        externalId && !named.externalId && !byExternal.has(externalId);
+      if (learn) {
+        const withId = { ...named, externalId };
+        byExternal.set(externalId, withId);
+        byName.set(name.toLowerCase(), withId);
+      }
+      return { id: named.id, data: learn ? { externalId } : {} };
+    }
+    const fresh = {
+      id: "",
+      name,
+      externalId: externalId && !byExternal.has(externalId) ? externalId : null,
+    };
+    byName.set(name.toLowerCase(), fresh);
+    if (fresh.externalId) {
+      byExternal.set(fresh.externalId, fresh);
+    }
+    return {
+      id: null,
+      data: { name, ...(fresh.externalId ? { externalId } : {}) },
+    };
   });
+  return { plans, renamed, clashes };
 };
 
-const saveCustomers = async (
+const saveNamed = async (
   ctx: Context,
+  kind: NamedKind,
   records: ParsedRecord[],
-  c: Counter
+  c: Counter,
+  fields: (
+    v: Values,
+    current: Record<string, unknown> | undefined
+  ) => Record<string, unknown>,
+  extraSelect: Record<string, true> = {}
 ) => {
   const { db, orgId } = ctx;
-  const existing = new Set(
-    (
-      await db.customer.findMany({ where: { orgId }, select: { name: true } })
-    ).map((r) => r.name)
+  const model = delegate(db, kind);
+  const existing = await model.findMany({
+    where: { orgId },
+    select: { id: true, name: true, externalId: true, ...extraSelect },
+  });
+  const byId = new Map(existing.map((r) => [r.id, r]));
+  const { plans, renamed, clashes } = planNamed(
+    existing,
+    records.map(({ values: v }) => ({
+      name: str(v.name) as string,
+      externalId: str(v.erpId),
+    }))
   );
-  await inBatches(records, async ({ values: v }) => {
-    const name = str(v.name) as string;
+  const writes = records.map((record, i) => ({
+    v: record.values,
+    plan: plans[i] as (typeof plans)[number],
+  }));
+  // Renames first, one at a time, so a name that moves frees up before
+  // another row takes it.
+  const renames = writes.filter((w) => w.plan.id && "name" in w.plan.data);
+  const rest = writes.filter((w) => !renames.includes(w));
+  const write = async ({ v, plan }: (typeof writes)[number]) => {
+    const current = plan.id ? byId.get(plan.id) : undefined;
+    const data = { ...fields(v, current), ...synced(ctx) };
+    if (plan.id) {
+      await model.update({
+        where: { id: plan.id },
+        data: { ...data, ...plan.data },
+      });
+    } else {
+      await model.create({ data: { orgId, ...data, ...plan.data } });
+    }
+    count(c, Boolean(plan.id));
+  };
+  for (const w of renames) {
+    await write(w);
+  }
+  await inBatches(rest, write);
+  const label =
+    kind === "workCenter"
+      ? "Machines"
+      : kind === "customer"
+        ? "Customers"
+        : "Materials";
+  const notes = [
+    listNote(`${label} renamed in your ERP (updated here)`, new Set(renamed)),
+    listNote(
+      `${label} renamed in your ERP to a name another one already has (left as they were; merge or rename one)`,
+      new Set(clashes)
+    ),
+  ];
+  ctx.notes.push(...notes.filter((n): n is string => n !== null));
+};
+
+const saveWorkCenters = (ctx: Context, records: ParsedRecord[], c: Counter) =>
+  saveNamed(
+    ctx,
+    "workCenter",
+    records,
+    c,
+    (v, current) => {
+      let efficiency = num(v.efficiency);
+      // "90" means 90%; 1.2 is already a fraction (120%, a fast machine).
+      if (efficiency !== null && efficiency > MAX_EFFICIENCY) {
+        efficiency /= 100;
+      }
+      const hoursPerDay = num(v.hoursPerDay);
+      const shifts = (current?.shifts as Record<string, unknown> | null) ?? {};
+      return {
+        ...defined({
+          type: str(v.type),
+          hourlyRate: num(v.hourlyRate),
+          efficiency,
+          operatorsPerMachine: positive(num(v.operatorsPerMachine)),
+          unattendedRuns: yesNo(v.unattendedRuns),
+          // Keep the working days already set; only the hours come from the file.
+          shifts: hoursPerDay === null ? null : { ...shifts, hoursPerDay },
+        }),
+        provenance: ctx.provenance,
+        ...(current ? {} : { sourceId: ctx.sourceId }),
+      };
+    },
+    { shifts: true }
+  );
+
+const saveCustomers = (ctx: Context, records: ParsedRecord[], c: Counter) =>
+  saveNamed(ctx, "customer", records, c, (v) => {
     const emails = emailsIn(str(v.emails));
     const domains = companyDomains(emails, str(v.website));
-    const data = defined({
+    return defined({
       paymentTermDays: num(v.paymentTermDays),
       // Only when the report has them: an empty cell never clears them.
       emails: emails.length ? emails : undefined,
       domains: domains.length ? domains : undefined,
     });
-    await db.customer.upsert({
-      where: { orgId_name: { orgId, name } },
-      create: { orgId, name, ...data, ...synced(ctx) },
-      update: { ...data, ...synced(ctx) },
-    });
-    count(c, existing.has(name));
   });
-};
 
-const saveMaterials = async (
-  ctx: Context,
-  records: ParsedRecord[],
-  c: Counter
-) => {
-  const { db, orgId } = ctx;
-  const existing = new Set(
-    (
-      await db.material.findMany({ where: { orgId }, select: { name: true } })
-    ).map((r) => r.name)
-  );
-  await inBatches(records, async ({ values: v }) => {
-    const name = str(v.name) as string;
-    const data = defined({
+const saveMaterials = (ctx: Context, records: ParsedRecord[], c: Counter) =>
+  saveNamed(ctx, "material", records, c, (v) => ({
+    ...defined({
       spec: str(v.spec),
       unitCost: num(v.unitCost),
       unit: str(v.unit),
       leadTimeDays: num(v.leadTimeDays),
-    });
-    await db.material.upsert({
-      where: { orgId_name: { orgId, name } },
-      create: {
-        orgId,
-        name,
-        provenance: ctx.provenance,
-        ...data,
-        ...synced(ctx),
-      },
-      update: { ...data, provenance: ctx.provenance, ...synced(ctx) },
-    });
-    count(c, existing.has(name));
-  });
-};
+    }),
+    provenance: ctx.provenance,
+  }));
 
 const saveParts = async (ctx: Context, records: ParsedRecord[], c: Counter) => {
   const { db, orgId } = ctx;
@@ -884,6 +981,119 @@ const saveOperators = async (
   }
 };
 
+// The ERP's open-operations report: which steps of each open order are
+// closed there and how many parts are through the rest. Orders it doesn't
+// know are skipped (they come from the open-orders report).
+const saveOperations = async (
+  ctx: Context,
+  records: ParsedRecord[],
+  c: Counter
+) => {
+  const { db, orgId } = ctx;
+  const orders = new Map(
+    (
+      await db.order.findMany({
+        where: { orgId },
+        select: { id: true, orderNo: true, qty: true, partId: true },
+      })
+    ).map((o) => [o.orderNo, o])
+  );
+  const seqsByPart = new Map<string, number[]>();
+  for (const r of await db.routing.findMany({
+    where: { orgId },
+    select: { partId: true, seq: true },
+  })) {
+    seqsByPart.set(r.partId, [...(seqsByPart.get(r.partId) ?? []), r.seq]);
+  }
+  const existing = new Map(
+    (
+      await db.job.findMany({
+        where: { orgId },
+        select: { orderId: true, routingSeq: true, closedAt: true },
+      })
+    ).map((j) => [`${j.orderId}|${j.routingSeq}`, j])
+  );
+  const now = ctx.syncedAt ?? new Date();
+  const unknown = new Set<string>();
+  const started = new Set<string>();
+  const rows: {
+    orderId: string;
+    seq: number;
+    data: Record<string, unknown>;
+  }[] = [];
+  for (const { values: v } of records) {
+    const orderNo = str(v.orderNo) as string;
+    const order = orders.get(orderNo);
+    if (!order) {
+      unknown.add(orderNo);
+      c.skipped += 1;
+      continue;
+    }
+    const seq = num(v.seq) as number;
+    const left = num(v.qtyRemaining);
+    const through =
+      num(v.qtyDone) ?? (left === null ? null : Math.max(0, order.qty - left));
+    const done =
+      str(v.status) === "done" || (through !== null && through >= order.qty);
+    const prior = existing.get(`${order.id}|${seq}`);
+    rows.push({
+      orderId: order.id,
+      seq,
+      data: {
+        // Keeps the first time it was seen closed.
+        closedAt: done ? (prior?.closedAt ?? now) : null,
+        qtyDone: through,
+      },
+    });
+    if (done || str(v.status) === "in_progress" || (through ?? 0) > 0) {
+      started.add(order.id);
+    }
+  }
+  // A report of open operations leaves out the finished ones: a routing step
+  // of a listed order that the report doesn't list is closed in the ERP.
+  const listed = new Set(rows.map((r) => `${r.orderId}|${r.seq}`));
+  const listedOrders = new Set(rows.map((r) => r.orderId));
+  for (const order of orders.values()) {
+    if (!listedOrders.has(order.id)) {
+      continue;
+    }
+    for (const seq of seqsByPart.get(order.partId) ?? []) {
+      const key = `${order.id}|${seq}`;
+      if (!listed.has(key)) {
+        rows.push({
+          orderId: order.id,
+          seq,
+          data: { closedAt: existing.get(key)?.closedAt ?? now },
+        });
+        started.add(order.id);
+      }
+    }
+  }
+  await inBatches(rows, async ({ orderId, seq, data }) => {
+    await db.job.upsert({
+      where: { orderId_routingSeq: { orderId, routingSeq: seq } },
+      create: { orgId, orderId, routingSeq: seq, ...data, ...synced(ctx) },
+      update: { ...data, ...synced(ctx) },
+    });
+    if (listed.has(`${orderId}|${seq}`)) {
+      count(c, existing.has(`${orderId}|${seq}`));
+    }
+  });
+  if (started.size) {
+    await db.order.updateMany({
+      where: { orgId, id: { in: [...started] }, status: "open" },
+      data: { status: "in_progress" },
+    });
+  }
+  const note = listNote(
+    "Orders not in your open orders yet (skipped; they'll be picked up after the next open-orders report)",
+    unknown
+  );
+  if (note) {
+    ctx.notes.push(note);
+  }
+};
+
 const SAVERS: Record<
   EntityKey,
   (ctx: Context, records: ParsedRecord[], c: Counter) => Promise<void>
@@ -899,14 +1109,21 @@ const SAVERS: Record<
   stock: saveStock,
   purchaseOrders: savePurchaseOrders,
   operators: saveOperators,
+  operations: saveOperations,
 };
+
+// The ERP id when there is one, else the name.
+const named = (v: Values) =>
+  v.erpId
+    ? `id:${String(v.erpId).toLowerCase()}`
+    : `name:${String(v.name).toLowerCase()}`;
 
 // Keeps the last row when a file lists the same record twice.
 const dedupe = (entity: EntityKey, records: readonly ParsedRecord[]) => {
   const keyOf: Record<EntityKey, (v: Values) => string> = {
-    workCenters: (v) => String(v.name).toLowerCase(),
-    customers: (v) => String(v.name).toLowerCase(),
-    materials: (v) => String(v.name).toLowerCase(),
+    workCenters: named,
+    customers: named,
+    materials: named,
     parts: (v) => `${v.partNo}|${v.rev ?? "A"}`,
     routings: (v) =>
       `${String(v.partNo).toLowerCase()}|${String(v.rev ?? "").toLowerCase()}|${v.seq}`,
@@ -921,6 +1138,7 @@ const dedupe = (entity: EntityKey, records: readonly ParsedRecord[]) => {
       v.employeeId
         ? `id:${String(v.employeeId).toLowerCase()}`
         : `name:${String(v.name).toLowerCase()}`,
+    operations: (v) => `${v.orderNo}|${v.seq}`,
   };
   const byKey = new Map<string, ParsedRecord>();
   for (const record of records) {

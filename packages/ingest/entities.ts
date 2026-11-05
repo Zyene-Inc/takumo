@@ -36,6 +36,7 @@ export const ENTITY_KEYS = [
   "stock",
   "purchaseOrders",
   "operators",
+  "operations",
 ] as const;
 
 export type EntityKey = (typeof ENTITY_KEYS)[number];
@@ -74,6 +75,25 @@ const workCenters: EntityDef = {
         "station",
         "cell",
       ],
+    },
+    {
+      key: "erpId",
+      label: "ERP id",
+      kind: "text",
+      synonyms: [
+        "erp id",
+        "machine id",
+        "work center id",
+        "workcenter id",
+        "wc id",
+        "resource id",
+        "machine code",
+        "work center code",
+        "resource code",
+        "asset id",
+        "asset no",
+      ],
+      hint: "The ERP's own code for it: a rename there then updates the same record",
     },
     {
       key: "type",
@@ -157,6 +177,25 @@ const customers: EntityDef = {
       synonyms: ["name", "customer", "customer name", "client", "account"],
     },
     {
+      key: "erpId",
+      label: "ERP id",
+      kind: "text",
+      synonyms: [
+        "erp id",
+        "customer id",
+        "cust id",
+        "customer no",
+        "customer number",
+        "customer code",
+        "cust no",
+        "cust code",
+        "account no",
+        "account number",
+        "account id",
+      ],
+      hint: "The ERP's own code for it: a rename there then updates the same record",
+    },
+    {
       key: "paymentTermDays",
       label: "Payment terms (days)",
       kind: "integer",
@@ -199,6 +238,21 @@ const materials: EntityDef = {
       kind: "text",
       required: true,
       synonyms: ["name", "material", "material name", "stock", "item"],
+    },
+    {
+      key: "erpId",
+      label: "ERP id",
+      kind: "text",
+      synonyms: [
+        "erp id",
+        "material id",
+        "material code",
+        "material no",
+        "item id",
+        "item code",
+        "stock code",
+      ],
+      hint: "The ERP's own code for it: a rename there then updates the same record",
     },
     {
       key: "spec",
@@ -1000,6 +1054,106 @@ const operators: EntityDef = {
   ],
 };
 
+const operations: EntityDef = {
+  key: "operations",
+  label: "Open operations",
+  description:
+    "Where each open order is on the floor: which operations are finished and how many parts are through. Takumo then plans only the work that's left.",
+  identity: ["orderNo", "seq"],
+  fields: [
+    {
+      key: "orderNo",
+      label: "Order number",
+      kind: "text",
+      required: true,
+      synonyms: [
+        "order no",
+        "order number",
+        "order",
+        "so",
+        "job",
+        "job number",
+        "job no",
+        "wo",
+        "work order",
+      ],
+    },
+    {
+      key: "seq",
+      label: "Operation number",
+      kind: "integer",
+      required: true,
+      synonyms: [
+        "seq",
+        "op",
+        "operation",
+        "op no",
+        "op number",
+        "oper",
+        "step",
+      ],
+    },
+    {
+      key: "status",
+      label: "Status",
+      kind: "enum",
+      synonyms: ["status", "op status", "operation status", "state"],
+      values: ["open", "in_progress", "done"],
+      valueAliases: {
+        new: "open",
+        released: "open",
+        waiting: "open",
+        queued: "open",
+        "not started": "open",
+        wip: "in_progress",
+        "in progress": "in_progress",
+        started: "in_progress",
+        running: "in_progress",
+        active: "in_progress",
+        setup: "in_progress",
+        complete: "done",
+        completed: "done",
+        closed: "done",
+        finished: "done",
+        cancelled: "done",
+        canceled: "done",
+        skipped: "done",
+      },
+      hint: "Leave blank: open, unless parts are already through it",
+    },
+    {
+      key: "qtyDone",
+      label: "Parts through",
+      kind: "integer",
+      synonyms: [
+        "qty complete",
+        "qty completed",
+        "completed qty",
+        "qty done",
+        "qty good",
+        "qty through",
+        "pieces done",
+      ],
+    },
+    {
+      key: "qtyRemaining",
+      label: "Parts left",
+      kind: "integer",
+      synonyms: [
+        "qty remaining",
+        "remaining",
+        "remaining qty",
+        "qty left",
+        "left",
+        "balance",
+        "qty open",
+        "open qty",
+      ],
+      hint: "Used when the report has no parts-through column",
+    },
+  ],
+};
+
 export const ENTITIES: Readonly<Record<EntityKey, EntityDef>> = {
   workCenters,
   customers,
@@ -1012,6 +1166,7 @@ export const ENTITIES: Readonly<Record<EntityKey, EntityDef>> = {
   stock,
   purchaseOrders,
   operators,
+  operations,
 };
 
 // A CSV header row users can download and fill in.

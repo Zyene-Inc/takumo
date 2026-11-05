@@ -186,6 +186,10 @@ const data = {
           url: "/settings/quoting",
         },
         {
+          title: "Notifications",
+          url: "/settings/notifications",
+        },
+        {
           title: "Billing",
           url: "/settings/billing",
         },
