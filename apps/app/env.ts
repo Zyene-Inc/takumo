@@ -39,6 +39,9 @@ export const env = createEnv({
     // the mail receiver signs with, and the domain shops' addresses live on.
     INBOUND_EMAIL_SECRET: z.string().min(32).optional(),
     INBOUND_EMAIL_DOMAIN: z.string().min(3).optional(),
+    // Signs the links in emails (brief approve buttons, unsubscribe, link
+    // clicks). Without it the brief and alerts go out with plain app links.
+    EMAIL_LINK_SECRET: z.string().min(32).optional(),
     // Takumo staff (WorkOS user ids, comma separated) who can see /admin.
     ADMIN_USER_IDS: z.string().optional(),
     // Claude spend cap per shop per month, in USD (unset = no cap).
@@ -60,6 +63,7 @@ export const env = createEnv({
     MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
     INBOUND_EMAIL_SECRET: process.env.INBOUND_EMAIL_SECRET,
     INBOUND_EMAIL_DOMAIN: process.env.INBOUND_EMAIL_DOMAIN,
+    EMAIL_LINK_SECRET: process.env.EMAIL_LINK_SECRET,
     ADMIN_USER_IDS: process.env.ADMIN_USER_IDS,
     AI_MONTHLY_BUDGET_USD: process.env.AI_MONTHLY_BUDGET_USD,
   },
