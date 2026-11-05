@@ -118,8 +118,8 @@ Every feature below follows these. A feature that breaks one is not done.
 | | ProShop | F5.4 | P2 | 3 | Not started |
 | | SAP | F5.5 | P3 | 4+ | Not started |
 | | Quote write-back to the ERP | F5.6 | P2 | 1 per ERP | Not started |
-| 6. Knowledge in their channels | WhatsApp / SMS voice notes | F6.1 | P2 | 1.5 | Not started |
-| | Document drop by email or shared folder | F6.2 | P2 | 1 | Not started |
+| 6. Knowledge in their channels | WhatsApp / SMS voice notes | F6.1 | P2 | 1.5 | Built; needs a Twilio number |
+| | Document drop by email or shared folder | F6.2 | P2 | 1 | Email built (needs the inbound domain); shared folder (R2) not started |
 
 Priorities: **P0** is needed for design partners, **P1** for paying shops, **P2** once usage is proven, **P3** later.
 

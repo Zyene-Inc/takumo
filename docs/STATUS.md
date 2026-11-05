@@ -14,7 +14,7 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 | 3. Can we ship by Friday? | Built on 2026-11-04 (details below). |
 | 4. Morning brief | Not started. |
 | 5. Native ERP connectors | Not started. Reports by email (F1.3) cover every ERP until then. |
-| 6. Knowledge in their channels | Not started. |
+| 6. Knowledge in their channels | Built on 2026-11-13 (details below), not yet live: texts and voice notes need a Twilio number, documents by email need the inbound domain. The watched shared folder (F6.2-R2, P3) is left for later. |
 
 ## Phase 3: what was built
 
@@ -103,6 +103,22 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
   - Mail is retried, not lost, if the mail server and the app ever stop sharing the same key.
   - Resent or forwarded text-only RFQs are linked to the first one.
 
+## Phase 6: what was built
+
+- **Notes by text (F6.1).**
+  - One shop number (Twilio) for every shop; a message is routed by the sender's phone.
+  - Settings → Integrations → Notes by text: anyone registers their own phone, an owner or admin registers anyone's (an operator on the roster, someone on Takumo, or a name). Takumo texts a 6-digit code (10 minutes, 5 tries, one resend a minute); typing it in confirms the phone. A phone can be confirmed for one shop only.
+  - `/api/twilio` checks Twilio's signature, ignores unregistered phones without a reply or a stored row, and reads each message once (by Twilio's message id).
+  - A voice note is transcribed with the shop's part and machine names, then goes through the same reading as a note left in the app (`saveNote`). Voice notes shows it as "By text" or "WhatsApp" with the sender's name.
+  - The sender gets "Got it: 2 facts for your supervisor to review (F-12, F-13)", or what went wrong. Photos get pointed at the documents address.
+- **Documents by email (F6.2-R1).**
+  - Each shop gets a `docs-…@` address next to the ERP, RFQ and ask addresses. Only the shop's own people can use it, verified like the ask address.
+  - Up to 10 attachments per email (PDF, Word, text, photos; signature images skipped) go through the same reading as an upload (`ingestDocument`). Someone who can't replace documents can't overwrite one with the same name, as on the Knowledge page.
+  - The reply, in the same thread, lists for each document what it was identified as, what it was linked to and the facts proposed, plus anything left out and why.
+- **Not built:** a watched SharePoint, OneDrive or Google Drive folder (F6.2-R2, P3).
+- **Migration** `20261113090000_knowledge_channels`: `PhoneNumber` and `PhoneMessage` tables (with row-level security) and `Note.channel`, `Note.senderName`.
+- **Tests:** Twilio signature, phone numbers, codes and replies; the docs address and its reply; on a database, registering and confirming a phone, unknown and unconfirmed numbers ignored, one shop per phone, retries read once, and a member's emailed document read and answered while an outsider is bounced.
+
 ## Pending
 
 **Owner actions (needed before real use)**
@@ -112,7 +128,8 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 4. Rotate the WorkOS key.
 5. Sign 2–3 design partners and collect their answer keys (Phase 0).
 6. Approve the paid drawing-accuracy test (about $0.03 per drawing).
-7. Stripe, later.
+7. For notes by text: a Twilio number (A2P 10DLC registration in the US) and, for WhatsApp, a WhatsApp Business sender (docs/DEPLOY.md section 9b).
+8. Stripe, later.
 
 **Engineering, next**
 1. Set up the mail server on the domain and test the whole email flow live (Gmail, Outlook and the ask address).
@@ -122,4 +139,4 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
    - open operations from the ERP's open-jobs report.
 3. Tune the drawing checks (scans, per-machine tolerances) on real drawings from design partners.
 
-**Not started:** Phase 4 (morning brief), Phase 5 (native ERP connectors), Phase 6 (WhatsApp, SMS and shared-folder knowledge), Teams.
+**Not started:** Phase 4 (morning brief), Phase 5 (native ERP connectors), the watched shared folder (F6.2-R2), Teams.

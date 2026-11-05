@@ -11,6 +11,11 @@ import { EmptyState } from "../../shop/components/format";
 import { NoteRecorder } from "./recorder";
 import { RetryNote } from "./retry-note";
 
+const CHANNEL_LABEL: Record<string, string> = {
+  sms: "By text",
+  whatsapp: "WhatsApp",
+};
+
 export const metadata: Metadata = { title: "Voice notes · Takumo" };
 // Reading a note calls Claude.
 export const maxDuration = 120;
@@ -38,7 +43,12 @@ const NotesPage = async () => {
         <p className="max-w-3xl text-muted-foreground text-sm">
           Operators and supervisors say what they know: real setup times, which
           machine runs a part best, why a part fails. Takumo turns it into facts
-          for a supervisor to approve.
+          for a supervisor to approve. Operators can also text or WhatsApp
+          their notes from their phone:{" "}
+          <Link className="underline" href="/settings/integrations/phone">
+            Notes by text
+          </Link>
+          .
         </p>
         <NoteRecorder canTranscribeFiles={canTranscribe()} />
         <h2 className="font-medium">Recent notes</h2>
@@ -55,6 +65,12 @@ const NotesPage = async () => {
                   <Badge variant="outline">
                     {note.kind === "voice" ? "Voice" : "Typed"}
                   </Badge>
+                  {note.channel && (
+                    <Badge variant="outline">
+                      {CHANNEL_LABEL[note.channel] ?? "Text"}
+                    </Badge>
+                  )}
+                  {note.senderName && <span>{note.senderName} ·</span>}
                   {note.createdAt.toISOString().slice(0, 16).replace("T", " ")}
                   {note.durationSec
                     ? ` · ${Math.round(note.durationSec)} s`

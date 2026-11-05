@@ -74,6 +74,10 @@ or the service dashboards; never commit them.
 - `RESEND_TOKEN`, `RESEND_FROM` (optional): emails shop admins when an ERP report needs a check,
   stops arriving, or a mailbox disconnects (the daily `/api/cron/erp-health`); without them the
   problems still show in the app and on `/admin`
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_SMS_FROM` (optional), plus
+  `TWILIO_WHATSAPP_FROM` and `TWILIO_WEBHOOK_URL` (optional, section 9b): operators' voice notes
+  and texts by SMS or WhatsApp. Without them Settings → Integrations → Notes by text says it isn't
+  set up and the webhook answers 503.
 - `ADMIN_USER_IDS`: WorkOS user ids (comma separated) of Takumo staff who can open `/admin`
 - `AI_MONTHLY_BUDGET_USD` (optional): AI spend cap per shop per calendar month; when a shop
   reaches it, Ask Takumo, quote drafting and note reading pause until the 1st. `/admin` shows each
@@ -276,6 +280,29 @@ When a shop's tenant blocks user consent, connecting shows a link
 (`https://login.microsoftonline.com/organizations/v2.0/adminconsent?...`) with instructions to send
 to their IT person; once an admin approves, the shop connects normally.
 
+## 9b. Twilio: notes by text (F6.1)
+
+One shop number serves every shop: messages are routed by the sender's phone, which someone in
+the shop registers and confirms under Settings → Integrations → Notes by text (a 6-digit code is
+texted to it). Messages from any other number get no reply and nothing is stored.
+
+1. Create a Twilio account and buy a number that can send and receive SMS (US numbers need A2P
+   10DLC registration for business texting; allow 1–2 weeks). For WhatsApp, register a WhatsApp
+   Business sender in Twilio (Meta approval, also 1–2 weeks).
+2. On the number (and the WhatsApp sender): "A message comes in" → Webhook, `HTTP POST`,
+   `https://<app-url>/api/twilio`.
+3. On `takumo-app`: `TWILIO_ACCOUNT_SID` (starts `AC`), `TWILIO_AUTH_TOKEN` (Sensitive),
+   `TWILIO_SMS_FROM` (the number, `+15551234567`), and `TWILIO_WHATSAPP_FROM` if WhatsApp is set
+   up (the WhatsApp sender's number, without `whatsapp:`).
+4. Twilio signs each request over the exact URL it called. If the webhook URL differs from
+   `NEXT_PUBLIC_APP_URL` + `/api/twilio` (another domain, a proxy), set `TWILIO_WEBHOOK_URL` to
+   exactly what's in the Twilio console, or every message is refused (403).
+
+Check: register your own phone, confirm the code, then text "setup on <machine> for <part> is
+really 2 hours". The note appears under Knowledge → Voice notes marked "By text", and a reply comes
+back counting the facts for review. A voice note (WhatsApp, or MMS audio) is transcribed with the
+shop's part and machine names first.
+
 ## 10. Check
 
 See `docs/LAUNCH.md` for the full go-live runbook. Quick checks:
@@ -290,5 +317,8 @@ See `docs/LAUNCH.md` for the full go-live runbook. Quick checks:
   comparable quotes; **Approve quote**, then **Quote PDF** opens the quote.
 - Knowledge → Voice notes → record or type "setup on <machine> for <part> is really 2 hours" →
   a fact shows under Knowledge → Facts; approving it changes the routing.
+- With inbound email set up: email a PDF setup sheet from your sign-in address to the shop's
+  `docs-…@` address (Settings → Integrations → Email & ERP reports → Documents); it appears on the
+  Knowledge page and a reply lists what it was linked to and the facts proposed.
 - Vercel → takumo-app → Settings → Cron Jobs lists `/api/cron/recalibrate` and
   `/api/cron/connectors`.

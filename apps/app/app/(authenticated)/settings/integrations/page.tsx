@@ -132,7 +132,19 @@ const IntegrationsPage = async ({
           <span className="text-muted-foreground text-sm">
             Your shop's addresses for nightly ERP reports (Epicor, JobBOSS²,
             ProShop, NetSuite, SAP: any ERP that can email a CSV or Excel
-            report) and for RFQs from portals and forms.
+            report), for RFQs from portals and forms, for questions and for
+            documents.
+          </span>
+        </Link>
+        <Link
+          className="flex flex-col gap-1 rounded-xl border p-4 transition-colors hover:bg-muted/50"
+          href="/settings/integrations/phone"
+        >
+          <span className="font-medium">Notes by text →</span>
+          <span className="text-muted-foreground text-sm">
+            Operators send voice notes and texts from their phone (SMS or
+            WhatsApp); Takumo reads them for facts and texts back what it
+            found.
           </span>
         </Link>
         <div className="grid gap-4 lg:grid-cols-2">

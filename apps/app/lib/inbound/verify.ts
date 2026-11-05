@@ -1,4 +1,4 @@
-// Mail that reaches a shop's Takumo address (erp-…@, rfq-…@) arrives from
+// Mail that reaches a shop's Takumo address (erp-…@, rfq-…@, ask-…@, docs-…@) arrives from
 // services/mail as a signed webhook. These checks decide whether to trust it:
 // the signature and its age, which shop address it's for, and whether the
 // sender is one the shop allows and really sent it (SPF/DKIM/DMARC as the
@@ -6,7 +6,7 @@
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-export const INBOUND_KINDS = ["erp", "rfq", "ask"] as const;
+export const INBOUND_KINDS = ["erp", "rfq", "ask", "docs"] as const;
 export type InboundKind = (typeof INBOUND_KINDS)[number];
 
 /** How old a signed request may be (clock skew plus retries). */
@@ -32,7 +32,7 @@ export const parseAddress = (recipient: string, domain: string) => {
   if (!m || m[3] !== domain.toLowerCase()) {
     return null;
   }
-  const kind = m[1] as InboundKind | "docs" | "ask";
+  const kind = m[1];
   return (INBOUND_KINDS as readonly string[]).includes(kind)
     ? { kind: kind as InboundKind, token: m[2] }
     : null;

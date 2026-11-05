@@ -9,7 +9,8 @@ const securityHeaders = securityMiddleware(noseconeOptions);
 // health check reveals only up/down. Microsoft Graph posts Outlook
 // notifications (checked by their secret clientState), and a shop's IT person
 // lands on the admin-consent page without a Takumo account. Inbound email is
-// delivered by our mail receiver, checked by its HMAC signature.
+// delivered by our mail receiver, checked by its HMAC signature; texts to the
+// shop number by Twilio, checked by its signature.
 export default authMiddleware(() => securityHeaders(), {
   publicPaths: [
     "/sign-in",
@@ -19,6 +20,7 @@ export default authMiddleware(() => securityHeaders(), {
     "/api/cron",
     "/api/health",
     "/api/inbound",
+    "/api/twilio",
     "/api/connectors/outlook/notify",
     "/api/connectors/outlook/admin-consent",
   ],
