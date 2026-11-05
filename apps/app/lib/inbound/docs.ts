@@ -9,6 +9,7 @@ import { log } from "@repo/observability/log";
 import { env } from "@/env";
 import { track } from "../analytics";
 import { featureProblem } from "../billing";
+import { DocumentExistsError, documentNamed } from "../knowledge/documents";
 import { ingestDocument } from "../knowledge/ingest";
 import { parseEmail } from "../quotes/email";
 import { replySubject, threadHeaders } from "./ask-email";
@@ -45,6 +46,18 @@ const send = async (
   return true;
 };
 
+const EXISTS =
+  "there's already a document with this name. Rename the file, or ask an admin to replace it.";
+
+const failureText = (error: unknown) => {
+  if (error instanceof DocumentExistsError) {
+    return EXISTS;
+  }
+  return error instanceof Error && error.message.startsWith("No text found")
+    ? "no text found in it."
+    : "Takumo couldn't read it just now. Upload it on the Knowledge page instead.";
+};
+
 /** Read one document; never throws. */
 const readOne = async (
   orgId: string,
@@ -52,48 +65,40 @@ const readOne = async (
   file: { name: string; bytes: Uint8Array },
   mayReplace: boolean
 ): Promise<DocOutcome> => {
-  if (!mayReplace) {
-    // Like an upload: only people who can remove documents replace one.
-    const existing = await forOrg(database, orgId).source.findFirst({
-      where: { name: file.name, type: "upload", profile: "document" },
-      select: { id: true },
-    });
-    if (existing) {
-      return {
-        ok: false,
-        name: file.name,
-        error:
-          "there's already a document with this name. Rename the file, or ask an admin to replace it.",
-      };
-    }
+  // Like an upload: only people who can remove documents replace one. Checked
+  // again when the document is stored, in case one arrived in the meantime.
+  if (!mayReplace && (await documentNamed(orgId, file.name))) {
+    return { ok: false, name: file.name, error: EXISTS };
   }
   const steps: string[] = [];
   let done: Extract<DocOutcome, { ok: true }> | null = null;
   try {
-    await ingestDocument(orgId, userId, file, (event) => {
-      if (event.type === "step") {
-        steps.push(event.text);
-      } else if (event.type === "done") {
-        done = {
-          ok: true,
-          name: event.name,
-          facts: event.facts,
-          linked: event.linked,
-          passages: event.passages,
-          steps,
-        };
-      }
-    });
+    await ingestDocument(
+      orgId,
+      userId,
+      file,
+      (event) => {
+        if (event.type === "step") {
+          steps.push(event.text);
+        } else if (event.type === "done") {
+          done = {
+            ok: true,
+            name: event.name,
+            facts: event.facts,
+            linked: event.linked,
+            passages: event.passages,
+            steps,
+          };
+        }
+      },
+      { mayReplace }
+    );
   } catch (error) {
     log.warn("Reading an emailed document failed", {
       orgId,
       error: String(error),
     });
-    const message =
-      error instanceof Error && error.message.startsWith("No text found")
-        ? "no text found in it."
-        : "Takumo couldn't read it just now. Upload it on the Knowledge page instead.";
-    return { ok: false, name: file.name, error: message };
+    return { ok: false, name: file.name, error: failureText(error) };
   }
   return (
     done ?? {

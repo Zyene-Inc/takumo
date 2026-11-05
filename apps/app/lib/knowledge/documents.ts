@@ -27,6 +27,33 @@ export const cleanName = (fileName: string) =>
 
 const vectorLiteral = (values: number[]) => `[${values.join(",")}]`;
 
+// Uploaded documents, as opposed to spreadsheet imports or ERP reports.
+const DOCUMENT = { type: "upload", profile: "document" } as const;
+
+/**
+ * The stored document a file of this name would replace, if any. Matches by
+ * the cleaned name, the same key storeDocument replaces by, so "SOP.pdf" and
+ * "SOP.docx" both find "SOP".
+ */
+export const documentNamed = (orgId: string, fileName: string) =>
+  forOrg(database, orgId).source.findFirst({
+    where: { name: cleanName(fileName), ...DOCUMENT },
+    select: { id: true, name: true },
+  });
+
+/**
+ * Thrown when a document with this name exists and the person storing the new
+ * one may not replace it. The message is written for people.
+ */
+export class DocumentExistsError extends Error {
+  constructor(name: string) {
+    super(
+      `There's already a document called ${name}. Rename your file, or ask an admin to replace it.`
+    );
+    this.name = "DocumentExistsError";
+  }
+}
+
 /** Store a document's chunks. Re-uploading a file with the same name replaces it. */
 interface StoredChunk {
   content: string;
@@ -38,34 +65,70 @@ interface StoredChunk {
   page: number | null;
 }
 
+/** Vectors for the passages, or null when there's no embedding model or it fails. */
+const embedChunks = async (chunks: StoredChunk[]) => {
+  if (!canEmbed) {
+    return null;
+  }
+  try {
+    const { embeddings } = await embedMany({
+      model: models.embeddings,
+      // The context sentence goes into the vector too.
+      values: chunks.map((c) =>
+        c.context ? `${c.context}\n\n${c.content}` : c.content
+      ),
+      ...embeddingOptions("document"),
+    });
+    return embeddings.map(vectorLiteral);
+  } catch (error) {
+    // Keyword search still works without vectors.
+    log.warn("Embedding failed; document is keyword-searchable only", {
+      error: String(error),
+    });
+    return null;
+  }
+};
+
+// One statement for every passage's vector, so the transaction stays short.
+const SET_EMBEDDINGS_SQL = `
+  update "DocChunk" c set embedding = v.embedding::vector
+  from unnest($1::text[], $2::text[]) as v(id, embedding)
+  where c.id = v.id and c."orgId" = $3`;
+
+// Holds other stores of the same document name in this shop until this one
+// commits, so two uploads can't both pass the check below. The lock key and
+// the lookup use the same shop and the same cleaned name (callers pass
+// cleanName's result or a stored name), so "SOP.pdf" and "SOP.docx" queue on
+// one lock.
+const LOCK_NAME_SQL = "select pg_advisory_xact_lock(hashtextextended($1, 0))";
+
+// Long enough for a few hundred passages; nothing slow runs inside it.
+const STORE_TIMEOUT_MS = 30_000;
+
 /**
  * Replace a document (same name) with these passages and make them
  * searchable: keywords at once, meaning when an embedding model is set up.
+ *
+ * Everything is written in one transaction: the old document stays as it was
+ * until the new one is complete, and a failure leaves nothing half-written.
+ * Without `mayReplace`, an existing document with this name is left alone and
+ * DocumentExistsError is thrown; the check runs inside the transaction, so a
+ * document stored while this one was being read is caught too.
  */
 export const storeDocument = async (
   orgId: string,
   name: string,
   summary: string,
-  chunks: StoredChunk[]
+  chunks: StoredChunk[],
+  { mayReplace }: { mayReplace: boolean }
 ) => {
-  const db = forOrg(database, orgId);
-  await db.source.deleteMany({
-    where: { name, type: "upload", profile: "document" },
-  });
-  const source = await db.source.create({
-    data: {
-      orgId,
-      name,
-      type: "upload",
-      profile: "document",
-      status: "ready",
-      summary,
-    },
-  });
+  // Before the transaction: it calls the embedding model.
+  const vectors = await embedChunks(chunks);
+  const sourceId = crypto.randomUUID();
   const rows = chunks.map((c) => ({
     id: crypto.randomUUID(),
     orgId,
-    sourceId: source.id,
+    sourceId,
     content: c.content,
     page: c.page,
     meta: {
@@ -74,41 +137,54 @@ export const storeDocument = async (
       ...c.meta,
     },
   }));
-  await db.docChunk.createMany({ data: rows });
 
-  let embedded = false;
-  if (canEmbed) {
-    try {
-      const { embeddings } = await embedMany({
-        model: models.embeddings,
-        // The context sentence goes into the vector too.
-        values: chunks.map((c) =>
-          c.context ? `${c.context}\n\n${c.content}` : c.content
-        ),
-        ...embeddingOptions("document"),
-      });
-      await database.$transaction(
-        rows.map((row, i) =>
-          database.$executeRawUnsafe(
-            `update "DocChunk" set embedding = $1::vector where id = $2 and "orgId" = $3`,
-            vectorLiteral(embeddings[i]),
-            row.id,
-            orgId
-          )
-        )
+  await forOrg(database, orgId).$transaction(
+    async (tx) => {
+      await tx.$executeRawUnsafe(
+        LOCK_NAME_SQL,
+        `knowledge-document:${orgId}:${name}`
       );
-      embedded = true;
-    } catch (error) {
-      // Keyword search still works without vectors.
-      log.warn("Embedding failed; document is keyword-searchable only", {
-        error: String(error),
+      const existing = await tx.source.findMany({
+        where: { name, ...DOCUMENT },
+        select: { id: true },
       });
-    }
-  }
-  return { sourceId: source.id, name, chunks: rows.length, embedded };
+      if (existing.length > 0 && !mayReplace) {
+        throw new DocumentExistsError(name);
+      }
+      if (existing.length > 0) {
+        await tx.source.deleteMany({
+          where: { id: { in: existing.map((s) => s.id) }, ...DOCUMENT },
+        });
+      }
+      await tx.source.create({
+        data: {
+          id: sourceId,
+          orgId,
+          name,
+          ...DOCUMENT,
+          status: "ready",
+          summary,
+        },
+      });
+      await tx.docChunk.createMany({ data: rows });
+      if (vectors) {
+        await tx.$executeRawUnsafe(
+          SET_EMBEDDINGS_SQL,
+          rows.map((r) => r.id),
+          vectors,
+          orgId
+        );
+      }
+    },
+    { timeout: STORE_TIMEOUT_MS }
+  );
+  return { sourceId, name, chunks: rows.length, embedded: vectors !== null };
 };
 
-/** Store plain text as a document, without reading it (evals, imports). */
+/**
+ * Store plain text as a document, without reading it (the demo shop, evals).
+ * Replaces a document with the same name, as before.
+ */
 export const saveDocument = (
   orgId: string,
   rawName: string,
@@ -124,7 +200,8 @@ export const saveDocument = (
     orgId,
     cleanName(rawName),
     plainSummary(chunks[0].content),
-    chunks
+    chunks,
+    { mayReplace: true }
   );
 };
 

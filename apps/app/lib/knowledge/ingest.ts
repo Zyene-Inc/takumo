@@ -224,12 +224,15 @@ const reportFacts = (emit: (event: IngestEvent) => void, facts: FactTally) => {
 /**
  * Read a document, understand it, link it to the shop's records, index it for
  * search and propose its facts for review, reporting each step as it goes.
+ * Without `mayReplace`, a document with the same name is never replaced:
+ * storing throws DocumentExistsError and no facts are proposed.
  */
 export const ingestDocument = async (
   orgId: string,
   userId: string | null,
   file: { name: string; bytes: Uint8Array },
-  emit: (event: IngestEvent) => void
+  emit: (event: IngestEvent) => void,
+  { mayReplace }: { mayReplace: boolean }
 ) => {
   emit({ type: "step", text: `Reading ${file.name}` });
   const read = await readDocument(orgId, file.name, file.bytes, (done, total) =>
@@ -238,7 +241,7 @@ export const ingestDocument = async (
   return understandAndStore(
     orgId,
     userId,
-    cleanName(file.name),
+    { name: cleanName(file.name), mayReplace },
     read.pages,
     read.recognized,
     emit
@@ -277,13 +280,22 @@ export const rereadDocument = async (
     .sort(([a], [b]) => (a ?? 0) - (b ?? 0))
     .map(([page, texts]) => ({ page, text: texts.join("\n\n") }));
   emit({ type: "step", text: `Reading ${source.name} again` });
-  return understandAndStore(orgId, userId, source.name, pages, 0, emit);
+  // Reading again rewrites this same document; the route allows it only for
+  // people who may replace documents.
+  return understandAndStore(
+    orgId,
+    userId,
+    { name: source.name, mayReplace: true },
+    pages,
+    0,
+    emit
+  );
 };
 
 const understandAndStore = async (
   orgId: string,
   userId: string | null,
-  name: string,
+  { name, mayReplace }: { name: string; mayReplace: boolean },
   pages: PageText[],
   recognized: number,
   emit: (event: IngestEvent) => void
@@ -337,31 +349,37 @@ const understandAndStore = async (
   ]
     .filter(Boolean)
     .join(" ");
-  const stored = await storeDocument(orgId, name, card.summary, [
-    {
-      content: cardText,
-      heading: null,
-      page: null,
-      meta: {
-        kind: "card",
-        docType: card.docType,
-        title: card.title,
-        revision: card.revision,
-        links: linked.map((m) => ({
-          ref: `${m.type}:${m.id}`,
-          label: m.label,
-          quote: m.quote,
-          how: m.how,
-        })),
-        unmatched,
+  const stored = await storeDocument(
+    orgId,
+    name,
+    card.summary,
+    [
+      {
+        content: cardText,
+        heading: null,
+        page: null,
+        meta: {
+          kind: "card",
+          docType: card.docType,
+          title: card.title,
+          revision: card.revision,
+          links: linked.map((m) => ({
+            ref: `${m.type}:${m.id}`,
+            label: m.label,
+            quote: m.quote,
+            how: m.how,
+          })),
+          unmatched,
+        },
       },
-    },
-    ...chunks.map((c, i) => ({
-      ...c,
-      context: contexts[i] || undefined,
-      meta: { mentions: mentionsIn(c.content, linked) },
-    })),
-  ]);
+      ...chunks.map((c, i) => ({
+        ...c,
+        context: contexts[i] || undefined,
+        meta: { mentions: mentionsIn(c.content, linked) },
+      })),
+    ],
+    { mayReplace }
+  );
   emit({
     type: "step",
     text: `Indexed ${plural(chunks.length, "passage")} for search${

@@ -1,7 +1,19 @@
 import "server-only";
 
 import { log } from "@repo/observability/log";
+import { DocumentExistsError } from "./documents";
 import type { IngestEvent } from "./ingest";
+
+// Our own messages are written for people; others can name the AI provider,
+// so they get a plain one.
+const errorText = (error: unknown) => {
+  if (error instanceof DocumentExistsError) {
+    return error.message;
+  }
+  return error instanceof Error && error.message.startsWith("No text found")
+    ? error.message
+    : "Couldn't read that file. Try again, or upload it as a PDF.";
+};
 
 /**
  * Run a document step by step and stream each step as newline-delimited
@@ -19,15 +31,7 @@ export const streamSteps = (
         await run(emit);
       } catch (error) {
         log.warn("Reading a document failed", { error: String(error) });
-        emit({
-          type: "error",
-          // Our own messages are written for people; others can name the
-          // AI provider, so they get a plain one.
-          error:
-            error instanceof Error && error.message.startsWith("No text found")
-              ? error.message
-              : "Couldn't read that file. Try again, or upload it as a PDF.",
-        });
+        emit({ type: "error", error: errorText(error) });
       }
       controller.close();
     },

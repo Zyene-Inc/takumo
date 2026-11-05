@@ -1,8 +1,8 @@
 import { can } from "@repo/auth/permissions";
 import { auth } from "@repo/auth/server";
-import { database, forOrg } from "@repo/database";
 import { authorize } from "@/lib/access";
 import { featureProblem } from "@/lib/billing";
+import { DocumentExistsError, documentNamed } from "@/lib/knowledge/documents";
 import { ingestDocument } from "@/lib/knowledge/ingest";
 import { streamSteps } from "@/lib/knowledge/stream";
 import { DOCUMENT_TYPES, MAX_DOCUMENT_BYTES } from "@/lib/knowledge/types";
@@ -57,20 +57,17 @@ export const POST = async (request: Request) => {
     return problem(400, `Takumo reads ${DOCUMENT_TYPES.join(", ")} files.`);
   }
   // A document with the same name is replaced; only people who can remove
-  // documents may do that, so nobody overwrites an SOP by accident.
-  if (!can(role, "knowledge:write")) {
-    const existing = await forOrg(database, access.orgId).source.findFirst({
-      where: { name: file.name, type: "upload", profile: "document" },
-      select: { id: true },
-    });
+  // documents may do that, so nobody overwrites an SOP by accident. Checked
+  // here so nothing is read for nothing, and again when the document is
+  // stored, in case one with this name arrived in the meantime.
+  const mayReplace = can(role, "knowledge:write");
+  if (!mayReplace) {
+    const existing = await documentNamed(access.orgId, file.name);
     if (existing) {
-      return problem(
-        409,
-        `There's already a document called ${file.name}. Rename your file, or ask an admin to replace it.`
-      );
+      return problem(409, new DocumentExistsError(existing.name).message);
     }
   }
   return streamSteps((emit) =>
-    ingestDocument(access.orgId, userId ?? null, file, emit)
+    ingestDocument(access.orgId, userId ?? null, file, emit, { mayReplace })
   );
 };
