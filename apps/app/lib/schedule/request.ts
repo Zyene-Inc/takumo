@@ -368,6 +368,22 @@ export const releaseFields = (
   ...(release ? { release_note: release.note } : {}),
 });
 
+/** An order's routing steps still to run: finished steps and parts through left out. */
+const remainingWork = (order: OrderRow, part: PartRow | undefined) => {
+  const done = new Set(order.doneSeqs ?? []);
+  const progressed = applyProgress(
+    order.qty,
+    (part?.routings ?? []).filter((r) => !done.has(r.seq)),
+    order.progress
+  );
+  for (const seq of progressed.finished) {
+    done.add(seq);
+  }
+  return { done, remaining: progressed.left, through: progressed.through };
+};
+
+type RemainingWork = ReturnType<typeof remainingWork>;
+
 export const buildScheduleRequest = (
   rows: ShopRows,
   startDate: string,
@@ -391,52 +407,50 @@ export const buildScheduleRequest = (
     }
   };
 
+  // The rest of an order's routing is its own part for the engine, unless
+  // it's the whole routing.
+  const partNoFor = (part: PartRow, work: RemainingWork) => {
+    if (
+      work.remaining.length >= part.routings.length &&
+      work.through.length === 0
+    ) {
+      addPart(part);
+      return partKeys[part.id];
+    }
+    const partNo = remainingKey(
+      partKeys[part.id],
+      work.done,
+      work.remaining,
+      work.through
+    );
+    if (!usedParts.has(partNo)) {
+      usedParts.set(
+        partNo,
+        toPart(
+          { ...part, routings: work.remaining },
+          partNo,
+          wcName,
+          options.materialCost?.[part.id]
+        )
+      );
+    }
+    return partNo;
+  };
+
   const orders: Order[] = [];
   for (const order of [...rows.orders].sort((a, b) =>
     a.orderNo.localeCompare(b.orderNo)
   )) {
     const part = partsById.get(order.partId);
-    const done = new Set(order.doneSeqs ?? []);
-    const progressed = applyProgress(
-      order.qty,
-      (part?.routings ?? []).filter((r) => !done.has(r.seq)),
-      order.progress
-    );
-    for (const seq of progressed.finished) {
-      done.add(seq);
-    }
-    const remaining = progressed.left;
-    const reason = skipReason(order.qty, part, remaining);
+    const work = remainingWork(order, part);
+    const reason = skipReason(order.qty, part, work.remaining);
     if (reason || !part) {
       skipped.push({ orderNo: order.orderNo, reason: reason ?? "" });
       continue;
     }
-    let partNo = partKeys[part.id];
-    if (remaining.length < part.routings.length || progressed.through.length) {
-      // The rest of the routing, as its own part for the engine.
-      partNo = remainingKey(
-        partKeys[part.id],
-        done,
-        remaining,
-        progressed.through
-      );
-      if (!usedParts.has(partNo)) {
-        usedParts.set(
-          partNo,
-          toPart(
-            { ...part, routings: remaining },
-            partNo,
-            wcName,
-            options.materialCost?.[part.id]
-          )
-        );
-      }
-    } else {
-      addPart(part);
-    }
     orders.push({
       order_no: order.orderNo,
-      part_no: partNo,
+      part_no: partNoFor(part, work),
       qty: order.qty,
       due_date: isoDay(order.dueDate),
       priority: Math.max(0, Math.min(10, order.priority)),

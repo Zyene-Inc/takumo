@@ -24,48 +24,29 @@ import {
   TableRow,
 } from "@repo/design-system/components/ui/table";
 import {
-  type Cell,
   type ColumnMapping,
   ENTITIES,
   ENTITY_KEYS,
   type EntityKey,
-  missingRequired,
   parseRows,
   suggestMapping,
   type TimeUnit,
 } from "@repo/ingest";
-import { FileSpreadsheetIcon, SparklesIcon, UploadIcon } from "lucide-react";
-import Link from "next/link";
+import { UploadIcon } from "lucide-react";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { type ImportResult, importSheet, suggestColumns } from "./actions";
+import {
+  FileBar,
+  ImportDone,
+  MatchStatus,
+  mappingChecks,
+  show,
+  showValue,
+} from "./import-parts";
 import { ACCEPTED_FILES, readWorkbook, type Sheet } from "./read-file";
 
 const NONE = "__none__";
 const PREVIEW_ROWS = 5;
-
-const SHOP_LINKS: Partial<Record<EntityKey, string>> = {
-  workCenters: "/shop/work-centers",
-  parts: "/shop/parts",
-  routings: "/shop/parts",
-  orders: "/shop/orders",
-};
-
-const show = (cell: Cell) => {
-  if (cell === null || cell === undefined) {
-    return "";
-  }
-  if (cell instanceof Date) {
-    return cell.toISOString().slice(0, 10);
-  }
-  return String(cell);
-};
-
-const showValue = (value: unknown) => {
-  if (Array.isArray(value)) {
-    return value.join(", ");
-  }
-  return value === null ? "" : String(value);
-};
 
 export const ImportWizard = ({
   initialEntity,
@@ -141,15 +122,11 @@ export const ImportWizard = ({
     [sheet, mapping]
   );
 
-  const missing = mapping ? missingRequired(mapping) : [];
-  const notAllowed = mapping
-    ? !allowedEntities.includes(mapping.entity)
-    : false;
-  const skippedRows = preview
-    ? new Set(
-        preview.errors.filter((e) => e.severity === "error").map((e) => e.row)
-      ).size
-    : 0;
+  const { missing, notAllowed, skippedRows } = mappingChecks(
+    mapping,
+    preview,
+    allowedEntities
+  );
 
   const setColumn = (field: string, column: string) => {
     if (!mapping) {
@@ -203,36 +180,13 @@ export const ImportWizard = ({
   };
 
   if (result && mapping) {
-    const link = SHOP_LINKS[mapping.entity];
     return (
-      <div className="flex flex-col gap-4">
-        <Alert>
-          <FileSpreadsheetIcon />
-          <AlertTitle>
-            Imported {ENTITIES[mapping.entity].label.toLowerCase()} from{" "}
-            {fileName}
-          </AlertTitle>
-          <AlertDescription>
-            {result.created} added · {result.updated} updated
-            {result.skipped > 0 ? ` · ${result.skipped} skipped` : ""}
-          </AlertDescription>
-        </Alert>
-        {result.notes.length > 0 && (
-          <ul className="list-disc pl-5 text-muted-foreground text-sm">
-            {result.notes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-        )}
-        <div className="flex gap-2">
-          <Button onClick={reset}>Upload another file</Button>
-          {link && (
-            <Button asChild variant="outline">
-              <Link href={link}>Review what was imported</Link>
-            </Button>
-          )}
-        </div>
-      </div>
+      <ImportDone
+        entity={mapping.entity}
+        fileName={fileName}
+        onAgain={reset}
+        result={result}
+      />
     );
   }
 
@@ -275,38 +229,17 @@ export const ImportWizard = ({
       )}
 
       {sheet && (
-        <div className="flex flex-wrap items-center gap-3">
-          <FileSpreadsheetIcon className="size-5 text-muted-foreground" />
-          <span className="font-medium">{fileName}</span>
-          <span className="text-muted-foreground text-sm">
-            {sheet.rows.length.toLocaleString()} rows · {sheet.headers.length}{" "}
-            columns
-          </span>
-          {sheets.length > 1 && (
-            <Select
-              onValueChange={(value) => {
-                const index = Number(value);
-                setSheetIndex(index);
-                suggestFor(fileName, sheets[index]);
-              }}
-              value={String(sheetIndex)}
-            >
-              <SelectTrigger className="w-48" size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {sheets.map((s, i) => (
-                  <SelectItem key={s.name} value={String(i)}>
-                    Sheet: {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Button onClick={reset} size="sm" variant="ghost">
-            Choose a different file
-          </Button>
-        </div>
+        <FileBar
+          fileName={fileName}
+          onPick={(index) => {
+            setSheetIndex(index);
+            suggestFor(fileName, sheets[index]);
+          }}
+          onReset={reset}
+          sheet={sheet}
+          sheetIndex={sheetIndex}
+          sheets={sheets}
+        />
       )}
 
       {sheet && !mapping && (
@@ -336,17 +269,7 @@ export const ImportWizard = ({
                 ))}
               </SelectContent>
             </Select>
-            {suggesting ? (
-              <span className="flex items-center gap-2 text-muted-foreground text-sm">
-                <Spinner /> Matching columns…
-              </span>
-            ) : (
-              mapping.source === "ai" && (
-                <Badge variant="secondary">
-                  <SparklesIcon /> Matched by Takumo AI
-                </Badge>
-              )
-            )}
+            <MatchStatus source={mapping.source} suggesting={suggesting} />
           </div>
 
           {mapping.notes && mapping.notes.length > 0 && (
