@@ -145,9 +145,7 @@ export const newCode = () => String(randomInt(0, 1_000_000)).padStart(6, "0");
 export const hashCode = (id: string, code: string) =>
   createHash("sha256").update(`${id}:${code.trim()}`).digest("hex");
 
-type CodeCheck =
-  | { ok: true }
-  | { ok: false; error: string; spent?: boolean };
+type CodeCheck = { ok: true } | { ok: false; error: string; spent?: boolean };
 
 /** Whether `code` confirms this registration now. */
 export const checkCode = (

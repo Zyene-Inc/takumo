@@ -43,8 +43,8 @@ const NotesPage = async () => {
         <p className="max-w-3xl text-muted-foreground text-sm">
           Operators and supervisors say what they know: real setup times, which
           machine runs a part best, why a part fails. Takumo turns it into facts
-          for a supervisor to approve. Operators can also text or WhatsApp
-          their notes from their phone:{" "}
+          for a supervisor to approve. Operators can also text or WhatsApp their
+          notes from their phone:{" "}
           <Link className="underline" href="/settings/integrations/phone">
             Notes by text
           </Link>

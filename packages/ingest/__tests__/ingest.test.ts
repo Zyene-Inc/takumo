@@ -142,7 +142,12 @@ describe("parseRows", () => {
     const result = parseRows(
       [
         { SO: "SO-1", "Part Number": "P-1", Qty: 0, "Due Date": "2026-11-20" },
-        { SO: "SO-2", "Part Number": "P-1", Qty: "0.4", "Due Date": "2026-11-20" },
+        {
+          SO: "SO-2",
+          "Part Number": "P-1",
+          Qty: "0.4",
+          "Due Date": "2026-11-20",
+        },
         { SO: "SO-3", "Part Number": "P-1", Qty: 2, "Due Date": "2026-11-20" },
       ],
       mapping

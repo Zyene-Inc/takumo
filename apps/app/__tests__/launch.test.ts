@@ -12,14 +12,20 @@ describe("AI cost", () => {
     // 1M of each on Opus 5.5: $4 + $0.20 + $5 + $20.
     const usage = {
       inputTokens: 3_000_000,
-      inputTokenDetails: { noCacheTokens: 1_000_000, cacheReadTokens: 1_000_000, cacheWriteTokens: 1_000_000 },
+      inputTokenDetails: {
+        noCacheTokens: 1_000_000,
+        cacheReadTokens: 1_000_000,
+        cacheWriteTokens: 1_000_000,
+      },
       outputTokens: 1_000_000,
     };
     expect(costUsd("claude-opus-5-5", usage)).toBeCloseTo(29.2, 6);
   });
 
   test("without a breakdown, all input is priced as uncached", () => {
-    expect(costUsd("claude-haiku-5-5", { inputTokens: 2_000_000, outputTokens: 0 })).toBeCloseTo(0.2, 6);
+    expect(
+      costUsd("claude-haiku-5-5", { inputTokens: 2_000_000, outputTokens: 0 })
+    ).toBeCloseTo(0.2, 6);
     expect(
       costUsd("gemini-3.5-flash-lite", {
         inputTokens: 1_000_000,
@@ -32,14 +38,24 @@ describe("AI cost", () => {
   test("caching makes a 10-step answer far cheaper", () => {
     // 10 steps re-sending a growing 20k-token prefix, 500 tokens out each.
     const steps = Array.from({ length: 10 }, (_, i) => 20_000 + i * 2000);
-    const uncached = steps.reduce((sum, t) => sum + (costUsd("claude-opus-5-5", { inputTokens: t, outputTokens: 500 }) ?? 0), 0);
+    const uncached = steps.reduce(
+      (sum, t) =>
+        sum +
+        (costUsd("claude-opus-5-5", { inputTokens: t, outputTokens: 500 }) ??
+          0),
+      0
+    );
     const cached = steps.reduce((sum, t, i) => {
       const read = i === 0 ? 0 : steps[i - 1];
       return (
         sum +
         (costUsd("claude-opus-5-5", {
           inputTokens: t,
-          inputTokenDetails: { noCacheTokens: 0, cacheReadTokens: read, cacheWriteTokens: t - read },
+          inputTokenDetails: {
+            noCacheTokens: 0,
+            cacheReadTokens: read,
+            cacheWriteTokens: t - read,
+          },
           outputTokens: 500,
         }) ?? 0)
       );
@@ -49,7 +65,9 @@ describe("AI cost", () => {
 
   test("an unknown model isn't priced; dated ids match their model", () => {
     expect(costUsd("gpt-5", { inputTokens: 1 })).toBeNull();
-    expect(costUsd("claude-sonnet-5-5-20261001", { inputTokens: 1_000_000 })).toBeCloseTo(2, 6);
+    expect(
+      costUsd("claude-sonnet-5-5-20261001", { inputTokens: 1_000_000 })
+    ).toBeCloseTo(2, 6);
     expect(Object.keys(PRICES)).toEqual([
       "claude-opus-5-5",
       "claude-sonnet-5-5",
@@ -82,7 +100,12 @@ describe("launch settings check", () => {
   test("missing and malformed values are named, never shown", () => {
     const problems = checkService(
       SERVICES.api,
-      { ...complete, STRIPE_SECRET_KEY: "sk_test_abc", STRIPE_WEBHOOK_SECRET: "nope", DATABASE_URL: "" },
+      {
+        ...complete,
+        STRIPE_SECRET_KEY: "sk_test_abc",
+        STRIPE_WEBHOOK_SECRET: "nope",
+        DATABASE_URL: "",
+      },
       { production: true }
     );
     const required = problems.filter((p) => p.level === "required");
@@ -95,10 +118,17 @@ describe("launch settings check", () => {
   });
 
   test("test keys are fine outside production; the connector key must be 32 bytes", () => {
-    const local = checkService(SERVICES.api, { ...complete, STRIPE_SECRET_KEY: "sk_test_x" });
+    const local = checkService(SERVICES.api, {
+      ...complete,
+      STRIPE_SECRET_KEY: "sk_test_x",
+    });
     expect(local.some((p) => p.name === "STRIPE_SECRET_KEY")).toBe(false);
-    const key = checkService(SERVICES.app, { CONNECTOR_ENCRYPTION_KEY: Buffer.alloc(16).toString("base64") });
-    expect(key.find((p) => p.name === "CONNECTOR_ENCRYPTION_KEY")?.problem).toMatch(/32 bytes/);
+    const key = checkService(SERVICES.app, {
+      CONNECTOR_ENCRYPTION_KEY: Buffer.alloc(16).toString("base64"),
+    });
+    expect(
+      key.find((p) => p.name === "CONNECTOR_ENCRYPTION_KEY")?.problem
+    ).toMatch(/32 bytes/);
   });
 
   test("Gemini on Vertex replaces the Anthropic and OpenAI keys", () => {
@@ -109,22 +139,42 @@ describe("launch settings check", () => {
     const vertex = names({ GOOGLE_GENAI_USE_VERTEXAI: "true" });
     expect(vertex).not.toContain("ANTHROPIC_API_KEY");
     expect(vertex).not.toContain("OPENAI_API_KEY");
-    expect(vertex).toEqual(expect.arrayContaining(["GOOGLE_CLOUD_PROJECT", "GOOGLE_SERVICE_ACCOUNT_JSON"]));
-    const bad = checkService(SERVICES.app, { GOOGLE_GENAI_USE_VERTEXAI: "true", GOOGLE_SERVICE_ACCOUNT_JSON: "{}" });
-    expect(bad.find((p) => p.name === "GOOGLE_SERVICE_ACCOUNT_JSON")?.problem).toContain("client_email");
+    expect(vertex).toEqual(
+      expect.arrayContaining([
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_SERVICE_ACCOUNT_JSON",
+      ])
+    );
+    const bad = checkService(SERVICES.app, {
+      GOOGLE_GENAI_USE_VERTEXAI: "true",
+      GOOGLE_SERVICE_ACCOUNT_JSON: "{}",
+    });
+    expect(
+      bad.find((p) => p.name === "GOOGLE_SERVICE_ACCOUNT_JSON")?.problem
+    ).toContain("client_email");
   });
 });
 
 describe("data export", () => {
   test("files use the import templates' headers, quoted where needed", () => {
     const csv = entityCsv("routings", [
-      { partNo: "P-1001", rev: "B", seq: 10, workCenter: "HAAS-VF2", setupMin: 45, runMinPerUnit: 6, altWorkCenters: "HAAS-VF4" },
+      {
+        partNo: "P-1001",
+        rev: "B",
+        seq: 10,
+        workCenter: "HAAS-VF2",
+        setupMin: 45,
+        runMinPerUnit: 6,
+        altWorkCenters: "HAAS-VF4",
+      },
     ]);
     expect(csv.split("\r\n")).toEqual([
       "Part number,Revision,Operation number,Machine / work center,Setup time,Run time per part,Alternate machines",
       "P-1001,B,10,HAAS-VF2,45,6,HAAS-VF4",
     ]);
-    expect(plainCsv(["text"], [{ text: 'Says "hi", then leaves' }])).toBe('text\r\n"Says ""hi"", then leaves"');
+    expect(plainCsv(["text"], [{ text: 'Says "hi", then leaves' }])).toBe(
+      'text\r\n"Says ""hi"", then leaves"'
+    );
   });
 
   test("the zip holds every file", () => {
@@ -157,11 +207,16 @@ describe("help articles", () => {
   });
 
   test("links point to real help articles", () => {
-    const links = ARTICLES.flatMap((a) => [...a.body.matchAll(/\]\((\/[^)]+)\)/g)].map((m) => m[1]));
+    const links = ARTICLES.flatMap((a) =>
+      [...a.body.matchAll(/\]\((\/[^)]+)\)/g)].map((m) => m[1])
+    );
     expect(links.length).toBeGreaterThan(0);
     for (const link of links) {
       const slug = link.replace("/help/", "");
-      expect(ARTICLES.some((a) => a.slug === slug), link).toBe(true);
+      expect(
+        ARTICLES.some((a) => a.slug === slug),
+        link
+      ).toBe(true);
     }
     expect(appRoutes.has("/help/[slug]")).toBe(true);
   });

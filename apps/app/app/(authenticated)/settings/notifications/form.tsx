@@ -56,8 +56,13 @@ export const NotificationsForm = ({
     }
   }, []);
   const zones = useMemo(
-    () =>
-      [...new Set([v.timeZone, ...(browserZone ? [browserZone] : []), ...COMMON_ZONES])],
+    () => [
+      ...new Set([
+        v.timeZone,
+        ...(browserZone ? [browserZone] : []),
+        ...COMMON_ZONES,
+      ]),
+    ],
     [v.timeZone, browserZone]
   );
 
@@ -198,11 +203,7 @@ export const NotificationsForm = ({
           {pending ? "Saving…" : "Save"}
         </Button>
         {message && (
-          <p
-            className={
-              message.error ? "text-destructive text-sm" : "text-sm"
-            }
-          >
+          <p className={message.error ? "text-destructive text-sm" : "text-sm"}>
             {message.text}
           </p>
         )}

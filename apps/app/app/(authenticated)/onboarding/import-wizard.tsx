@@ -60,8 +60,12 @@ const show = (cell: Cell) => {
   return String(cell);
 };
 
-const showValue = (value: unknown) =>
-  Array.isArray(value) ? value.join(", ") : value === null ? "" : String(value);
+const showValue = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return value.join(", ");
+  }
+  return value === null ? "" : String(value);
+};
 
 export const ImportWizard = ({
   initialEntity,
@@ -235,6 +239,7 @@ export const ImportWizard = ({
   return (
     <div className="flex flex-col gap-6">
       {!sheet && (
+        // biome-ignore lint/a11y/noNoninteractiveElementInteractions: a drop zone; the file input inside it is the keyboard-accessible control.
         <label
           className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-10 text-center hover:bg-muted/50"
           htmlFor="shop-file"

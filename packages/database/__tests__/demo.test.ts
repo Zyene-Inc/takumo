@@ -6,10 +6,15 @@ import { DEMO_TODAY, demoShiftDays } from "../demo/seed";
 
 describe("demo shop data", () => {
   test("matches seed/acme-precision (run generate-demo after editing the seed)", () => {
-    const seed = readSeed(join(import.meta.dirname, "../../../seed/acme-precision"));
+    const seed = readSeed(
+      join(import.meta.dirname, "../../../seed/acme-precision")
+    );
     const { docs: _docs, ...bundled } = DEMO;
     expect(JSON.parse(JSON.stringify(bundled))).toEqual(seed);
-    expect(Object.keys(DEMO.docs).sort()).toEqual(["Quality manual.md", "Setup notes.md"]);
+    expect(Object.keys(DEMO.docs).sort()).toEqual([
+      "Quality manual.md",
+      "Setup notes.md",
+    ]);
   });
 
   test("dates move so the demo's today is the real today", () => {

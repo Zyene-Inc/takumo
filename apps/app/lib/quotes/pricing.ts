@@ -55,15 +55,7 @@ const addDays = (iso: string, days: number) =>
 // ---------------------------------------------------------------------------
 // Units and stock
 
-type StockUnit =
-  | "lb"
-  | "kg"
-  | "in"
-  | "ft"
-  | "m"
-  | "ea"
-  | "sqft"
-  | "sqin";
+type StockUnit = "lb" | "kg" | "in" | "ft" | "m" | "ea" | "sqft" | "sqin";
 
 const UNIT_WORDS: [StockUnit, RegExp][] = [
   ["lb", /^(lb|lbs|pound|pounds|#)$/],

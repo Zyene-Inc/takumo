@@ -12,11 +12,9 @@ import {
   searchTerms,
 } from "./chunk";
 
-
 const FILE_EXTENSION = /\.(pdf|docx|txt|md|csv)$/i;
 const BRACKETS = /[[\]]/g;
 const SPACES = /\s+/g;
-
 
 /** Display name: no file extension, no square brackets (they'd break [doc …] citations). */
 export const cleanName = (fileName: string) =>

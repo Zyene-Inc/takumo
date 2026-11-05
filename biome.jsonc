@@ -1,9 +1,6 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "extends": ["ultracite/core", "ultracite/react", "ultracite/next"],
-  "javascript": {
-    "globals": ["Liveblocks"]
-  },
   "linter": {
     "rules": {
       "performance": {
@@ -11,6 +8,28 @@
       }
     }
   },
+  "overrides": [
+    {
+      // Tests and evals: fixtures and assertions read better inline.
+      "includes": [
+        "**/__tests__/**",
+        "**/test/**",
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "apps/app/evals/**"
+      ],
+      "linter": {
+        "rules": {
+          "performance": {
+            "noNamespaceImport": "off",
+            "useTopLevelRegex": "off"
+          },
+          "style": { "noNonNullAssertion": "off" },
+          "suspicious": { "noMisplacedAssertion": "off", "useAwait": "off" }
+        }
+      }
+    }
+  ],
   "files": {
     "includes": [
       "**/*",
@@ -19,7 +38,10 @@
       "!packages/design-system/hooks",
       "!docs",
       "!apps/email/.react-email",
-      "!vendor"
+      "!vendor",
+      "!services/mail/dist",
+      "!services/mail/dist-test",
+      "!services/engine"
     ]
   }
 }

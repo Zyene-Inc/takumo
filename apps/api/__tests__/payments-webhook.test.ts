@@ -30,9 +30,17 @@ const { POST } = await import("../app/webhooks/payments/route");
 const send = (event: object, secret = SECRET) => {
   const payload = JSON.stringify(event);
   currentHeaders = new Headers({
-    "stripe-signature": stripe.webhooks.generateTestHeaderString({ payload, secret }),
+    "stripe-signature": stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret,
+    }),
   });
-  return POST(new Request("http://localhost/webhooks/payments", { method: "POST", body: payload }));
+  return POST(
+    new Request("http://localhost/webhooks/payments", {
+      method: "POST",
+      body: payload,
+    })
+  );
 };
 
 const PERIOD_END = 1_798_761_600; // 2027-01-01
@@ -45,7 +53,12 @@ const subscription = (overrides: object = {}) => ({
   cancel_at_period_end: false,
   metadata: { orgId: "org_1" },
   items: {
-    data: [{ current_period_end: PERIOD_END, price: { lookup_key: "takumo_pro_monthly" } }],
+    data: [
+      {
+        current_period_end: PERIOD_END,
+        price: { lookup_key: "takumo_pro_monthly" },
+      },
+    ],
   },
   ...overrides,
 });
@@ -54,7 +67,11 @@ const subscription = (overrides: object = {}) => ({
 const retrieves = (sub: object) =>
   vi
     .spyOn(stripe.subscriptions, "retrieve")
-    .mockResolvedValue(sub as unknown as Awaited<ReturnType<typeof stripe.subscriptions.retrieve>>);
+    .mockResolvedValue(
+      sub as unknown as Awaited<
+        ReturnType<typeof stripe.subscriptions.retrieve>
+      >
+    );
 
 const event = (type: string, object: object) => ({
   id: "evt_1",
@@ -70,16 +87,24 @@ describe("Stripe webhook", () => {
   });
 
   test("a bad signature is refused and nothing changes", async () => {
-    const response = await send(event("customer.subscription.updated", subscription()), "whsec_wrong");
+    const response = await send(
+      event("customer.subscription.updated", subscription()),
+      "whsec_wrong"
+    );
     expect(response.status).toBe(400);
     expect(database.org.update).not.toHaveBeenCalled();
   });
 
   test("a new subscription puts the shop on its plan", async () => {
     retrieves(subscription());
-    const response = await send(event("customer.subscription.created", subscription()));
+    const response = await send(
+      event("customer.subscription.created", subscription())
+    );
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, type: "customer.subscription.created" });
+    expect(await response.json()).toEqual({
+      ok: true,
+      type: "customer.subscription.created",
+    });
     expect(database.org.update).toHaveBeenCalledWith({
       where: { id: "org_1" },
       data: {
@@ -95,12 +120,17 @@ describe("Stripe webhook", () => {
   });
 
   test("checkout links the subscription to the shop that bought it", async () => {
-    database.org.findUnique.mockImplementation(async ({ where }: { where: { id?: string } }) =>
-      where.id === "org_9" ? { id: "org_9" } : null
+    database.org.findUnique.mockImplementation(
+      async ({ where }: { where: { id?: string } }) =>
+        where.id === "org_9" ? { id: "org_9" } : null
     );
     const retrieve = vi
       .spyOn(stripe.subscriptions, "retrieve")
-      .mockResolvedValue(subscription({ metadata: {} }) as unknown as Awaited<ReturnType<typeof stripe.subscriptions.retrieve>>);
+      .mockResolvedValue(
+        subscription({ metadata: {} }) as unknown as Awaited<
+          ReturnType<typeof stripe.subscriptions.retrieve>
+        >
+      );
     await send(
       event("checkout.session.completed", {
         id: "cs_1",
@@ -111,13 +141,18 @@ describe("Stripe webhook", () => {
     );
     expect(retrieve).toHaveBeenCalledWith("sub_1");
     expect(database.org.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "org_9" }, data: expect.objectContaining({ plan: "pro" }) })
+      expect.objectContaining({
+        where: { id: "org_9" },
+        data: expect.objectContaining({ plan: "pro" }),
+      })
     );
   });
 
   test("a failed payment marks the shop past due", async () => {
     vi.spyOn(stripe.subscriptions, "retrieve").mockResolvedValue(
-      subscription({ status: "past_due" }) as unknown as Awaited<ReturnType<typeof stripe.subscriptions.retrieve>>
+      subscription({ status: "past_due" }) as unknown as Awaited<
+        ReturnType<typeof stripe.subscriptions.retrieve>
+      >
     );
     await send(
       event("invoice.payment_failed", {
@@ -128,33 +163,57 @@ describe("Stripe webhook", () => {
     );
     expect(database.org.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ subscriptionStatus: "past_due", pastDueSince: expect.any(Date) }),
+        data: expect.objectContaining({
+          subscriptionStatus: "past_due",
+          pastDueSince: expect.any(Date),
+        }),
       })
     );
   });
 
   test("an event for another subscription doesn't change the shop's", async () => {
-    database.org.findUnique.mockResolvedValue({ id: "org_1", stripeSubscriptionId: "sub_live" });
+    database.org.findUnique.mockResolvedValue({
+      id: "org_1",
+      stripeSubscriptionId: "sub_live",
+    });
     retrieves(subscription({ id: "sub_stray", status: "canceled" }));
-    const response = await send(event("customer.subscription.deleted", subscription({ id: "sub_stray" })));
+    const response = await send(
+      event("customer.subscription.deleted", subscription({ id: "sub_stray" }))
+    );
     expect(response.status).toBe(200);
     expect(database.org.update).not.toHaveBeenCalled();
   });
 
   test("a late event is applied as the subscription is now", async () => {
     retrieves(subscription({ status: "active" }));
-    await send(event("customer.subscription.created", subscription({ status: "incomplete" })));
+    await send(
+      event(
+        "customer.subscription.created",
+        subscription({ status: "incomplete" })
+      )
+    );
     expect(database.org.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ subscriptionStatus: "active" }) })
+      expect.objectContaining({
+        data: expect.objectContaining({ subscriptionStatus: "active" }),
+      })
     );
   });
 
   test("a cancelled subscription ends paid access but keeps the plan name", async () => {
     retrieves(subscription({ status: "canceled" }));
-    await send(event("customer.subscription.deleted", subscription({ status: "canceled" })));
+    await send(
+      event(
+        "customer.subscription.deleted",
+        subscription({ status: "canceled" })
+      )
+    );
     expect(database.org.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ subscriptionStatus: "canceled", stripeSubscriptionId: null, plan: "pro" }),
+        data: expect.objectContaining({
+          subscriptionStatus: "canceled",
+          stripeSubscriptionId: null,
+          plan: "pro",
+        }),
       })
     );
   });
@@ -162,9 +221,10 @@ describe("Stripe webhook", () => {
   test("a subscription for a shop Takumo doesn't know is ignored", async () => {
     database.org.findUnique.mockResolvedValue(null);
     retrieves(subscription());
-    const response = await send(event("customer.subscription.updated", subscription()));
+    const response = await send(
+      event("customer.subscription.updated", subscription())
+    );
     expect(response.status).toBe(200);
     expect(database.org.update).not.toHaveBeenCalled();
   });
 });
-
