@@ -122,6 +122,9 @@ model WorkCenter {
   orgId               String
   org                 Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name                String
+  // The record's id in the shop's ERP: a rename there updates this record
+  // instead of creating a second one.
+  externalId          String?
   type                String? // e.g. "cnc_mill", "lathe", "press_brake"
   hourlyRate          Decimal?   @db.Decimal(10, 2)
   efficiency          Float      @default(1.0)
@@ -145,6 +148,7 @@ model WorkCenter {
   calendar CalendarDay[]
   routings Routing[]
 
+  @@unique([orgId, externalId])
   @@unique([orgId, name])
   @@index([orgId])
 }
@@ -215,6 +219,9 @@ model Material {
   orgId        String
   org          Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name         String
+  // The record's id in the shop's ERP: a rename there updates this record
+  // instead of creating a second one.
+  externalId   String?
   spec         String?
   unitCost     Decimal?   @db.Decimal(12, 4)
   unit         String     @default("ea")
@@ -228,6 +235,7 @@ model Material {
   stock              StockLevel[]
   purchaseOrderLines PurchaseOrderLine[]
 
+  @@unique([orgId, externalId])
   @@unique([orgId, name])
   @@index([orgId])
 }
@@ -237,6 +245,9 @@ model Customer {
   orgId           String
   org             Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name            String
+  // The record's id in the shop's ERP: a rename there updates this record
+  // instead of creating a second one.
+  externalId      String?
   paymentTermDays Int?
   // Lowest margin the owner accepts for this customer (0.25 = 25%).
   marginFloor     Float?
@@ -254,6 +265,7 @@ model Customer {
   rfqs        Rfq[]
   customerPos CustomerPo[]
 
+  @@unique([orgId, externalId])
   @@unique([orgId, name])
   @@index([orgId])
 }
@@ -379,6 +391,10 @@ model Job {
   // A planner fixed this operation to workCenterId and plannedStart's day on
   // the schedule board; re-planning keeps it there.
   pinned               Boolean   @default(false)
+  // From the ERP's open-operations report: the operation is closed there
+  // (finished or cancelled), or this many parts are already through it.
+  closedAt             DateTime?
+  qtyDone              Int?
   // Last time the shop's ERP report updated it; read-only in Takumo then.
   syncedAt             DateTime?
 
@@ -621,6 +637,9 @@ model ShopSettings {
   quoteValidityDays Int?
   materialMarkup    Float?
   laborRate         Float?
+  // Margin for drafts when the shop has no won quotes with costs yet
+  // (0.25 = 25%); the estimator can still change it per line.
+  defaultMargin     Float?
   toleranceIn       Float?
   certifications    String[] @default([])
   // [{ process, supplier, leadTimeDays, costPerPart, lotCharge }]

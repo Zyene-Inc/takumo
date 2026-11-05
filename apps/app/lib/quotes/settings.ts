@@ -9,6 +9,9 @@ export const QUOTE_DEFAULTS: QuoteSettings = {
   quoteValidityDays: 30,
   materialMarkup: 0.15,
   laborRate: 95,
+  // Used only until the shop has won quotes with known costs, so a new shop
+  // still gets priced drafts. The build-up says where it came from.
+  defaultMargin: 0.25,
   toleranceIn: 0.0005,
   certifications: [],
   outsideProcesses: [],
@@ -35,6 +38,7 @@ export const quoteSettings = async (orgId: string): Promise<QuoteSettings> => {
       row.quoteValidityDays ?? QUOTE_DEFAULTS.quoteValidityDays,
     materialMarkup: row.materialMarkup ?? QUOTE_DEFAULTS.materialMarkup,
     laborRate: row.laborRate ?? QUOTE_DEFAULTS.laborRate,
+    defaultMargin: row.defaultMargin ?? QUOTE_DEFAULTS.defaultMargin,
     toleranceIn: row.toleranceIn ?? QUOTE_DEFAULTS.toleranceIn,
     certifications: row.certifications,
     outsideProcesses: supplierList(row.outsideProcesses),

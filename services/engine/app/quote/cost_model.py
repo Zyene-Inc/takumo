@@ -268,6 +268,16 @@ def margin_policy(spec: QuoteSpec, history: list[PastQuote]) -> MarginPolicy:
         whose = "the shop's"
 
     if not pool:
+        if spec.target_margin is None and spec.default_margin is not None:
+            return MarginPolicy(
+                target=spec.default_margin,
+                low=spec.default_margin,
+                high=spec.default_margin,
+                basis=(
+                    f"Shop default margin {pct(spec.default_margin)}: "
+                    "no won quotes with a known cost yet."
+                ),
+            )
         if spec.target_margin is None:
             return MarginPolicy(
                 target=None,

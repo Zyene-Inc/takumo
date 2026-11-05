@@ -65,6 +65,9 @@ export interface OrderRow {
   partId: string;
   price: { toString(): string } | null;
   priority: number;
+  /** Parts already through an unfinished operation (seq → count), from the
+   * ERP's open-operations report: its setup is done and only the rest run. */
+  progress?: Record<number, number>;
   qty: number;
 }
 
@@ -309,12 +312,49 @@ const skipReason = (
 const remainingKey = (
   key: string,
   done: Set<number>,
-  remaining: { seq: number }[]
+  remaining: { seq: number }[],
+  through: [number, number][] = []
 ) => {
+  const partly = through.length
+    ? ` (${through.map(([seq, n]) => `op ${seq}: ${n} through`).join(", ")})`
+    : "";
+  if (done.size === 0) {
+    return `${key}${partly}`;
+  }
   const last = Math.max(...done);
   return remaining.every((r) => r.seq > last)
-    ? `${key} after op ${last}`
-    : `${key} ops ${remaining.map((r) => r.seq).join(", ")}`;
+    ? `${key} after op ${last}${partly}`
+    : `${key} ops ${remaining.map((r) => r.seq).join(", ")}${partly}`;
+};
+
+/**
+ * Steps with parts already through: setup is done and only the parts left
+ * run. A step with every part through counts as done.
+ */
+export const applyProgress = <
+  R extends { runMinPerUnit: number; seq: number; setupMin: number },
+>(
+  qty: number,
+  routings: R[],
+  progress: Record<number, number> = {}
+) => {
+  const finished = new Set<number>();
+  const through: [number, number][] = [];
+  const left = routings.flatMap((r) => {
+    const n = progress[r.seq] ?? 0;
+    if (n <= 0) {
+      return [r];
+    }
+    if (n >= qty) {
+      finished.add(r.seq);
+      return [];
+    }
+    through.push([r.seq, n]);
+    return [
+      { ...r, setupMin: 0, runMinPerUnit: (r.runMinPerUnit * (qty - n)) / qty },
+    ];
+  });
+  return { left, finished, through };
 };
 
 /** An order's material date (only when later than the start) and note. */
@@ -357,16 +397,29 @@ export const buildScheduleRequest = (
   )) {
     const part = partsById.get(order.partId);
     const done = new Set(order.doneSeqs ?? []);
-    const remaining = (part?.routings ?? []).filter((r) => !done.has(r.seq));
+    const progressed = applyProgress(
+      order.qty,
+      (part?.routings ?? []).filter((r) => !done.has(r.seq)),
+      order.progress
+    );
+    for (const seq of progressed.finished) {
+      done.add(seq);
+    }
+    const remaining = progressed.left;
     const reason = skipReason(order.qty, part, remaining);
     if (reason || !part) {
       skipped.push({ orderNo: order.orderNo, reason: reason ?? "" });
       continue;
     }
     let partNo = partKeys[part.id];
-    if (remaining.length < part.routings.length) {
+    if (remaining.length < part.routings.length || progressed.through.length) {
       // The rest of the routing, as its own part for the engine.
-      partNo = remainingKey(partKeys[part.id], done, remaining);
+      partNo = remainingKey(
+        partKeys[part.id],
+        done,
+        remaining,
+        progressed.through
+      );
       if (!usedParts.has(partNo)) {
         usedParts.set(
           partNo,

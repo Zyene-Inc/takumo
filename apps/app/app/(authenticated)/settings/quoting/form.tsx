@@ -28,6 +28,7 @@ export interface SupplierRow {
 
 export interface QuotingView {
   certifications: string;
+  defaultMarginPct: string;
   laborRate: string;
   materialMarkupPct: string;
   quoteValidityDays: string;
@@ -96,6 +97,7 @@ export const QuotingForm = ({
       quoteValidityDays: optionalNumber(v.quoteValidityDays),
       materialMarkupPct: optionalNumber(v.materialMarkupPct),
       laborRate: optionalNumber(v.laborRate),
+      defaultMarginPct: optionalNumber(v.defaultMarginPct),
       toleranceIn: optionalNumber(v.toleranceIn),
     };
     const bad = Object.entries(numbers).find(
@@ -132,6 +134,7 @@ export const QuotingForm = ({
         quoteValidityDays: Math.round(numbers.quoteValidityDays as number),
         materialMarkupPct: numbers.materialMarkupPct as number,
         laborRate: numbers.laborRate as number,
+        defaultMarginPct: numbers.defaultMarginPct as number,
         toleranceIn: numbers.toleranceIn as number,
         certifications: splitList(v.certifications),
         outsideProcesses: suppliers.map((s) => ({
@@ -185,6 +188,19 @@ export const QuotingForm = ({
               inputMode="decimal"
               onChange={(e) => set("laborRate")(e.target.value)}
               value={v.laborRate}
+            />
+          </Field>
+          <Field
+            hint="Used until you have won quotes with known costs; after that, drafts use the margins you actually win at."
+            id="margin"
+            label="Default margin (%)"
+          >
+            <Input
+              disabled={disabled}
+              id="margin"
+              inputMode="decimal"
+              onChange={(e) => set("defaultMarginPct")(e.target.value)}
+              value={v.defaultMarginPct}
             />
           </Field>
           <Field

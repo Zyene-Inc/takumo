@@ -172,6 +172,8 @@ export const loadQuoteHistory = async (orgId: string) => {
 
 export interface EstimateInput {
   customer: string | null;
+  /** The shop's margin while it has no won quotes with known costs. */
+  defaultMargin?: number | null;
   material: QuoteMaterial | null;
   newPart: boolean;
   outside: OutsideProcess[];
@@ -239,6 +241,7 @@ export const runEstimate = async (
             qty_breaks: group.qtys,
             outside: input.outside,
             target_margin: input.targetMargin,
+            default_margin: input.defaultMargin ?? null,
             requested_date: input.requestedDate,
           },
         })
@@ -790,6 +793,7 @@ export const estimateLine = async (
       qtys: line.qtys,
       outside: outside.outside,
       targetMargin: line.targetMargin,
+      defaultMargin: settings.defaultMargin,
       requestedDate,
       today,
     },
@@ -868,7 +872,10 @@ export const estimateForPart = async (
     today: string;
   }
 ): Promise<EstimateResult> => {
-  const shop = await loadQuoteHistory(orgId);
+  const [shop, settings] = await Promise.all([
+    loadQuoteHistory(orgId),
+    quoteSettings(orgId),
+  ]);
   const part = shop.candidates.find((c) => c.id === partId);
   if (!part) {
     return { ok: false, error: "That part no longer exists." };
@@ -896,11 +903,12 @@ export const estimateForPart = async (
       qtys: options.qtys,
       outside: [],
       targetMargin: options.targetMargin,
+      defaultMargin: settings.defaultMargin,
       requestedDate: options.requestedDate,
       today: options.today,
     },
     shop,
     true,
-    { laborRate: (await quoteSettings(orgId)).laborRate }
+    { laborRate: settings.laborRate }
   );
 };

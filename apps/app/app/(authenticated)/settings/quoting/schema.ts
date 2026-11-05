@@ -17,6 +17,8 @@ export const quoteSettingsSchema = z.object({
   /** Percent, e.g. 15 for 15%. */
   materialMarkupPct: z.number().min(0).max(300),
   laborRate: z.number().min(0).max(1000),
+  /** Percent, e.g. 25 for 25%. */
+  defaultMarginPct: z.number().min(0).max(89),
   toleranceIn: z.number().min(0.000_01).max(0.1),
   certifications: z.array(z.string().trim().min(1).max(60)).max(30),
   outsideProcesses: z.array(supplierSchema).max(40),

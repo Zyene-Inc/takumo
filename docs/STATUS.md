@@ -71,6 +71,12 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 - 387 app tests, including the material rules, email formatting, who's-on-what, and an end-to-end test that runs the app's real request mapping against the real engine (including the names).
 - 34 import tests, including a roster and bill-of-materials import against a real database.
 
+## Database change (2026-11-05, migration `20261111090000_erp_ids_margin_open_ops`)
+
+- **ERP ids.** Machines, customers and materials take the ERP's own id (an "ERP id" column, e.g. "Cust ID"). A record renamed in the ERP is renamed here instead of becoming a second one; a record first typed in learns its id from the next report. A rename onto a name another record already has is left alone and reported. Parts and orders are already keyed by the ERP's part and order numbers; operators already had employee ids.
+- **Default margin.** Settings → Quoting has a default margin (25% until changed). Drafts use it only while the shop has no won quotes with known costs, and the price build-up says so; the estimator's margin on a line still wins.
+- **Open operations.** A new report type, "Open operations" (order, operation, status, parts through or parts left). Steps closed in the ERP, or left off a listed order, aren't planned; a step with parts already through plans no setup and only the parts left. Orders with progress become "in progress".
+
 ## Audit gaps closed (2026-11-04, live)
 
 - **The ERP renames a column.** A report that arrives with new columns but mostly matches one you confirmed is recognised. Your column choices move over, the admin is emailed what changed with a link straight to it, and **Use the same columns** imports it and retires the old report. The daily check says "your ERP changed its columns", not "stopped arriving".
@@ -116,10 +122,6 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 
 **Engineering, next**
 1. Set up the mail server on the domain and test the whole email flow live (Gmail, Outlook and the ask address).
-2. One database change that needs a decision:
-   - ERP ids on every record, so renames don't create duplicates (operators already have one);
-   - a default margin per shop, so new shops get drafts;
-   - open operations from the ERP's open-jobs report.
-3. Tune the drawing checks (scans, per-machine tolerances) on real drawings from design partners.
+2. Tune the drawing checks (scans, per-machine tolerances) on real drawings from design partners.
 
 **Not started:** Phase 4 (morning brief), Phase 5 (native ERP connectors), Phase 6 (WhatsApp, SMS and shared-folder knowledge), Teams.

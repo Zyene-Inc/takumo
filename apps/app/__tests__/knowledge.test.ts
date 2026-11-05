@@ -224,7 +224,10 @@ describe("recalibration", () => {
 });
 
 describe("planning around finished operations", () => {
-  const shop = (doneSeqs: number[]): ShopRows => ({
+  const shop = (
+    doneSeqs: number[],
+    progress?: Record<number, number>
+  ): ShopRows => ({
     workCenters: [
       {
         id: "wc1",
@@ -276,6 +279,7 @@ describe("planning around finished operations", () => {
         priority: 0,
         price: null,
         doneSeqs,
+        progress,
       },
     ],
     pins: [],
@@ -296,6 +300,28 @@ describe("planning around finished operations", () => {
     const built = buildScheduleRequest(shop([10, 20]), "2026-11-02");
     expect(built.request.orders).toEqual([]);
     expect(built.skipped[0].reason).toMatch(/every operation is finished/);
+  });
+
+  test("parts already through a step: no setup, only the rest run", () => {
+    const { request } = buildScheduleRequest(shop([], { 10: 4 }), "2026-11-02");
+    const key = "P-1 (op 10: 4 through)";
+    expect(request.orders[0].part_no).toBe(key);
+    const routing = request.parts.find((p) => p.part_no === key)?.routing;
+    expect(routing?.[0]).toMatchObject({
+      seq: 10,
+      setup_min: 0,
+      // 6 of 10 parts left at 2 min each: 1.2 min per ordered part.
+      run_min_per_unit: 1.2,
+    });
+    expect(routing?.[1]).toMatchObject({ seq: 20, setup_min: 5 });
+  });
+
+  test("every part through a step: the step is done", () => {
+    const { request } = buildScheduleRequest(
+      shop([], { 10: 10 }),
+      "2026-11-02"
+    );
+    expect(request.orders[0].part_no).toBe("P-1 after op 10");
   });
 
   test("nothing finished: the whole routing, as before", () => {
