@@ -314,7 +314,7 @@ shop's part and machine names first.
 
 See `docs/LAUNCH.md` for the full go-live runbook. Quick checks:
 
-- Sign in on `https://<app-url>`, create a shop, upload `seed/samples/erp-open-orders.csv`.
+- Sign in on `https://<app-url>`, create a shop, upload `seed/acme-precision/orders.csv`.
 - WorkOS → Webhooks → the endpoint shows successful deliveries; the new shop appears in the
   `Org` table.
 - Schedule → Board → **Build the plan**; then Schedule → Can we take this order? returns an answer.
