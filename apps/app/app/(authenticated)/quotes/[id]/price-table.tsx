@@ -20,7 +20,7 @@ import { useState, useTransition } from "react";
 import type { LineFinal } from "@/lib/quotes/types";
 import type { LineView } from "@/lib/quotes/view";
 import { saveFinal } from "../actions";
-import { usd, pct } from "./line-card-parts";
+import { pct, usd } from "./line-card-parts";
 
 export interface PriceInput {
   leadTimeDays: string;

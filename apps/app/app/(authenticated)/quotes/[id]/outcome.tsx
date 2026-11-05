@@ -20,7 +20,7 @@ import type { LineView } from "@/lib/quotes/view";
 import { localToday } from "../../schedule/gantt";
 import { recordLineOutcome } from "../actions";
 import { ErpOrder } from "./erp-order";
-import { usd, quoteHref, OUTCOME_VARIANT } from "./line-card-parts";
+import { OUTCOME_VARIANT, quoteHref, usd } from "./line-card-parts";
 
 export const Outcome = ({
   line,

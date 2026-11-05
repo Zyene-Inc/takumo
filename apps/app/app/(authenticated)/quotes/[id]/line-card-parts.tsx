@@ -20,7 +20,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { LineView } from "@/lib/quotes/view";
 
 export const usd = (value: number | null | undefined, cents = true) =>

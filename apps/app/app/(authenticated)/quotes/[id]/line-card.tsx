@@ -10,16 +10,17 @@ import type { RfqStatus } from "@/lib/quotes/types";
 import type { LineView } from "@/lib/quotes/view";
 import { deleteLine } from "../actions";
 import { Confirm } from "./confirm";
+import { Comparables, CostBuild } from "./cost-build";
 import { DrawingSummary, type OtherLine } from "./drawing-summary";
 import { DrawingViewer, type ViewerFile } from "./drawing-viewer";
-import { lineAnchor } from "./review-focus";
-import type { WorkspaceOptions } from "./workspace";
+import { InputsEditor } from "./inputs-editor";
 import { MatchBadge, Notices } from "./line-card-parts";
 import { LineSpecForm } from "./line-spec-form";
-import { PriceTable } from "./price-table";
-import { CostBuild, Comparables } from "./cost-build";
-import { InputsEditor } from "./inputs-editor";
 import { Outcome } from "./outcome";
+import { PriceTable } from "./price-table";
+import { lineAnchor } from "./review-focus";
+import type { WorkspaceOptions } from "./workspace";
+
 export { LineSpecForm } from "./line-spec-form";
 
 export const LineCard = ({

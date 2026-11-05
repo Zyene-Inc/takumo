@@ -33,7 +33,7 @@ import { useState, useTransition } from "react";
 import type { LineView } from "@/lib/quotes/view";
 import { localToday } from "../../schedule/gantt";
 import { type LineInputs, reestimateLine } from "../actions";
-import { SOURCE_LABEL, Fold } from "./line-card-parts";
+import { Fold, SOURCE_LABEL } from "./line-card-parts";
 
 export interface OpRow {
   alt: string[];

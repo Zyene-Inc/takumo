@@ -18,16 +18,16 @@ import { useState } from "react";
 import { buildUpRows } from "@/lib/quotes/review";
 import type { PriceBuildUp } from "@/lib/quotes/types";
 import type { LineView } from "@/lib/quotes/view";
-import { SourceChip as CostSourceChip } from "./source-chip";
 import {
-  usd,
-  pct,
-  quoteHref,
-  OUTCOME_VARIANT,
-  SourceChip,
   Fold,
   minutes,
+  OUTCOME_VARIANT,
+  pct,
+  quoteHref,
+  SourceChip,
+  usd,
 } from "./line-card-parts";
+import { SourceChip as CostSourceChip } from "./source-chip";
 
 /** Where each part of one quantity's price came from (F2.4-R6). */
 export const BuildUpSources = ({ b }: { b: PriceBuildUp }) => (
