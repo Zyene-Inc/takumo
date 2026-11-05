@@ -82,7 +82,7 @@ const poText = async (orgId: string, body: string, files: IncomingFile[]) => {
   return parts.join("\n\n");
 };
 
-export type ReadPo = ReturnType<typeof normalizePo> & { isPo: boolean };
+type ReadPo = ReturnType<typeof normalizePo> & { isPo: boolean };
 
 /** Read a PO. Throws when the reading fails (the caller records why). */
 export const extractPo = async (

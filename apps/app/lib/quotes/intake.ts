@@ -98,7 +98,7 @@ const keptKeys = (extracted: unknown) => {
 };
 
 /** Rfq.extracted.intake: what happened to the files at intake. */
-export interface IntakeNote {
+interface IntakeNote {
   /** Files left out, with why (too large, too many). */
   skipped: string[];
 }
@@ -225,7 +225,7 @@ export const readRfq = async (orgId: string, rfqId: string) => {
   }
 };
 
-export interface IntakeOptions {
+interface IntakeOptions {
   /** Off for evals and tests that send the same files again on purpose. */
   checkDuplicates?: boolean;
   /** The uploaded file's name, when there was one. */
@@ -242,7 +242,7 @@ export interface IntakeOptions {
   sourceId?: string | null;
 }
 
-export type IntakeResult =
+type IntakeResult =
   | {
       duplicate: false;
       id: string;

@@ -8,7 +8,6 @@ import type {
 
 /** Files an RFQ can arrive as (the upload input's accept list). */
 export const RFQ_TYPES = [".pdf", ".docx", ".eml", ".txt", ".md"] as const;
-export const MAX_RFQ_BYTES = 10 * 1024 * 1024;
 /** Quantity breaks per line the copilot prices. */
 export const MAX_QTY_BREAKS = 6;
 

@@ -63,7 +63,7 @@ export const decrypt = (key: Buffer, sealed: string) => {
   ]).toString("utf8");
 };
 
-export interface OAuthState {
+interface OAuthState {
   exp: number;
   nonce: string;
   orgId: string;
@@ -72,7 +72,7 @@ export interface OAuthState {
 }
 
 /** Minutes a person has to finish connecting. */
-export const STATE_MINUTES = 15;
+const STATE_MINUTES = 15;
 
 const sign = (key: Buffer, body: string) =>
   createHmac("sha256", key).update(`oauth-state.${body}`).digest("base64url");

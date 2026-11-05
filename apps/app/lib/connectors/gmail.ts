@@ -10,10 +10,10 @@ import {
   senderPasses,
 } from "./rfq-rules";
 
-export const GOOGLE_AUTHORIZE_URL =
+const GOOGLE_AUTHORIZE_URL =
   "https://accounts.google.com/o/oauth2/v2/auth";
-export const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
-export const GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke";
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 /** Create drafts (never send): for reply drafts in the RFQ's thread. */
 export const GMAIL_COMPOSE_SCOPE =
@@ -23,7 +23,7 @@ const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
 /** What counts as an RFQ unless the shop sets its own Gmail search. */
 export const DEFAULT_RFQ_QUERY = gmailSubjectQuery();
 /** Messages read per check (the rest wait for the next one). */
-export const MAX_MESSAGES = 20;
+const MAX_MESSAGES = 20;
 
 export const authorizeUrl = (
   clientId: string,
@@ -51,7 +51,7 @@ export const searchFor = (query: string | null | undefined, since: Date) =>
 
 type Fetch = typeof fetch;
 
-export interface GoogleTokens {
+interface GoogleTokens {
   access_token: string;
   expires_in: number;
   refresh_token?: string;
@@ -243,7 +243,7 @@ const encodeHeader = (value: string) =>
 
 const oneLine = (value: string) => value.replace(LINE_BREAKS, " ").trim();
 
-export interface GmailReplyTo {
+interface GmailReplyTo {
   /** The RFQ message's Message-ID header, e.g. "<abc@mail.example.com>". */
   messageId: string;
   /** Its References header, if any, so the whole chain stays linked. */
@@ -254,7 +254,7 @@ export interface GmailReplyTo {
 }
 
 /** A file attached to a draft (the quote PDF). */
-export interface MimeAttachment {
+interface MimeAttachment {
   bytes: Uint8Array;
   mediaType: string;
   name: string;

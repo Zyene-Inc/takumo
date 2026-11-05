@@ -6,7 +6,7 @@ import type { EntityKey } from "./entities";
 import { parseClock, parseDays, WEEKDAYS } from "./shifts";
 import type { ParsedRecord, Value } from "./transform";
 
-export interface SaveResult {
+interface SaveResult {
   readonly created: number;
   // Things the user should know, e.g. machines we had to create from a routing.
   readonly notes: string[];

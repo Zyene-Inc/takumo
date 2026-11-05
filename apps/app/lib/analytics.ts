@@ -6,7 +6,7 @@ import { log } from "@repo/observability/log";
 // Product events, grouped by shop ("company" in PostHog). The north star is
 // questions answered + quotes drafted per shop per week (docs/TAKUMO.md
 // section 14). Nothing is sent without NEXT_PUBLIC_POSTHOG_KEY.
-export const EVENTS = [
+const EVENTS = [
   "question_answered",
   "capacity_checked",
   "plan_built",
@@ -30,7 +30,7 @@ export const EVENTS = [
   "checkout_started",
   "demo_shop_created",
 ] as const;
-export type EventName = (typeof EVENTS)[number];
+type EventName = (typeof EVENTS)[number];
 
 export const track = (
   event: EventName,

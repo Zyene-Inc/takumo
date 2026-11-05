@@ -16,7 +16,7 @@ import { Spinner } from "@repo/design-system/components/ui/spinner";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useState, useTransition } from "react";
 
-export interface LimitField {
+interface LimitField {
   hint?: string;
   key: string;
   label: string;

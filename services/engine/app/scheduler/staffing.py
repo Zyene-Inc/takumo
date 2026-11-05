@@ -137,10 +137,6 @@ def _length(windows: list[Window]) -> int:
     return sum(end - start for start, end in windows)
 
 
-def _overlap(a: Window, b: Window) -> int:
-    return max(0, min(a[1], b[1]) - max(a[0], b[0]))
-
-
 def _truncate(windows: list[Window], minutes: float) -> list[Window]:
     """The first `minutes` of the windows, in time order."""
     out: list[Window] = []

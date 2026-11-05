@@ -10,7 +10,7 @@ import type { PhoneChannel } from "./twilio";
 const API = "https://api.twilio.com/2010-04-01";
 
 /** Voice notes are capped like recordings uploaded in the app. */
-export const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
+const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 
 /** Whether text notes can work at all (the webhook can be checked). */
 export const phoneConfigured = () =>

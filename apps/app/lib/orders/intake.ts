@@ -262,7 +262,7 @@ export const readPo = async (orgId: string, poId: string) => {
   }
 };
 
-export interface PoOptions {
+interface PoOptions {
   /** Already matched (e.g. the mailbox screening knew the sender). */
   customerId?: string | null;
   mail?: MailThread | null;
@@ -270,7 +270,7 @@ export interface PoOptions {
   sourceId?: string | null;
 }
 
-export type PoIntakeResult =
+type PoIntakeResult =
   | { duplicate: true; id: string; number: number }
   | {
       duplicate: false;

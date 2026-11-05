@@ -6,18 +6,18 @@ import { acceptance, type DraftedQuote } from "./numbers";
 
 const HOUR_MS = 3_600_000;
 
-export interface RfqTimes {
+interface RfqTimes {
   draftedAt: Date | null;
   receivedAt: Date;
   sentAt: Date | null;
 }
 
-export interface QuoteFigures extends DraftedQuote {
+interface QuoteFigures extends DraftedQuote {
   estCost: number | null;
   status: "open" | "won" | "lost";
 }
 
-export interface QuoteMetrics {
+interface QuoteMetrics {
   /** Median hours from the RFQ arriving to the draft being ready. */
   hoursToDraft: number | null;
   /** Median hours from the RFQ arriving to the reply being sent. */

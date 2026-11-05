@@ -7,12 +7,7 @@ import { unzipSync } from "fflate";
 import { DOCUMENT_TYPES, IMAGE_TYPES, MODEL_TYPES } from "./file-types";
 import type { RfqFileKind } from "./types";
 
-export {
-  DOCUMENT_TYPES,
-  IMAGE_TYPES,
-  MODEL_TYPES,
-  PACKAGE_TYPES,
-} from "./file-types";
+export { PACKAGE_TYPES } from "./file-types";
 
 export interface IncomingFile {
   bytes: Uint8Array;
@@ -24,10 +19,10 @@ export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 /** All of one RFQ's files together. */
 export const MAX_RFQ_FILES_BYTES = 50 * 1024 * 1024;
 /** Files kept per RFQ. */
-export const MAX_RFQ_FILES = 60;
+const MAX_RFQ_FILES = 60;
 /** A zip package: entries looked at, and bytes unpacked in total. */
 export const MAX_ZIP_ENTRIES = 200;
-export const MAX_ZIP_BYTES = 100 * 1024 * 1024;
+const MAX_ZIP_BYTES = 100 * 1024 * 1024;
 /** Images smaller than this are signature logos, not drawings. */
 const MIN_IMAGE_BYTES = 15 * 1024;
 
@@ -138,7 +133,7 @@ export const kindOf = (
 const JUNK = /(^|\/)(__MACOSX\/|\.DS_Store$|Thumbs\.db$|desktop\.ini$)/i;
 
 /** The name without folders, as it should be shown and downloaded. */
-export const baseName = (path: string) =>
+const baseName = (path: string) =>
   path.slice(path.lastIndexOf("/") + 1).trim() || "file";
 
 /**

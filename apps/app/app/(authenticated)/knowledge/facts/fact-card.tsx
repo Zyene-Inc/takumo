@@ -36,7 +36,7 @@ export interface FactView {
   value: string;
 }
 
-export const SOURCE_LABEL: Record<string, string> = {
+const SOURCE_LABEL: Record<string, string> = {
   chat: "Ask Takumo",
   voice: "Voice note",
   note: "Typed note",

@@ -15,7 +15,7 @@ export interface OperationLog {
   workCenterId?: string | null;
 }
 
-export const MAX_LOG_MINUTES = 100_000;
+const MAX_LOG_MINUTES = 100_000;
 
 export const checkLog = (
   log: OperationLog,

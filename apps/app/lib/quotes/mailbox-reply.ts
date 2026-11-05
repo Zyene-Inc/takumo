@@ -41,8 +41,8 @@ import { loadRfqView, type RfqView } from "./view";
 // Takumo only ever writes drafts; the estimator sends them.
 
 type Provider = "gmail" | "outlook";
-export type DraftMode = "auto" | "explicit";
-export type DraftAction =
+type DraftMode = "auto" | "explicit";
+type DraftAction =
   | "created"
   | "replaced"
   | "added"

@@ -8,7 +8,7 @@ import { SHARED_DOMAINS } from "@repo/ingest";
 import { domainOf, emailAddress, senderAllowed } from "../inbound/verify";
 
 /** Subject words and phrases that mark a request for quote. */
-export const RFQ_SUBJECT_TERMS = [
+const RFQ_SUBJECT_TERMS = [
   "rfq",
   "request for quote",
   "request for quotation",
@@ -18,7 +18,7 @@ export const RFQ_SUBJECT_TERMS = [
 
 /** Limits on what a shop can save, so the Gmail search stays valid. */
 export const MAX_EXTRA_TERMS = 10;
-export const MAX_TERM_LENGTH = 40;
+const MAX_TERM_LENGTH = 40;
 export const MAX_SENDERS = 50;
 
 export interface RfqRules {

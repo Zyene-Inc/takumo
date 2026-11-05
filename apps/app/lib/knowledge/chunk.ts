@@ -6,7 +6,7 @@ export interface PageText {
   text: string;
 }
 
-export interface Chunk {
+interface Chunk {
   content: string;
   /** The nearest heading above the chunk, for context in search results. */
   heading: string | null;
@@ -15,7 +15,7 @@ export interface Chunk {
 
 /** About 250 words per chunk, with some overlap so sentences aren't cut off. */
 export const CHUNK_CHARS = 1400;
-export const OVERLAP_CHARS = 200;
+const OVERLAP_CHARS = 200;
 
 const MARKDOWN_HEADING = /^#{1,6}\s+(.+)$/;
 const SHOUTED_HEADING = /^[A-Z0-9][A-Z0-9 &/,.:()-]{3,60}$/;

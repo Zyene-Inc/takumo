@@ -27,7 +27,7 @@ const Log = z.object({
   note: z.string().trim().max(4000),
 });
 
-export type LogValues = z.input<typeof Log>;
+type LogValues = z.input<typeof Log>;
 
 const refresh = () => {
   revalidatePath("/schedule/floor");

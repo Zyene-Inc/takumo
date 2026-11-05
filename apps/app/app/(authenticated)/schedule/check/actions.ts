@@ -33,7 +33,7 @@ const CheckForm = z.object({
 
 export type CheckFormValues = z.input<typeof CheckForm>;
 
-export type CheckResult = CapacityAnswer;
+type CheckResult = CapacityAnswer;
 
 /** "Can we take this order?" Anyone in the shop can ask; nothing is saved to the plan. */
 export const checkOrder = async (

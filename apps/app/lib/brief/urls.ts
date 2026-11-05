@@ -16,7 +16,7 @@ const app = (path: string) => `${env.NEXT_PUBLIC_APP_URL}${path}`;
 
 const expires = (now: Date) => Math.floor(now.getTime() / 1000) + LINK_TTL_S;
 
-export interface Recipient {
+interface Recipient {
   orgId: string;
   userId: string;
 }

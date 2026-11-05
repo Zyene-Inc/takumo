@@ -1,9 +1,9 @@
 import type { UIMessage } from "@repo/ai";
 
 /** Questions whose tool results the model still sees in full. */
-export const FULL_TURNS = 3;
+const FULL_TURNS = 3;
 /** After this many questions the composer suggests a new conversation. */
-export const LONG_CONVERSATION = 20;
+const LONG_CONVERSATION = 20;
 
 /**
  * What the model sees of a conversation: the last few questions in full, and

@@ -14,7 +14,7 @@ export const FEATURES = [
 ] as const;
 export type Feature = (typeof FEATURES)[number];
 
-export interface Plan {
+interface Plan {
   features: readonly Feature[];
   key: PlanKey;
   /** Stripe price lookup key (scripts/setup-stripe.ts creates the prices). */
@@ -76,7 +76,7 @@ export const SELF_SERVE: readonly PlanKey[] = ["shop", "pro"];
 
 export const TRIAL_DAYS = 30;
 /** Days a shop keeps paid features after a payment fails. */
-export const PAST_DUE_GRACE_DAYS = 7;
+const PAST_DUE_GRACE_DAYS = 7;
 
 const DAY_MS = 86_400_000;
 
@@ -102,14 +102,14 @@ export interface OrgBilling {
   trialEndsAt: Date | null;
 }
 
-export type AccessState =
+type AccessState =
   | "trial" // free trial, all features
   | "active" // paid (or a custom Plant plan)
   | "past_due" // payment failed: features kept for a grace period
   | "expired" // trial over, no subscription
   | "canceled"; // subscription ended
 
-export interface Entitlements {
+interface Entitlements {
   /** Paid features this shop can use now. */
   features: ReadonlySet<Feature>;
   plan: Plan;

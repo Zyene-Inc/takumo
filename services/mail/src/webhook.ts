@@ -13,7 +13,7 @@ export interface AuthSummary {
   spf: string;
 }
 
-export interface Delivery {
+interface Delivery {
   auth: AuthSummary;
   mailFrom: string;
   raw: Buffer;
@@ -134,7 +134,7 @@ export function buildHeaders(
   };
 }
 
-export interface WebhookOptions {
+interface WebhookOptions {
   now?: () => number;
   secret: string;
   timeoutMs: number;

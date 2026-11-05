@@ -9,7 +9,7 @@ export const MAX_MESSAGE_CHARS = 4000;
 /** Messages per user per minute. */
 export const RATE_LIMIT = 8;
 
-export interface ConversationSummary {
+interface ConversationSummary {
   id: string;
   messages: number;
   title: string;

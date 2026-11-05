@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 
 /** What the health check reports about malware scanning. */
-export type ScannerStatus = () => Promise<"off" | "ok" | "unreachable">;
+type ScannerStatus = () => Promise<"off" | "ok" | "unreachable">;
 
 /**
  * GET /health -> {"status":"ok","scanner":"ok|off|unreachable"}; 503 when the

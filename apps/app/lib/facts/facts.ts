@@ -29,14 +29,14 @@ export type FactSource =
   | "document"
   | "manual";
 
-export interface Subject {
+interface Subject {
   id: string;
   label: string;
   type: SubjectType;
 }
 
 /** How people refer to a subject: a part number and op, a machine's name… */
-export interface SubjectRef {
+interface SubjectRef {
   name?: string | null;
   partNo?: string | null;
   rev?: string | null;
@@ -252,7 +252,7 @@ export const currentValue = async (
   return null;
 };
 
-export interface Proposal {
+interface Proposal {
   attribute: string;
   evidence: string | null;
   noteId?: string | null;
@@ -262,7 +262,7 @@ export interface Proposal {
   value: unknown;
 }
 
-export type ProposeResult = Result<{
+type ProposeResult = Result<{
   /** An identical fact was already waiting for review. */
   existing: boolean;
   fact: { id: string; label: string; number: number };

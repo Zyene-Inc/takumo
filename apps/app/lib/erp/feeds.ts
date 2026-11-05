@@ -8,7 +8,7 @@ import type { EntityKey } from "@repo/ingest";
 // it's entered, Takumo reads it.
 
 /** Last import time per entity the ERP feeds (null: none yet). */
-export type ErpFeeds = Partial<Record<EntityKey, Date | null>>;
+type ErpFeeds = Partial<Record<EntityKey, Date | null>>;
 
 export const erpFeeds = async (orgId: string): Promise<ErpFeeds> => {
   const reports = await forOrg(database, orgId).erpReport.findMany({

@@ -16,7 +16,7 @@ export interface MaterialPart {
   unit: string | null;
 }
 
-export interface MaterialInfo {
+interface MaterialInfo {
   leadTimeDays: number | null;
   name: string;
   unit: string;

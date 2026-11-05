@@ -8,7 +8,7 @@ interface ViewDoc {
   notes?: string;
 }
 
-export const ASK_VIEWS: ViewDoc[] = [
+const ASK_VIEWS: ViewDoc[] = [
   {
     name: "work_centers",
     columns:

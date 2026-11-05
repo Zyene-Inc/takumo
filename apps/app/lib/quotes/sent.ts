@@ -76,7 +76,7 @@ const updateQuotedPrices = async (
  * line's prices can't be read from the email, the RFQ waits for the
  * estimator to approve it in Takumo. Returns a note for the sync result.
  */
-export const recordSent = async (
+const recordSent = async (
   orgId: string,
   rfqId: string,
   sent: { at: Date; messageId: string; text: string }

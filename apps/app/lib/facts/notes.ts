@@ -42,8 +42,6 @@ const factSchema = z.object({
 
 const schema = z.object({ facts: z.array(factSchema) });
 
-export type NoteFact = z.infer<typeof factSchema>;
-
 const attributeList = () =>
   Object.entries(ATTRIBUTES)
     .map(
@@ -144,7 +142,7 @@ ${text.slice(0, MAX_NOTE_CHARS)}
   }
 };
 
-export interface NoteResult {
+interface NoteResult {
   noteId: string;
   /** Facts proposed from the note, e.g. ["F-12"]. */
   proposed: string[];

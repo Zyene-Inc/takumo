@@ -10,12 +10,12 @@ import { normalizePartNo } from "./match";
 import { DEFAULT_NOTE, type PlannedOperation } from "./pricing";
 
 /** Jobs needed before their actual times replace the routing's. */
-export const MIN_ACTUAL_JOBS = 2;
+const MIN_ACTUAL_JOBS = 2;
 /** How far a factor may scale a comparable part's time. */
-export const MIN_SCALE = 0.25;
-export const MAX_SCALE = 4;
+const MIN_SCALE = 0.25;
+const MAX_SCALE = 4;
 
-export interface ActualJob {
+interface ActualJob {
   actualRunMin: number | null;
   actualSetupMin: number | null;
   qty: number;
@@ -117,7 +117,7 @@ export const similarParts = (
 };
 
 /** One operation as the model proposes it. */
-export interface ProposedOp {
+interface ProposedOp {
   /** Other shop machines that could run it. */
   alternates?: string[];
   basisPartNo: string | null;

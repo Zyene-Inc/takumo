@@ -52,7 +52,7 @@ For each part number on these pages, return:
 For every value give: the text exactly as printed; confidence (high when clearly printed, medium when partly unclear, low for scans, rotated or handwritten text, or anything you're unsure of); the page it is on (from 1, in this file); and its box [ymin, xmin, ymax, xmax] on that page, 0–1000.
 Leave out what isn't on the drawing. Units: "in" or "mm" as the drawing states (title block or dimensions), else "unknown".`;
 
-export interface DrawingFile {
+interface DrawingFile {
   data: Uint8Array;
   id: string;
   mediaType: string;

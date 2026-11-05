@@ -42,7 +42,7 @@ export const normalize = (name: string) =>
   name.toUpperCase().replace(NON_ALNUM, "");
 
 /** "P2001 rev C" → { name: "P2001", rev: "C" }. */
-export const splitRev = (name: string) => {
+const splitRev = (name: string) => {
   const m = name.match(REV);
   return m?.index && m.index > 0
     ? { name: name.slice(0, m.index), rev: m[1].toUpperCase() }

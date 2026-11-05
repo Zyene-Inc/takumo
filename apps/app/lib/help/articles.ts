@@ -1,7 +1,7 @@
 // In-app help: short task guides, in Markdown. Keep them true to what the app
 // does; update an article in the same change as the feature it describes.
 
-export interface HelpArticle {
+interface HelpArticle {
   body: string;
   slug: string;
   summary: string;

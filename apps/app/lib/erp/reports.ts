@@ -29,9 +29,9 @@ const MAX_PENDING_ROWS = 20_000;
  * duplicate report the same day is a no-op). Hours rather than the calendar
  * day, so a resend just after midnight is still caught.
  */
-export const DUPLICATE_WITHIN_MS = 20 * 3_600_000;
+const DUPLICATE_WITHIN_MS = 20 * 3_600_000;
 export const REPORT_MODES = ["full", "changes"] as const;
-export type ReportMode = (typeof REPORT_MODES)[number];
+type ReportMode = (typeof REPORT_MODES)[number];
 
 export interface ReportResult {
   /** Records the ERP no longer lists (full reports): closed, received, zeroed. */
@@ -61,7 +61,7 @@ export type Replaces = Pick<
 >;
 
 /** Nothing in the report could be read: a column was renamed or removed. */
-export class UnreadableReportError extends Error {}
+class UnreadableReportError extends Error {}
 
 export type SheetOutcome =
   | { status: "imported"; report: string; result: ReportResult }
@@ -174,7 +174,7 @@ const closeIfSafe = async (
 };
 
 /** Import rows with a confirmed mapping, stamped as coming from the ERP. */
-export const importReportRows = async (
+const importReportRows = async (
   orgId: string,
   report: { id: string; name: string; mode: string },
   mapping: ColumnMapping,

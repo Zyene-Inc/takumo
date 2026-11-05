@@ -94,7 +94,7 @@ const buildEmail = async (
   };
 };
 
-export interface BriefRun {
+interface BriefRun {
   checked: number;
   empty: number;
   failed: number;

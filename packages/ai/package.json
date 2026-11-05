@@ -12,15 +12,10 @@
     "@ai-sdk/openai": "^4.0.108",
     "@t3-oss/env-nextjs": "^0.13.10",
     "ai": "^7.0.162",
-    "react": "19.2.4",
-    "streamdown": "^2.4.0",
-    "tailwind-merge": "^3.5.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
-    "@types/node": "25.3.5",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3"
+    "@types/node": "25.3.5"
   }
 }

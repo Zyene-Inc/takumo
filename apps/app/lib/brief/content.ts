@@ -54,7 +54,7 @@ export const sectionsFor = (role: string | null): SectionKey[] => {
   }
 };
 
-export interface BriefButton {
+interface BriefButton {
   action: LinkAction;
   label: string;
 }
@@ -119,7 +119,7 @@ export interface ShopBrief {
 const BULLET = /^•\s*/;
 
 /** The most lines a section shows; the rest are a link away. */
-export const MAX_LINES = 5;
+const MAX_LINES = 5;
 const TOP_FACTS = 3;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

@@ -32,7 +32,7 @@ const SPF_FAIL = /\bspf=(fail|softfail)\b/i;
 const DKIM_PASS = /\bdkim=pass\b/i;
 
 /** Headers the free checks look at, lower-cased names. */
-export type MailHeaders = ReadonlyMap<string, string>;
+type MailHeaders = ReadonlyMap<string, string>;
 
 /**
  * Free checks, no AI: mail that is clearly not a customer asking for a price.

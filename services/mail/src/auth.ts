@@ -15,7 +15,7 @@ const SPF_RESULTS = new Set([
 
 export type DnsResolver = NonNullable<AuthenticateOptions["resolver"]>;
 
-export interface AuthInput {
+interface AuthInput {
   helo: string;
   ip: string;
   mailFrom: string;

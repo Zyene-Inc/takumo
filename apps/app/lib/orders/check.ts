@@ -7,7 +7,7 @@ import type { PoCheck, PoHeader, PoLine, QuoteMatch } from "./types";
 
 const DAY_MS = 86_400_000;
 /** Prices within this share of the quote count as the same. */
-export const PRICE_TOLERANCE = 0.005;
+const PRICE_TOLERANCE = 0.005;
 
 export interface CustomerRow extends KnownCustomer {
   name: string;
@@ -27,7 +27,7 @@ export interface QuoteRow {
   status: string;
 }
 
-export interface CheckInput {
+interface CheckInput {
   customers: CustomerRow[];
   header: PoHeader;
   lines: PoLine[];
@@ -40,7 +40,7 @@ export interface CheckInput {
   validityDays: number;
 }
 
-export interface CheckResult {
+interface CheckResult {
   checks: PoCheck[];
   customerId: string | null;
   lines: PoLine[];
@@ -62,7 +62,7 @@ const addDays = (iso: string, days: number) =>
     .slice(0, 10);
 
 /** The customer: by the sender's address or domain first, then by name. */
-export const findCustomer = (
+const findCustomer = (
   sender: string | null,
   name: string | null,
   customers: CustomerRow[]

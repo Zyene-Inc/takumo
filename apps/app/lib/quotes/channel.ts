@@ -5,7 +5,7 @@
 import { senderAddress } from "./attachments";
 
 /** Domains that send customer-portal and sourcing-event notifications. */
-export const PORTAL_DOMAINS = [
+const PORTAL_DOMAINS = [
   "ariba.com",
   "ansmtp.ariba.com",
   "coupahost.com",
@@ -32,7 +32,7 @@ export const PORTAL_DOMAINS = [
 ] as const;
 
 /** Domains of website form services that email each submission. */
-export const FORM_DOMAINS = [
+const FORM_DOMAINS = [
   "formspree.io",
   "jotform.com",
   "wufoo.com",

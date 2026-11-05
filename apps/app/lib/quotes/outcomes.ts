@@ -9,7 +9,7 @@ export const WIN_WINDOW_DAYS = 60;
  * import: they were already open, not answers to a quote. */
 const FIRST_IMPORT_MS = 6 * 60 * 60 * 1000;
 
-export interface OpenQuote {
+interface OpenQuote {
   customerId: string | null;
   id: string;
   partId: string | null;
@@ -17,7 +17,7 @@ export interface OpenQuote {
   since: Date;
 }
 
-export interface ErpOrder {
+interface ErpOrder {
   /** When Takumo first saw it (the order's row was created). */
   createdAt: Date;
   customerId: string | null;
@@ -26,7 +26,7 @@ export interface ErpOrder {
   qty: number;
 }
 
-export interface Settlement {
+interface Settlement {
   lost: string[];
   won: { orderNo: string; qty: number; quoteId: string }[];
 }

@@ -11,7 +11,7 @@ import {
   toSheet,
 } from "@/app/(authenticated)/onboarding/read-file";
 
-export const REPORT_TYPES = [
+const REPORT_TYPES = [
   ".csv",
   ".tsv",
   ".txt",

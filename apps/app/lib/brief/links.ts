@@ -44,7 +44,7 @@ export type LinkPayload =
       e: number;
     };
 
-export type Verified =
+type Verified =
   | { ok: true; payload: LinkPayload }
   | { ok: false; reason: "invalid" | "expired" };
 
@@ -53,7 +53,7 @@ const b64 = (data: Buffer | string) => Buffer.from(data).toString("base64url");
 const mac = (secret: string, body: string) =>
   createHmac("sha256", secret).update(body).digest();
 
-export const newNonce = () => randomBytes(16).toString("base64url");
+const newNonce = () => randomBytes(16).toString("base64url");
 
 /** A token for `payload`, signed with `secret`. */
 export const signLink = (secret: string, payload: LinkPayload) => {

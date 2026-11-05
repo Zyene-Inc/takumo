@@ -80,7 +80,7 @@ const FIRST_LOOK_BACK_DAYS = 3;
 /** Earlier customer RFQs looked at for "known customers only". */
 const KNOWN_SENDER_RFQS = 500;
 
-export interface SyncResult {
+interface SyncResult {
   created: number;
   notes: string[];
   skipped: number;

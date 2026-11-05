@@ -12,7 +12,7 @@ export const PROVIDER_NAME: Record<Provider, string> = {
   outlook: "Outlook",
 };
 
-export const redirectUri = (provider: Provider) =>
+const redirectUri = (provider: Provider) =>
   `${env.NEXT_PUBLIC_APP_URL}/api/connectors/${provider}/callback`;
 
 /** Where Microsoft sends a shop's IT person after approving Takumo. */

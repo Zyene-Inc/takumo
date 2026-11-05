@@ -6,7 +6,7 @@ import type { PrismaClient } from "./generated/client";
 import { keys } from "./keys";
 import { checkSql, QueryError } from "./sql-guard";
 
-export { checkSql, QueryError } from "./sql-guard";
+export { QueryError } from "./sql-guard";
 
 /**
  * Read-only SQL for Ask Takumo, run as the takumo_reader login. The reader can
@@ -16,11 +16,11 @@ export { checkSql, QueryError } from "./sql-guard";
  * returns no rows; everything else is refused by the database itself.
  */
 
-export const MAX_ROWS = 200;
+const MAX_ROWS = 200;
 
-export type QueryRow = Record<string, string | number | boolean | null | (string | number | null)[]>;
+type QueryRow = Record<string, string | number | boolean | null | (string | number | null)[]>;
 
-export interface QueryResult {
+interface QueryResult {
   columns: string[];
   rows: QueryRow[];
   /** More rows matched than MAX_ROWS. */

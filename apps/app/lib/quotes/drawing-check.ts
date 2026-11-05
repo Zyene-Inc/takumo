@@ -15,7 +15,7 @@ import type {
 const MM_PER_IN = 25.4;
 
 /** A length in the drawing's units, in inches (for checks only; never shown). */
-export const toInches = (n: number, units: DrawingReading["units"]) =>
+const toInches = (n: number, units: DrawingReading["units"]) =>
   units === "mm" ? n / MM_PER_IN : n;
 
 type Tolerance = DrawingReading["tolerances"][number];
@@ -107,7 +107,7 @@ const partSize = (reading: DrawingReading) => {
 };
 
 /** Whether a part of this size fits the machine, in any orientation. */
-export const fits = (
+const fits = (
   part: NonNullable<ReturnType<typeof partSize>>,
   machine: Rect | Round
 ) => {
@@ -153,7 +153,7 @@ const squash = (s: string) => s.toLowerCase().replace(NOT_ALNUM, "");
  * Two ways of writing the same thing ("6061-T6 AL" vs "AL 6061-T6 PER AMS…"):
  * one contains the other, or the grades agree and most words are shared.
  */
-export const sameText = (a: string, b: string) => {
+const sameText = (a: string, b: string) => {
   const x = squash(a);
   const y = squash(b);
   if (!(x && y)) {
@@ -196,7 +196,7 @@ const FINISH_WORDS: Record<string, string[]> = {
 };
 
 /** The outside supplier for a finish, if the shop has one for it. */
-export const supplierFor = (
+const supplierFor = (
   finish: DrawingReading["finishes"][number],
   suppliers: CheckContext["outsideProcesses"]
 ) => {
@@ -292,7 +292,7 @@ const holds = (m: CheckContext["machines"][number], shopToleranceIn: number) =>
  * F2.2-R5, per machine: the tightest tolerance needs a machine that holds it
  * and that the part fits on. A machine with no size given might fit.
  */
-export const toleranceFlags = (r: DrawingReading, ctx: CheckContext) => {
+const toleranceFlags = (r: DrawingReading, ctx: CheckContext) => {
   const tight = tightestTolerance(r);
   const tightIn = tight ? plusMinusInches(tight, r.units) : null;
   if (!tight || tightIn === null) {
@@ -586,12 +586,12 @@ export const noDrawingReading = (
 
 // --- Which RFQ line each drawn part belongs to (R8) --------------------------
 
-export interface LineRef {
+interface LineRef {
   id: string;
   partNo: string | null;
 }
 
-export interface Assignment<P> {
+interface Assignment<P> {
   /** Parts found on drawings that the RFQ text didn't list: new lines. */
   create: P[];
   /** Line id → the part read for it. */
@@ -648,7 +648,7 @@ export const assignParts = <P extends Pick<DrawingReading, "titleBlock">>(
 };
 
 /** "±0.0005 (tightest), Ra 32" for RfqLine.tolerances. */
-export const toleranceSummary = (reading: DrawingReading) => {
+const toleranceSummary = (reading: DrawingReading) => {
   const tight = tightestTolerance(reading);
   const surface = reading.tolerances
     .filter((t) => t.kind === "surface" && t.tolerance !== null)

@@ -46,7 +46,7 @@ const schema = z.object({
     .describe("At most 3 things the estimator should check"),
 });
 
-export interface ProposeInput {
+interface ProposeInput {
   candidates: CandidatePart[];
   line: {
     description: string | null;

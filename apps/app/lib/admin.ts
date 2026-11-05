@@ -4,7 +4,7 @@ import { auth } from "@repo/auth/server";
 import { env } from "@/env";
 
 /** Takumo staff: WorkOS user ids in ADMIN_USER_IDS (comma separated). */
-export const isAdmin = (userId: string | null) =>
+const isAdmin = (userId: string | null) =>
   Boolean(
     userId &&
       (env.ADMIN_USER_IDS ?? "")

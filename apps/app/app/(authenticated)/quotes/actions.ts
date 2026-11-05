@@ -348,7 +348,7 @@ const LineFields = z.object({
   notes: z.string().trim().max(1000),
 });
 
-export type LineFieldValues = z.input<typeof LineFields>;
+type LineFieldValues = z.input<typeof LineFields>;
 
 /** The quantities, or why the line can't be saved. */
 const lineQtys = (v: z.output<typeof LineFields>): number[] | string => {

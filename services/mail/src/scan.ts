@@ -9,7 +9,7 @@ export interface ScanConfig {
   timeoutMs: number;
 }
 
-export type ScanResult =
+type ScanResult =
   | { status: "clean" }
   | { status: "infected"; signature: string }
   | { status: "error"; message: string };

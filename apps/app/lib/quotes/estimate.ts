@@ -170,7 +170,7 @@ export const loadQuoteHistory = async (orgId: string) => {
   };
 };
 
-export interface EstimateInput {
+interface EstimateInput {
   customer: string | null;
   /** The shop's margin while it has no won quotes with known costs. */
   defaultMargin?: number | null;
@@ -185,12 +185,12 @@ export interface EstimateInput {
   today: string;
 }
 
-export type EstimateResult =
+type EstimateResult =
   | { ok: true; inputs: DraftInputs; response: QuoteResponse }
   | { ok: false; error: string };
 
 /** Ask the engine for cost, price and lead time at each quantity. */
-export const runEstimate = async (
+const runEstimate = async (
   orgId: string,
   input: EstimateInput,
   history: Awaited<ReturnType<typeof loadQuoteHistory>>,
@@ -495,7 +495,7 @@ const operationsFor = async (
   }
 };
 
-export type LineEstimate =
+type LineEstimate =
   | { ok: true; draft: LineDraft }
   | { ok: false; error: string };
 

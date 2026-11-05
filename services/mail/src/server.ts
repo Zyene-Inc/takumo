@@ -20,13 +20,13 @@ import { deliver, type SmtpReply } from "./webhook.js";
 /** Longest one SMTP session may last, however busy it looks. */
 const MAX_SESSION_MS = 10 * 60_000;
 
-export interface ServerDeps {
+interface ServerDeps {
   now?: () => number;
   /** DNS resolver for SPF/DKIM/DMARC (tests use a fake one). */
   resolver?: DnsResolver;
 }
 
-export interface MailServer {
+interface MailServer {
   close(): Promise<void>;
   listen(): Promise<number>;
   /** Installs (or replaces) the STARTTLS certificate. */
@@ -48,7 +48,7 @@ function smtpError(code: number, enhanced: string, message: string): Error {
 }
 
 /** "::ffff:203.0.113.5" -> "203.0.113.5" */
-export function normalizeIp(address: string): string {
+function normalizeIp(address: string): string {
   return address.startsWith("::ffff:") && address.includes(".")
     ? address.slice(7)
     : address;
