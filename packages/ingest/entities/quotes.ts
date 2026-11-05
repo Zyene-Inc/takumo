@@ -1,0 +1,92 @@
+import type { EntityDef } from "./types";
+
+export const quotes: EntityDef = {
+  key: "quotes",
+  label: "Past quotes",
+  description: "Quotes you sent, won or lost: the basis for pricing new work.",
+  identity: ["quoteNo"],
+  fields: [
+    {
+      key: "quoteNo",
+      label: "Quote number",
+      kind: "text",
+      required: true,
+      synonyms: ["quote no", "quote number", "quote", "quote #", "estimate"],
+    },
+    {
+      key: "qty",
+      label: "Quantity",
+      kind: "integer",
+      positive: true,
+      required: true,
+      synonyms: ["qty", "quantity", "pcs"],
+    },
+    {
+      key: "customer",
+      label: "Customer",
+      kind: "text",
+      synonyms: ["customer", "customer name", "client"],
+    },
+    {
+      key: "partNo",
+      label: "Part number",
+      kind: "text",
+      synonyms: ["part no", "part number", "part", "pn", "p/n", "item"],
+    },
+    {
+      key: "rev",
+      label: "Revision",
+      kind: "text",
+      synonyms: ["rev", "revision", "part rev"],
+      hint: "Leave blank to use the part's latest revision",
+    },
+    {
+      key: "price",
+      label: "Quoted price",
+      kind: "number",
+      synonyms: ["price", "quoted price", "total", "amount", "quote total"],
+    },
+    {
+      key: "leadTimeDays",
+      label: "Lead time (days)",
+      kind: "integer",
+      synonyms: ["lead time", "lead time days", "lt", "lead days"],
+    },
+    {
+      key: "estCost",
+      label: "Estimated cost",
+      kind: "number",
+      synonyms: ["est cost", "estimated cost", "estimate cost", "cost"],
+    },
+    {
+      key: "actualCost",
+      label: "Actual cost",
+      kind: "number",
+      synonyms: ["actual cost", "actual", "job cost"],
+    },
+    {
+      key: "status",
+      label: "Status",
+      kind: "enum",
+      synonyms: ["status", "result", "outcome", "won/lost"],
+      values: ["open", "won", "lost"],
+      valueAliases: {
+        pending: "open",
+        sent: "open",
+        awarded: "won",
+        win: "won",
+        po: "won",
+        "po received": "won",
+        loss: "lost",
+        declined: "lost",
+        "no bid": "lost",
+      },
+    },
+    {
+      key: "quotedAt",
+      label: "Quote date",
+      kind: "date",
+      synonyms: ["quoted at", "quote date", "date", "sent", "created"],
+    },
+  ],
+};

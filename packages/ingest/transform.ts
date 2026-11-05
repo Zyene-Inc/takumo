@@ -197,6 +197,41 @@ const parseCell = (
 };
 
 /**
+ * One field of one row: its value, or null with the problem added to
+ * `errors`. `ok` is false when a required value is missing or unreadable.
+ */
+const readField = (
+  field: FieldDef,
+  cell: Cell | undefined,
+  inHours: boolean,
+  rowNumber: number,
+  errors: RowError[]
+): { ok: boolean; value: Value } => {
+  if (isBlank(cell)) {
+    if (field.required) {
+      errors.push({
+        row: rowNumber,
+        field: field.label,
+        message: "Missing value",
+        severity: "error",
+      });
+    }
+    return { ok: !field.required, value: null };
+  }
+  const parsed = parseCell(field, cell, inHours);
+  if ("error" in parsed) {
+    errors.push({
+      row: rowNumber,
+      field: field.label,
+      message: parsed.error,
+      severity: field.required ? "error" : "warning",
+    });
+    return { ok: !field.required, value: null };
+  }
+  return { ok: true, value: parsed.value };
+};
+
+/**
  * Turns sheet rows into typed records using the confirmed mapping.
  * Rows missing a required value, or with a value that can't be read, are
  * reported in `errors` and left out of `records`.
@@ -222,39 +257,15 @@ export const parseRows = (
     let ok = true;
     for (const field of fields) {
       const column = mapping.columns[field.key];
-      const cell = column ? row[column] : undefined;
-      if (isBlank(cell)) {
-        if (field.required) {
-          errors.push({
-            row: rowNumber,
-            field: field.label,
-            message: "Missing value",
-            severity: "error",
-          });
-          ok = false;
-        }
-        values[field.key] = null;
-        continue;
-      }
-      const parsed = parseCell(
+      const read = readField(
         field,
-        cell,
-        mapping.timeUnits[field.key] === "hours"
+        column ? row[column] : undefined,
+        mapping.timeUnits[field.key] === "hours",
+        rowNumber,
+        errors
       );
-      if ("error" in parsed) {
-        errors.push({
-          row: rowNumber,
-          field: field.label,
-          message: parsed.error,
-          severity: field.required ? "error" : "warning",
-        });
-        if (field.required) {
-          ok = false;
-        }
-        values[field.key] = null;
-      } else {
-        values[field.key] = parsed.value;
-      }
+      values[field.key] = read.value;
+      ok &&= read.ok;
     }
     if (ok) {
       records.push({ row: rowNumber, values });
