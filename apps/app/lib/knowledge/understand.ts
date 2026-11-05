@@ -13,7 +13,7 @@ import {
   resolveMention,
 } from "./resolve";
 
-export const DOC_TYPES = [
+const DOC_TYPES = [
   "setup_sheet",
   "sop",
   "work_instruction",

@@ -55,7 +55,7 @@ const addDays = (iso: string, days: number) =>
 // ---------------------------------------------------------------------------
 // Units and stock
 
-export type StockUnit =
+type StockUnit =
   | "lb"
   | "kg"
   | "in"
@@ -145,7 +145,7 @@ const numbers = (text: string) => {
   return out;
 };
 
-export interface StockDims {
+interface StockDims {
   diameter?: number;
   /** Inside diameter of a tube. */
   inner?: number;
@@ -260,7 +260,7 @@ const volumeIn3 = (d: StockDims) => {
   return null;
 };
 
-export interface StockUsage {
+interface StockUsage {
   basis: string;
   usage: number;
 }
@@ -405,7 +405,7 @@ const sameUnit = (a: string | null, b: string | null) =>
   normalizeUnit(a) === normalizeUnit(b) ||
   a.trim().toLowerCase() === b.trim().toLowerCase();
 
-export interface PoPrice {
+interface PoPrice {
   date: string;
   lineNo: number;
   poNo: string;
@@ -454,7 +454,7 @@ export interface MaterialPricing {
   usagePerPart: number | null;
 }
 
-export interface MaterialInput {
+interface MaterialInput {
   drawingUnits: "in" | "mm" | null;
   /** Cost per part typed in by the estimator. */
   estimatorCost: number | null;
@@ -738,7 +738,7 @@ export const doneInHouse = (finish: string, stations: string[]) => {
   return Boolean(family && stations.some((s) => family[1].test(s)));
 };
 
-export interface OutsidePlan {
+interface OutsidePlan {
   meta: BuildUpOutside[];
   outside: OutsideProcess[];
 }
@@ -986,7 +986,7 @@ export const withOutsideDays = (
 const RATE_DEFAULT_LABEL =
   "Shop labor rate (default, set it in Settings → Quoting)";
 
-export interface BuildUpContext {
+interface BuildUpContext {
   floor: number | null;
   floorRaised: Set<number>;
   laborRate: { rate: number; set: boolean };

@@ -14,7 +14,7 @@ const MIN_PAGE_TEXT = 40;
 const PAGES_PER_CALL = 5;
 const PARALLEL_CALLS = 3;
 
-export const IMAGE_MEDIA: Record<string, string> = {
+const IMAGE_MEDIA: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".png": "image/png",
@@ -96,7 +96,7 @@ export const inGroups = <T>(items: T[], size: number) =>
     items.slice(i * size, (i + 1) * size)
   );
 
-export interface ReadResult {
+interface ReadResult {
   pages: PageText[];
   /** Pages read from an image (scans, photos) rather than a text layer. */
   recognized: number;

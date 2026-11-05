@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const money = z.number().min(0).max(100_000);
 
-export const supplierSchema = z.object({
+const supplierSchema = z.object({
   process: z.string().trim().min(1, "Name the process").max(80),
   supplier: z.string().trim().max(80).nullable(),
   leadTimeDays: z.number().int().min(0).max(365).nullable(),

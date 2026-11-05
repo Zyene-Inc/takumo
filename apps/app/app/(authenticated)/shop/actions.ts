@@ -12,7 +12,7 @@ import { revalidatePath } from "next/cache";
 import { authorize, permissionFor } from "@/lib/access";
 import { erpFeeds, fedByErp } from "@/lib/erp/feeds";
 
-export interface SaveRecordResult {
+interface SaveRecordResult {
   readonly errors: string[];
   readonly ok: boolean;
 }

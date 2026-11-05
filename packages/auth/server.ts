@@ -8,19 +8,14 @@ export {
   getSignUpUrl,
   getWorkOS,
   handleAuth,
-  refreshSession,
   signOut,
   switchToOrganization,
   withAuth,
 } from "@workos-inc/authkit-nextjs";
-export type {
-  Event as WebhookEvent,
-  Organization,
-  User,
-} from "@workos-inc/node";
+export type { Event as WebhookEvent } from "@workos-inc/node";
 
 /** The small auth surface the rest of Takumo depends on. */
-export interface AuthContext {
+interface AuthContext {
   orgId: string | null;
   role: string | null;
   userId: string | null;
@@ -106,7 +101,7 @@ export interface ShopMember {
   userId: string;
 }
 
-export interface ShopInvitation {
+interface ShopInvitation {
   email: string;
   expiresAt: string;
   id: string;

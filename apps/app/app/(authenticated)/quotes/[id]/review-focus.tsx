@@ -11,7 +11,7 @@ import {
 import type { Box } from "@/lib/quotes/types";
 
 /** A spot on a line's drawing to show: picked from a value, flag or source. */
-export interface Focus {
+interface Focus {
   box: Box | null;
   /** What was picked, shown beside the highlight. */
   label: string;

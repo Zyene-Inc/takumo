@@ -17,13 +17,13 @@ export interface StoredEvent {
   type: string;
 }
 
-export interface AlertRecipient {
+interface AlertRecipient {
   off: readonly string[];
   role: string | null;
   userId: string;
 }
 
-export interface Delivery {
+interface Delivery {
   events: StoredEvent[];
   type: AlertType;
   userId: string;

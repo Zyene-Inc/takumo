@@ -79,16 +79,16 @@ const schema = z.object({
     .describe("What's missing or unclear that the estimator should ask"),
 });
 
-export type RfqReading = z.infer<typeof schema>;
+type RfqReading = z.infer<typeof schema>;
 
-export interface ShopLists {
+interface ShopLists {
   customers: Named[];
   materials: Named[];
   /** Shop parts whose number appears in the RFQ. */
   parts: PartLike[];
 }
 
-export interface ReadLine {
+interface ReadLine {
   description: string | null;
   finish: string | null;
   lineNo: number;
@@ -104,7 +104,7 @@ export interface ReadLine {
   tolerances: string | null;
 }
 
-export interface ReadRfq {
+interface ReadRfq {
   contact: string | null;
   customerId: string | null;
   customerName: string | null;

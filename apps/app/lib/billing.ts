@@ -30,8 +30,6 @@ export const getBilling = async (orgId: string) => {
   return { ...billing, entitlements: entitlements(billing) };
 };
 
-export type Billing = Awaited<ReturnType<typeof getBilling>>;
-
 /** Features that call Claude, and so count against the monthly AI cap. */
 const AI_FEATURES: readonly Feature[] = ["ask", "quotes", "knowledge"];
 

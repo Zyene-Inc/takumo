@@ -14,7 +14,7 @@ export const RECORD_TYPES = [
   "quote",
   "material",
 ] as const;
-export type RecordType = (typeof RECORD_TYPES)[number];
+type RecordType = (typeof RECORD_TYPES)[number];
 
 const num = (value: { toString(): string } | null) =>
   value === null ? null : Number(value.toString());
@@ -552,7 +552,7 @@ export const getRecordWithKnowledge = async (
   };
 };
 
-export const getRecord = (
+const getRecord = (
   orgId: string,
   type: RecordType,
   key: string

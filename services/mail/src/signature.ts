@@ -3,7 +3,7 @@
 // immediately by the raw message bytes.
 import { createHmac } from "node:crypto";
 
-export interface SignedFields {
+interface SignedFields {
   mailFrom: string;
   recipients: string;
   timestamp: string;

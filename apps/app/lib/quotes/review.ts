@@ -170,7 +170,7 @@ export const topIssues = (
   return { flags, questions };
 };
 
-export interface BuildUpRow {
+interface BuildUpRow {
   /** Amount per part, or null when unknown. */
   amount: number | null;
   /** True when a default (nothing behind it) is part of this row. */

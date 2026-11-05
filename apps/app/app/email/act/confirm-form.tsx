@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { type ActState, confirmAction } from "./actions";
 
-export interface QtyOption {
+interface QtyOption {
   label: string;
   qty: number;
 }

@@ -42,7 +42,7 @@ export const quotedLines = (
   });
 
 /** The quoted lines as the reply email lists them, with what they assume. */
-export const draftReplyLines = (
+const draftReplyLines = (
   quoted: ReturnType<typeof quotedLines>
 ): DraftReplyLine[] =>
   quoted.map(({ line, ...l }) => ({
@@ -60,7 +60,7 @@ export const draftReplyLines = (
   }));
 
 /** "Q-9009" or "Q-9009 – Q-9011" for a multi-line RFQ. */
-export const quoteReference = (quoteNos: string[]) =>
+const quoteReference = (quoteNos: string[]) =>
   quoteNos.length > 1
     ? `${quoteNos[0]} – ${quoteNos.at(-1)}`
     : (quoteNos[0] ?? "");

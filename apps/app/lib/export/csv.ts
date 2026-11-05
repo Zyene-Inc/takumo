@@ -5,8 +5,8 @@ import { ENTITIES, type EntityKey } from "@repo/ingest";
 import { strToU8, zipSync } from "fflate";
 import Papa from "papaparse";
 
-export type Cell = string | number | boolean | null | undefined;
-export type Row = Record<string, Cell>;
+type Cell = string | number | boolean | null | undefined;
+type Row = Record<string, Cell>;
 
 /** Rows keyed by import field (partNo, setupMin…) → CSV with the template's labels. */
 export const entityCsv = (entity: EntityKey, rows: Row[]) => {

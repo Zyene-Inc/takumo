@@ -33,7 +33,7 @@ const TEXT_FIELDS = [
 ] as const;
 
 /** Every quantity either line asks for, smallest first, up to the limit. */
-export const mergeQtys = (a: number[], b: number[]) =>
+const mergeQtys = (a: number[], b: number[]) =>
   [...new Set([...a, ...b].filter((q) => q > 0))]
     .sort((x, y) => x - y)
     .slice(0, MAX_QTY_BREAKS);

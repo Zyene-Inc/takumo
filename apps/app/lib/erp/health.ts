@@ -4,9 +4,9 @@
 
 const HOUR = 3_600_000;
 /** A nightly report is late after this long (a day, plus slack for retries). */
-export const LATE_AFTER_HOURS = 26;
+const LATE_AFTER_HOURS = 26;
 
-export interface ReportHealth {
+interface ReportHealth {
   /** Last import that saved rows; a report that arrives but fails is late too. */
   lastImportAt: Date | null;
   lastReceivedAt: Date | null;

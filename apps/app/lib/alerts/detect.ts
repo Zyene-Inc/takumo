@@ -17,7 +17,7 @@ export const ALERT_TITLE: Record<AlertType, string> = {
 };
 
 /** Who each alert is for: the people who can act on it. */
-export const ALERT_ROLES: Record<AlertType, readonly string[]> = {
+const ALERT_ROLES: Record<AlertType, readonly string[]> = {
   late: ["owner", "admin", "planner"],
   down: ["owner", "admin", "planner"],
   material: ["owner", "admin", "planner"],
@@ -36,7 +36,7 @@ export interface AlertFinding {
 
 const DAY_MS = 86_400_000;
 /** Machine-down days this far ahead are worth an alert now. */
-export const DOWN_AHEAD_DAYS = 14;
+const DOWN_AHEAD_DAYS = 14;
 /** Days off for everyone (a holiday) aren't a machine going down. */
 const NOT_DOWN = /holiday|closed|shutdown|vacation|christmas|thanksgiving/i;
 
@@ -45,7 +45,7 @@ const addDays = (day: string, days: number) =>
     .toISOString()
     .slice(0, 10);
 
-export interface CalendarRow {
+interface CalendarRow {
   date: string;
   hours: number;
   machine: string;
@@ -91,7 +91,7 @@ export const machineDown = (
     }));
 };
 
-export interface PlannedStart {
+interface PlannedStart {
   orderNo: string;
   /** The order's first planned operation, YYYY-MM-DD. */
   start: string;
@@ -127,7 +127,7 @@ export const materialLate = (
     ];
   });
 
-export interface RevenueRow {
+interface RevenueRow {
   amount: number;
   customerId: string | null;
 }
@@ -148,7 +148,7 @@ export const topCustomers = (rows: RevenueRow[], n = 10) => {
   );
 };
 
-export interface NewRfq {
+interface NewRfq {
   customer: string;
   customerId: string | null;
   id: string;

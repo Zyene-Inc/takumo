@@ -3,7 +3,6 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { database, forOrg } from "@repo/database";
 import {
-  type CapacityResponse,
   EngineError,
   type ScheduleRequest,
   type ScheduleResponse,
@@ -31,7 +30,7 @@ export const PLAN_TIME_LIMIT_S = 10;
 export const CHECK_TIME_LIMIT_S = 6;
 
 /** What a saved plan run stores as `input`. */
-export interface PlanInput extends Omit<BuiltRequest, "partKeys"> {
+interface PlanInput extends Omit<BuiltRequest, "partKeys"> {
   fingerprint: string;
 }
 
@@ -50,21 +49,12 @@ export interface CheckInput {
   startDate: string;
 }
 
-export interface SavedPlan {
+interface SavedPlan {
   createdAt: Date;
   createdBy: string | null;
   id: string;
   input: PlanInput;
   output: ScheduleResponse;
-}
-
-export interface SavedCheck {
-  createdAt: Date;
-  id: string;
-  input: CheckInput;
-  output: CapacityResponse;
-  verdict: string | null;
-  verdictNote: string | null;
 }
 
 export const hashFingerprint = (request: ScheduleRequest) =>
@@ -187,7 +177,7 @@ export const orderMaterial = async (orgId: string, today: string) => {
 };
 
 /** A new order (the capacity check's): its material comes after the rest. */
-export interface ExtraOrder {
+interface ExtraOrder {
   dueDate: string;
   orderNo: string;
   partId: string;
@@ -407,7 +397,7 @@ export const latestPlan = async (orgId: string): Promise<SavedPlan | null> => {
 /** Local clock time from the engine (no zone) as a Date we store as-is. */
 const naive = (value: string) => new Date(`${value}Z`);
 
-export type ReplanResult =
+type ReplanResult =
   | { ok: true; plan: SavedPlan }
   | { ok: false; error: string; conflicts: string[] };
 

@@ -4,7 +4,7 @@
 /** Under the host's 4.5 MB request cap, with room for the form around it. */
 export const MAX_PART_BYTES = 3 * 1024 * 1024;
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
-export const MAX_UPLOAD_FILES = 60;
+const MAX_UPLOAD_FILES = 60;
 export const UPLOAD_PART_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const UPLOAD_ID =

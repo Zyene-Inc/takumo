@@ -5,7 +5,7 @@ import type { OutsideSupplier, QuoteSettings } from "./types";
 
 // Defaults when a shop hasn't said otherwise (docs/PRODUCT-PLAN.md F2.2-R5,
 // F2.4, F2.5-R2).
-export const QUOTE_DEFAULTS: QuoteSettings = {
+const QUOTE_DEFAULTS: QuoteSettings = {
   quoteValidityDays: 30,
   materialMarkup: 0.15,
   laborRate: 95,

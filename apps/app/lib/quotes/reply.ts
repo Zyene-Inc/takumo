@@ -287,7 +287,7 @@ export const parseSentPrices = (
   return prices;
 };
 
-export type DraftStep = "create" | "replace" | "add" | "unchanged" | "skip";
+type DraftStep = "create" | "replace" | "add" | "unchanged" | "skip";
 
 /**
  * What to do with the mailbox when the RFQ's draft reply is written again

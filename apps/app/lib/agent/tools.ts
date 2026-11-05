@@ -764,5 +764,3 @@ Times in minutes (2 hours → 120). Use attribute "note" for anything that isn't
     }),
   };
 };
-
-export type AgentTools = ReturnType<typeof createTools>;

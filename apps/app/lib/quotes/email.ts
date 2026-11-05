@@ -1,12 +1,12 @@
 // Reads an RFQ email saved as .eml (RFC 822 / MIME): subject, sender, the
 // plain-text body, and attachments (often the RFQ itself as a PDF). Pure.
 
-export interface EmailAttachment {
+interface EmailAttachment {
   bytes: Uint8Array;
   name: string;
 }
 
-export interface ParsedEmail {
+interface ParsedEmail {
   attachments: EmailAttachment[];
   body: string;
   from: string | null;

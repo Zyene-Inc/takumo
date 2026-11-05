@@ -4,8 +4,8 @@
 // for the next two hours (a missed run catches up, a day-old one doesn't).
 // Pure, so tested.
 
-export const DEFAULT_BRIEF_TIME = "06:30";
-export const DEFAULT_TIME_ZONE = "America/Chicago";
+const DEFAULT_BRIEF_TIME = "06:30";
+const DEFAULT_TIME_ZONE = "America/Chicago";
 const CATCH_UP_MIN = 120;
 const CLOCK = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -20,7 +20,7 @@ export const isTimeZone = (zone: string) => {
   }
 };
 
-export interface LocalNow {
+interface LocalNow {
   /** YYYY-MM-DD in that zone. */
   date: string;
   /** Minutes since local midnight. */

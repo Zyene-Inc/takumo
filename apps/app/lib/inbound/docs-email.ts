@@ -5,9 +5,9 @@
 import { DOCUMENT_TYPES, MAX_DOCUMENT_BYTES } from "../knowledge/types";
 
 /** At most this many documents are read from one email. */
-export const MAX_DOCS_PER_EMAIL = 10;
+const MAX_DOCS_PER_EMAIL = 10;
 
-export interface DocAttachment {
+interface DocAttachment {
   bytes: Uint8Array;
   name: string;
 }

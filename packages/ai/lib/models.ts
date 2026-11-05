@@ -9,7 +9,7 @@ import type {
 } from "ai";
 import { keys } from "../keys";
 
-export const EMBEDDING_DIMENSIONS = 1024;
+const EMBEDDING_DIMENSIONS = 1024;
 
 const env = keys();
 
@@ -18,7 +18,7 @@ const env = keys();
  * service account are set; Claude (plus OpenAI for embeddings and audio)
  * otherwise. Unsetting the flag switches back without a code change.
  */
-export const usesVertex = Boolean(
+const usesVertex = Boolean(
   env.GOOGLE_GENAI_USE_VERTEXAI === "true" &&
     env.GOOGLE_CLOUD_PROJECT &&
     env.GOOGLE_SERVICE_ACCOUNT_JSON

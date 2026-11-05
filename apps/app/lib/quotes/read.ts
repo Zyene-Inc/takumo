@@ -26,7 +26,7 @@ export interface RfqText {
 }
 
 /** Characters of RFQ text sent to the model; real RFQs are far shorter. */
-export const MAX_RFQ_CHARS = 60_000;
+const MAX_RFQ_CHARS = 60_000;
 
 const ATTACHMENT_TYPES = [".pdf", ".docx", ".txt", ".md"];
 const SUBJECT_LINE = /^subject:\s*(.+)$/im;

@@ -7,7 +7,7 @@ import type { AnswerMode } from "./answer";
 import { type AgentContext, type Counters, createTools } from "./tools";
 
 /** Enough for look up → query → check → chart, with room for a retry. */
-export const MAX_STEPS = 12;
+const MAX_STEPS = 12;
 
 const weekdayDate = (iso: string) =>
   new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", {
@@ -18,7 +18,7 @@ const weekdayDate = (iso: string) =>
     day: "numeric",
   });
 
-export const systemPrompt = (
+const systemPrompt = (
   shopName: string,
   today: string
 ) => `You are Takumo, the operations assistant for ${shopName}, a job shop. You answer planners, estimators and owners about their orders, machines, parts, quotes, schedule and documents.

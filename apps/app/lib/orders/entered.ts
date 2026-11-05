@@ -3,7 +3,7 @@
 
 import { normalizePartNo } from "../quotes/match";
 
-export interface WaitingPo {
+interface WaitingPo {
   customerId: string | null;
   id: string;
   lines: { partId: string | null; partNo: string | null; qty: number | null }[];
@@ -11,7 +11,7 @@ export interface WaitingPo {
   receivedAt: Date;
 }
 
-export interface ErpOrderRow {
+interface ErpOrderRow {
   createdAt: Date;
   customerId: string | null;
   customerPo: string | null;

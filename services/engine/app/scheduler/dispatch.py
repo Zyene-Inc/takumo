@@ -43,9 +43,6 @@ class _Machine:
         self.timeline.day_of(start + minutes)  # extend the axis if needed
         return start
 
-    def overlaps(self, start: int, end: int) -> bool:
-        return any(s < end and start < e for s, e in self.busy)
-
     def book(self, start: int, end: int) -> None:
         insort(self.busy, (start, end))
 

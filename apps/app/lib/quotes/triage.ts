@@ -15,7 +15,7 @@ import type { Triage } from "./screen";
 /** Characters of the email body the check reads. */
 const BODY_CHARS = 2000;
 /** Checks per shop per day; past this, mail waits for a person instead. */
-export const DAILY_TRIAGE_LIMIT = 300;
+const DAILY_TRIAGE_LIMIT = 300;
 
 const schema = z.object({
   kind: z

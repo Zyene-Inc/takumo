@@ -11,7 +11,7 @@ import {
 } from "./plan";
 import { releaseFields } from "./request";
 
-export interface CapacityQuestion {
+interface CapacityQuestion {
   customer?: string | null;
   dueDate: string;
   materialCost?: number | null;

@@ -25,7 +25,7 @@ packages/
 services/
   engine/     Python FastAPI: CP-SAT scheduler + "can we take this order?" (:8000)
 seed/acme-precision/   Demo shop CSVs used by db:seed and engine tests
-evals/  jobs/  docs/
+docs/
 ```
 
 ## Setup

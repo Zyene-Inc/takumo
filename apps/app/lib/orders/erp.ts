@@ -3,7 +3,7 @@
 
 import type { PoLine } from "./types";
 
-export interface ErpPo {
+interface ErpPo {
   customer: string | null;
   lines: PoLine[];
   poNo: string | null;
@@ -11,7 +11,7 @@ export interface ErpPo {
   terms: string | null;
 }
 
-export const CSV_COLUMNS = [
+const CSV_COLUMNS = [
   "Customer",
   "Customer PO",
   "Line",

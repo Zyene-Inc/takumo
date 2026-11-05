@@ -12,13 +12,11 @@ import {
   searchTerms,
 } from "./chunk";
 
-export { extractPages } from "./extract";
 
 const FILE_EXTENSION = /\.(pdf|docx|txt|md|csv)$/i;
 const BRACKETS = /[[\]]/g;
 const SPACES = /\s+/g;
 
-export { DOCUMENT_TYPES, MAX_DOCUMENT_BYTES } from "./types";
 
 /** Display name: no file extension, no square brackets (they'd break [doc …] citations). */
 export const cleanName = (fileName: string) =>
@@ -32,7 +30,7 @@ export const cleanName = (fileName: string) =>
 const vectorLiteral = (values: number[]) => `[${values.join(",")}]`;
 
 /** Store a document's chunks. Re-uploading a file with the same name replaces it. */
-export interface StoredChunk {
+interface StoredChunk {
   content: string;
   /** One sentence placing the passage in its document, indexed with it. */
   context?: string;
@@ -132,7 +130,7 @@ export const saveDocument = (
   );
 };
 
-export interface DocHit {
+interface DocHit {
   chunkId: string;
   heading: string | null;
   page: number | null;

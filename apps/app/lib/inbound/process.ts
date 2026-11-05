@@ -73,13 +73,13 @@ const refusal = (
   return null;
 };
 
-export interface Accepted {
+interface Accepted {
   kind: InboundKind;
   messageId: string;
   orgId: string;
 }
 
-export type ReceiveResult =
+type ReceiveResult =
   | { ok: true; accepted: Accepted[]; duplicates: number }
   | { ok: false; status: number; error: string };
 

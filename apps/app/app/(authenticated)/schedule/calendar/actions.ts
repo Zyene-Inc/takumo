@@ -23,7 +23,7 @@ const AddDays = z
     message: "The end date is before the start date.",
   });
 
-export type CalendarResult =
+type CalendarResult =
   | { ok: true; count: number }
   | { ok: false; error: string };
 

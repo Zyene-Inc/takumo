@@ -4,7 +4,7 @@
 // November 2026, without promotional credits; implicit caching has no write
 // charge. Update when prices change. Pure, so tested.
 
-export interface ModelPrice {
+interface ModelPrice {
   cacheRead: number;
   cacheWrite: number;
   input: number;

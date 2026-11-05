@@ -171,7 +171,7 @@ const BRACKETS = /[[\]]/g;
 
 const normalize = (id: string) => id.replace(/\s+/g, " ").trim().toLowerCase();
 
-export const CITATION = new RegExp(
+const CITATION = new RegExp(
   `\\[(${SOURCE_KINDS.join("|")})(?: ([^\\]\\n]{1,160}))?\\]`,
   "g"
 );
@@ -194,7 +194,7 @@ export const collectSources = (
   return registry;
 };
 
-export interface LinkedText {
+interface LinkedText {
   /** Sources cited, in order of first use (N in #cite-N indexes this). */
   cited: Source[];
   /** Markdown with each citation turned into a [label](#cite-N) link. */

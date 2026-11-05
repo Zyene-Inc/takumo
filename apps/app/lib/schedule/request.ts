@@ -174,7 +174,7 @@ const toWorkCenter = (
  * The active roster for the engine: machines by name (unknown ids dropped),
  * shifts with Monday = 0, time off from the plan start on.
  */
-export const toOperators = (
+const toOperators = (
   rows: OperatorRow[],
   wcName: Map<string, string>,
   startDate: string
@@ -331,7 +331,7 @@ const remainingKey = (
  * Steps with parts already through: setup is done and only the parts left
  * run. A step with every part through counts as done.
  */
-export const applyProgress = <
+const applyProgress = <
   R extends { runMinPerUnit: number; seq: number; setupMin: number },
 >(
   qty: number,
@@ -470,7 +470,7 @@ export const buildScheduleRequest = (
 };
 
 /** Stable JSON (sorted keys): Postgres jsonb doesn't keep key order. */
-export const canonicalJson = (value: unknown): string =>
+const canonicalJson = (value: unknown): string =>
   JSON.stringify(value, (_key, v) =>
     v && typeof v === "object" && !Array.isArray(v)
       ? Object.fromEntries(

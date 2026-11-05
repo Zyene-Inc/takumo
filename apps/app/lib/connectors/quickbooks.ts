@@ -9,9 +9,9 @@ import { normalizePartNo } from "../quotes/match";
 export const QB_AUTHORIZE_URL = "https://appcenter.intuit.com/connect/oauth2";
 export const QB_TOKEN_URL =
   "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
-export const QB_REVOKE_URL =
+const QB_REVOKE_URL =
   "https://developer.api.intuit.com/v2/oauth2/tokens/revoke";
-export const QB_SCOPE = "com.intuit.quickbooks.accounting";
+const QB_SCOPE = "com.intuit.quickbooks.accounting";
 const QB_API = {
   sandbox: "https://sandbox-quickbooks.api.intuit.com",
   production: "https://quickbooks.api.intuit.com",
@@ -158,7 +158,7 @@ export const estimateRecords = (
 
 type Fetch = typeof fetch;
 
-export interface QbTokens {
+interface QbTokens {
   access_token: string;
   expires_in: number;
   refresh_token: string;

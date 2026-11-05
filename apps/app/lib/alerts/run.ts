@@ -190,7 +190,7 @@ const findAll = async (
 const subjectFor = (type: AlertType, count: number) =>
   count === 1 ? ALERT_TITLE[type] : `${ALERT_TITLE[type]} (${count})`;
 
-export interface AlertRun {
+interface AlertRun {
   found: number;
   sent: number;
   shops: number;

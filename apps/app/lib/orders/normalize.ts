@@ -3,7 +3,7 @@
 import type { PoHeader, PoLine } from "./types";
 
 /** What the reader returns for one line, before cleaning. */
-export interface RawPoLine {
+interface RawPoLine {
   description?: string | null;
   dueDate?: string | null;
   extended?: number | null;
@@ -13,7 +13,7 @@ export interface RawPoLine {
   unitPrice?: number | null;
 }
 
-export interface RawPo {
+interface RawPo {
   contact?: string | null;
   customerName?: string | null;
   lines: RawPoLine[];
@@ -29,13 +29,13 @@ const MAX_TEXT = 500;
 const MAX_LINES = 200;
 
 /** Trimmed text, or null when empty. */
-export const text = (value: string | null | undefined, max = MAX_TEXT) => {
+const text = (value: string | null | undefined, max = MAX_TEXT) => {
   const t = (value ?? "").trim();
   return t ? t.slice(0, max) : null;
 };
 
 /** A positive finite number, or null. */
-export const positive = (value: number | null | undefined) =>
+const positive = (value: number | null | undefined) =>
   typeof value === "number" && Number.isFinite(value) && value > 0
     ? value
     : null;

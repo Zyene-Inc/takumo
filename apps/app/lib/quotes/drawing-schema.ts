@@ -170,7 +170,6 @@ export const drawingAnswerSchema = z.object({
 });
 
 export type RawPart = z.infer<typeof rawPartSchema>;
-export type DrawingAnswer = z.infer<typeof drawingAnswerSchema>;
 
 // --- Cleaning ---------------------------------------------------------------
 
@@ -350,7 +349,7 @@ export const cleanPart = (raw: RawPart, ctx: Context): PartReading => {
 };
 
 /** The number a part goes by on the drawing: part number, else drawing number. */
-export const partKey = (p: Pick<PartReading, "titleBlock">) =>
+const partKey = (p: Pick<PartReading, "titleBlock">) =>
   normalizePartNo(
     p.titleBlock.partNo?.value ?? p.titleBlock.drawingNo?.value ?? ""
   );

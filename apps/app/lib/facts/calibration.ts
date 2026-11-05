@@ -12,8 +12,8 @@
 export const MIN_JOBS = 3;
 export const LOOKBACK_DAYS = 120;
 /** Propose a change when the median is this far off (both must hold). */
-export const SETUP_THRESHOLD = { relative: 0.15, minutes: 5 };
-export const RUN_THRESHOLD = { relative: 0.1, minutes: 0.05 };
+const SETUP_THRESHOLD = { relative: 0.15, minutes: 5 };
+const RUN_THRESHOLD = { relative: 0.1, minutes: 0.05 };
 
 const DAY_MS = 86_400_000;
 
@@ -51,7 +51,7 @@ export const weekOf = (date: Date) => {
 const mean = (values: number[]) =>
   values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
 
-export const median = (values: number[]) => {
+const median = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
@@ -98,7 +98,7 @@ export const weeklyError = (jobs: FinishedJob[]): WeekError[] => {
     });
 };
 
-export interface Trend {
+interface Trend {
   /** The latest week's setup error is below the week before. */
   dropping: boolean | null;
   latest: WeekError | null;
@@ -141,7 +141,7 @@ export interface CalibratedOp {
   setupSince: Date | null;
 }
 
-export interface OpStats {
+interface OpStats {
   attribute: "setupMin" | "runMinPerUnit";
   current: number;
   jobs: FinishedJob[];

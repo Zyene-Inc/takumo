@@ -17,7 +17,7 @@ import {
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
-export const NOT_SET_UP =
+const NOT_SET_UP =
   "Text notes aren't set up on this Takumo yet: there's no shop number to text.";
 
 /** Text a new code to a registration; refuses a second one within a minute. */

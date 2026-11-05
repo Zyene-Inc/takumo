@@ -17,11 +17,11 @@ import {
 const LOGIN = "https://login.microsoftonline.com";
 // "common" picks the person's own tenant; the app registration allows work or
 // school accounts only, so Microsoft refuses personal accounts itself.
-export const MS_AUTHORIZE_URL = `${LOGIN}/common/oauth2/v2.0/authorize`;
-export const MS_TOKEN_URL = `${LOGIN}/common/oauth2/v2.0/token`;
+const MS_AUTHORIZE_URL = `${LOGIN}/common/oauth2/v2.0/authorize`;
+const MS_TOKEN_URL = `${LOGIN}/common/oauth2/v2.0/token`;
 // Admin consent can't use "common"; "organizations" lets any tenant's admin.
-export const MS_ADMIN_CONSENT_URL = `${LOGIN}/organizations/v2.0/adminconsent`;
-export const GRAPH_API = "https://graph.microsoft.com/v1.0";
+const MS_ADMIN_CONSENT_URL = `${LOGIN}/organizations/v2.0/adminconsent`;
+const GRAPH_API = "https://graph.microsoft.com/v1.0";
 
 const GRAPH = "https://graph.microsoft.com/";
 /**
@@ -45,9 +45,9 @@ const PAGE_SIZE = 50;
  * Outlook message subscriptions last under 7 days (10,080 minutes); ask for a
  * little less so a renewal is never refused for running long.
  */
-export const SUBSCRIPTION_MINUTES = 10_000;
+const SUBSCRIPTION_MINUTES = 10_000;
 /** Renew when a subscription has less than this left (the cron is hourly). */
-export const RENEW_WITHIN_MS = 24 * 60 * 60_000;
+const RENEW_WITHIN_MS = 24 * 60 * 60_000;
 
 type Fetch = typeof fetch;
 
@@ -182,7 +182,7 @@ export const refreshTokens = (
   });
 
 /** The granted scopes, short and lower case ("mail.readwrite"). */
-export const grantedScopes = (scope: string | null | undefined) =>
+const grantedScopes = (scope: string | null | undefined) =>
   decodeURIComponent(scope ?? "")
     .split(SPACES)
     .filter(Boolean)
@@ -193,7 +193,7 @@ export const canReadMail = (scope: string | null | undefined) =>
   grantedScopes(scope).includes("mail.readwrite");
 
 /** "/me", or the shared mailbox (by address) the shop reads RFQs from. */
-export const mailboxPath = (sharedMailbox?: string | null) =>
+const mailboxPath = (sharedMailbox?: string | null) =>
   sharedMailbox ? `/users/${encodeURIComponent(sharedMailbox)}` : "/me";
 
 interface GraphInit {
@@ -501,7 +501,7 @@ const escapeHtml = (text: string) =>
   );
 
 /** A file attached to a draft (the quote PDF). */
-export interface DraftAttachment {
+interface DraftAttachment {
   bytes: Uint8Array;
   mediaType: string;
   name: string;
@@ -794,10 +794,10 @@ export const subscriptionResource = (folder?: string | null) =>
     ? SUBSCRIPTION_RESOURCE
     : `/me/mailFolders('${folder.replace(SINGLE_QUOTE, "''")}')/messages`;
 
-export const subscriptionExpiry = (now = Date.now()) =>
+const subscriptionExpiry = (now = Date.now()) =>
   new Date(now + SUBSCRIPTION_MINUTES * 60_000).toISOString();
 
-export type SubscriptionAction = "create" | "keep" | "remove" | "renew";
+type SubscriptionAction = "create" | "keep" | "remove" | "renew";
 
 /**
  * What to do with the notification subscription on a check. Delegated access
@@ -887,7 +887,7 @@ export const deleteSubscription = async (
 };
 
 /** Constant-time comparison of a notification's clientState with ours. */
-export const sameSecret = (expected: string, given: unknown) => {
+const sameSecret = (expected: string, given: unknown) => {
   if (typeof given !== "string") {
     return false;
   }

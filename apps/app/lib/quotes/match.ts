@@ -65,7 +65,7 @@ export interface PartLike {
   rev: string;
 }
 
-export interface PartMatch<T> {
+interface PartMatch<T> {
   /** The same part number at another revision (a starting point for a new rev). */
   otherRev: T | null;
   /** The part this line is for, when the shop has that part and revision. */

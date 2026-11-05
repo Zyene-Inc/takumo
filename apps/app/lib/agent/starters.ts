@@ -21,7 +21,7 @@ export const STARTER_LABEL: Record<StarterTopic, string> = {
 
 export type Starters = Record<StarterTopic, string[]>;
 
-export interface StarterRows {
+interface StarterRows {
   /** Customers with the most orders first. */
   customers: string[];
   documents: string[];

@@ -35,7 +35,7 @@ export interface Config {
   webhookUrl: string;
 }
 
-export const DEFAULT_MAX_MESSAGE_BYTES = 25 * 1024 * 1024;
+const DEFAULT_MAX_MESSAGE_BYTES = 25 * 1024 * 1024;
 const DOMAIN =
   /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 

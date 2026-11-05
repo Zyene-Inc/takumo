@@ -124,7 +124,7 @@ const uploadOne = (file: File, update: (log: FileLog) => void) => {
   );
 };
 
-export const StepLog = ({ log }: { log: FileLog }) => (
+const StepLog = ({ log }: { log: FileLog }) => (
   <ol className="grid gap-1 rounded-lg border bg-muted/30 p-3 font-mono text-xs">
     {log.steps.map((step, i) => {
       const current = i === log.steps.length - 1 && !log.done && !log.error;

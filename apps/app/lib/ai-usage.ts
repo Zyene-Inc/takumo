@@ -6,7 +6,7 @@ import { database } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { env } from "@/env";
 
-export type AiFeature =
+type AiFeature =
   | "ask"
   | "import_mapping"
   | "rfq_read"
@@ -76,7 +76,7 @@ const monthStart = (now = new Date()) =>
   new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
 /** A shop's AI spend this calendar month (UTC), in USD. */
-export const monthSpend = async (orgId: string, now = new Date()) => {
+const monthSpend = async (orgId: string, now = new Date()) => {
   const sum = await database.aiUsage.aggregate({
     where: { orgId, createdAt: { gte: monthStart(now) } },
     _sum: { costUsd: true },

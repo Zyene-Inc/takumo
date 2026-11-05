@@ -18,7 +18,7 @@ const ITEM = /^\s*(?:[-*•]|\d+[.)])\s+/;
 const MAX_ITEMS = 4;
 const MAX_ITEM_CHARS = 120;
 
-export interface SplitAnswer {
+interface SplitAnswer {
   /** The answer without the blocks: what's shown and checked for citations. */
   body: string;
   followUps: string[];

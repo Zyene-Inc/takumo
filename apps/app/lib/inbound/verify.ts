@@ -10,7 +10,7 @@ export const INBOUND_KINDS = ["erp", "rfq", "ask", "docs"] as const;
 export type InboundKind = (typeof INBOUND_KINDS)[number];
 
 /** How old a signed request may be (clock skew plus retries). */
-export const MAX_AGE_SECONDS = 300;
+const MAX_AGE_SECONDS = 300;
 
 const ADDRESS = /^(erp|rfq|docs|ask)-([a-z0-9]{8,32})@(.+)$/;
 const DOMAIN_OF = /@([^@>\s]+)>?\s*$/;
@@ -42,7 +42,7 @@ export const addressFor = (kind: InboundKind, token: string, domain: string) =>
   `${kind}-${token}@${domain}`;
 
 /** The bytes services/mail signs: `${timestamp}.${recipients}.${mailFrom}.` + body. */
-export const signedBytes = (
+const signedBytes = (
   timestamp: string,
   recipients: string,
   mailFrom: string,

@@ -14,7 +14,7 @@ import { CheckIcon, CopyIcon, RotateCwIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 import { rotateAddress, saveSenders } from "./actions";
 
-export interface AddressView {
+interface AddressView {
   address: string | null;
   allowedSenders: string[];
   description: string;

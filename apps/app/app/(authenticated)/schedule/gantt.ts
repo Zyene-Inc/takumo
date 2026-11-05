@@ -7,11 +7,11 @@ import type {
   WorkCenter,
 } from "@repo/engine-client/types";
 
-export const DAY_MS = 86_400_000;
+const DAY_MS = 86_400_000;
 const WEEKDAYS = [0, 1, 2, 3, 4];
 
 /** Engine clock times have no zone; treat them as UTC so days line up. */
-export const clockMs = (value: string) =>
+const clockMs = (value: string) =>
   Date.parse(value.length === 10 ? `${value}T00:00:00Z` : `${value}Z`);
 
 export const addDays = (isoDate: string, days: number) =>
@@ -21,7 +21,7 @@ export const daysBetween = (from: string, to: string) =>
   Math.round((clockMs(to) - clockMs(from)) / DAY_MS);
 
 /** Monday = 0, like the engine. */
-export const weekday = (isoDate: string) =>
+const weekday = (isoDate: string) =>
   (new Date(clockMs(isoDate)).getUTCDay() + 6) % 7;
 
 /** Hours a machine runs on a day (0 = closed), mirroring WorkCenter.hours_on. */
@@ -112,7 +112,7 @@ export const orderHue = (orderNo: string) => {
   return HUES[hash % HUES.length];
 };
 
-export type OrderRisk = "late" | "tight" | "ok";
+type OrderRisk = "late" | "tight" | "ok";
 
 /** Late = after the due date; tight = finishes on the due date or the day before. */
 export const orderRisk = (completion: string, due: string): OrderRisk => {

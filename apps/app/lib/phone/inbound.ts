@@ -20,7 +20,7 @@ import {
 // sender gets a one-line confirmation. Anything else is ignored: no reply and
 // nothing stored (R4).
 
-export interface PhoneAccepted {
+interface PhoneAccepted {
   channel: PhoneChannel;
   messageId: string;
   orgId: string;
