@@ -99,6 +99,12 @@ model Org {
   customerPoFiles    CustomerPoFile[]
   uploadParts        UploadPart[]
   shopSettings       ShopSettings?
+  notifyPrefs        NotifyPrefs[]
+  emailLinkUses      EmailLinkUse[]
+  briefClicks        BriefClick[]
+  alertWatch         AlertWatch?
+  alertEvents        AlertEvent[]
+  alertSent          AlertSent[]
 }
 
 model Member {
@@ -940,4 +946,91 @@ model PurchaseOrderLine {
 
   @@unique([orgId, poNo, lineNo])
   @@index([orgId, dueDate])
+}
+
+// ---------------------------------------------------------------------------
+// Morning brief and alerts (docs/PRODUCT-PLAN.md Phase 4)
+// ---------------------------------------------------------------------------
+
+// One person's brief and alert settings in one shop. No row: the defaults
+// (brief on at 06:30, every section and alert on).
+model NotifyPrefs {
+  orgId       String
+  org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId      String // WorkOS user ID
+  briefOn     Boolean  @default(true)
+  // Local time the brief goes out, HH:MM, on weekdays.
+  briefTime   String   @default("06:30")
+  // IANA time zone, e.g. America/Chicago.
+  timeZone    String   @default("America/Chicago")
+  // Brief sections turned off (late, bottleneck, quotes, facts, material, sync).
+  briefOff    String[] @default([])
+  // Alert types turned off (late, down, material, rfq).
+  alertsOff   String[] @default([])
+  // Local date (YYYY-MM-DD) of the last brief, sent or empty, so it goes once a day.
+  lastBriefOn String?
+  updatedAt   DateTime @updatedAt
+
+  @@id([orgId, userId])
+}
+
+// Approve / reject / won / lost links in emails are single use: the nonce of
+// each one used.
+model EmailLinkUse {
+  nonce  String   @id
+  orgId  String
+  org    Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId String
+  action String
+  usedAt DateTime @default(now())
+
+  @@index([orgId])
+}
+
+// A link in a brief someone clicked (how often briefs are read; no open pixels).
+model BriefClick {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId    String
+  section   String
+  clickedAt DateTime @default(now())
+
+  @@index([orgId, clickedAt])
+}
+
+// When alerts last looked at a shop: orders and RFQs newer than this are new.
+model AlertWatch {
+  orgId     String   @id
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  checkedAt DateTime
+}
+
+// Something worth an alert, found once (type + key never repeat). `quiet`:
+// found on the shop's first check, so it was already true before alerts began.
+model AlertEvent {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // late | down | material | rfq
+  type      String
+  key       String
+  message   String
+  path      String
+  quiet     Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, type, key])
+  @@index([orgId, createdAt])
+}
+
+// When each person last got each type of alert (at most one an hour).
+model AlertSent {
+  orgId  String
+  org    Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId String
+  type   String
+  sentAt DateTime
+
+  @@id([orgId, userId, type])
 }

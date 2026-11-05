@@ -13,6 +13,10 @@
     {
       "path": "/api/cron/erp-health",
       "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/notify",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

@@ -109,9 +109,9 @@ Every feature below follows these. A feature that breaks one is not done.
 | | Material availability | F3.2 | P0 | 1 | Built |
 | | Engine: labor and material constraints | F3.3 | P0 | 2 | Built (v1 capacity per qualification, v2 named operators on jobs) |
 | | Answer by email | F3.4 | P0 | 1 | Built; goes live with the inbound domain |
-| 4. Morning brief | Daily brief by role | F4.1 | P1 | 1 | Not started |
-| | Approve from email | F4.2 | P1 | 1 | Not started |
-| | Alerts | F4.3 | P2 | 1 | Not started |
+| 4. Morning brief | Daily brief by role | F4.1 | P1 | 1 | Built (needs the email service; not yet sent to a real shop) |
+| | Approve from email | F4.2 | P1 | 1 | Built (needs `EMAIL_LINK_SECRET`) |
+| | Alerts | F4.3 | P2 | 1 | Built (email; Teams later) |
 | 5. Native ERP connectors | Epicor Kinetic | F5.1 | P1 (on first Epicor customer) | 3 | Not started |
 | | Oracle NetSuite | F5.2 | P1 (on first NetSuite customer) | 3 | Not started |
 | | JobBOSS² | F5.3 | P2 | 3 | Not started |

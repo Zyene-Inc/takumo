@@ -73,7 +73,13 @@ or the service dashboards; never commit them.
   nightly ERP reports and forwarded RFQs (Settings → Integrations → Email & ERP reports)
 - `RESEND_TOKEN`, `RESEND_FROM` (optional): emails shop admins when an ERP report needs a check,
   stops arriving, or a mailbox disconnects (the daily `/api/cron/erp-health`); without them the
-  problems still show in the app and on `/admin`
+  problems still show in the app and on `/admin`. They also send the morning brief and alerts
+  (`/api/cron/notify`, every 15 minutes: each person's brief at their own time, alerts within 15
+  minutes); without them nothing is sent
+- `EMAIL_LINK_SECRET` = a new value (`openssl rand -hex 32`): signs the links in briefs and alerts
+  (approve / reject a fact, mark a quote won / lost, unsubscribe, link-click counts). Without it
+  briefs and alerts still go out, but with plain app links and no buttons, and the
+  `/email/act` page says it isn't set up. Changing it makes links already sent stop working
 - `ADMIN_USER_IDS`: WorkOS user ids (comma separated) of Takumo staff who can open `/admin`
 - `AI_MONTHLY_BUDGET_USD` (optional): AI spend cap per shop per calendar month; when a shop
   reaches it, Ask Takumo, quote drafting and note reading pause until the 1st. `/admin` shows each

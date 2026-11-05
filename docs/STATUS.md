@@ -12,7 +12,7 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 | 1. Data comes in by itself | Built. Audited requirement by requirement on 2026-11-04 and fixed (see below). |
 | 2. Quote in the email thread | Built. Audited the same way and fixed. |
 | 3. Can we ship by Friday? | Built on 2026-11-04 (details below). |
-| 4. Morning brief | Not started. |
+| 4. Morning brief | Built on 2026-11-05 (details below). Sends once the email service (`RESEND_*`) is set; buttons need `EMAIL_LINK_SECRET`. |
 | 5. Native ERP connectors | Not started. Reports by email (F1.3) cover every ERP until then. |
 | 6. Knowledge in their channels | Not started. |
 
@@ -71,6 +71,47 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 - 387 app tests, including the material rules, email formatting, who's-on-what, and an end-to-end test that runs the app's real request mapping against the real engine (including the names).
 - 34 import tests, including a roster and bill-of-materials import against a real database.
 
+## Phase 4: what was built (2026-11-05)
+
+- **Morning brief (F4.1).** One email per person on weekdays at the time and time zone they
+  choose (default 06:30, America/Chicago), from `/api/cron/notify` every 15 minutes.
+  - Sections by role: owners and admins get all; planners get late or at risk, the bottleneck,
+    facts and material; estimators get quotes; operators get none.
+  - Late or at risk: from the latest saved plan, with the cause (material, people or machine) and
+    the best lever (expedite, another qualified person, an alternate machine, or overtime).
+  - Quotes waiting: drafts not sent after 24 h, RFQs 2 days old with no draft, and quotes sent
+    7+ days ago with no answer (with Won / Lost buttons).
+  - Facts to approve: the count and the oldest 3, with Approve / Reject buttons.
+  - Material short this week, and sync problems (admins and owners only).
+  - Only sections with something in them; nothing is sent when every section is empty.
+  - Unsubscribe from each section or everything (a confirmation page, plus one-click unsubscribe
+    for mail apps). Settings → Notifications sets the time, the zone and the sections.
+  - Link clicks are counted (`BriefClick`); there are no open pixels.
+- **Approve from email (F4.2).** Signed links (HMAC, `EMAIL_LINK_SECRET`) that expire after
+  72 hours, are bound to the person, and work once (`EmailLinkUse`).
+  - Opening a link shows what will change; only the confirm button changes anything (a POST).
+  - The same role checks as the app: `knowledge:review` for facts, `quotes:write` for quotes.
+  - A link someone else opens while signed in is refused.
+- **Alerts (F4.3).** Every 15 minutes, for:
+  - a new order that makes another order late (two short what-if plans, only when new orders
+    arrived);
+  - a machine marked down in the next 2 weeks (not shop-wide holidays);
+  - material now arriving after an order's planned start;
+  - an RFQ from a top-10 customer (by ordered value over the last year).
+
+  Each is found once (`AlertEvent`). A shop's first check records what's already true without
+  alerting. Each type can be turned off per person, and at most one email per type per hour
+  goes out, batched. Alerts go by email only; Teams can be added later as another channel
+  (`lib/alerts/channels.ts`).
+- **Migration** `20261112090000_morning_brief`: six new tables with row-level security; no
+  existing table changes.
+- **Not yet checked:**
+  - nothing has been sent to a real inbox (no email service is set up yet);
+  - the 15-minute cron needs a Vercel plan that allows crons more often than daily (the hourly
+    connector cron already needs that);
+  - the "new order makes another late" alert is tested on its own logic, not end to end with
+    the engine.
+
 ## Audit gaps closed (2026-11-04, live)
 
 - **The ERP renames a column.** A report that arrives with new columns but mostly matches one you confirmed is recognised. Your column choices move over, the admin is emailed what changed with a link straight to it, and **Use the same columns** imports it and retires the old report. The daily check says "your ERP changed its columns", not "stopped arriving".
@@ -122,4 +163,4 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
    - open operations from the ERP's open-jobs report.
 3. Tune the drawing checks (scans, per-machine tolerances) on real drawings from design partners.
 
-**Not started:** Phase 4 (morning brief), Phase 5 (native ERP connectors), Phase 6 (WhatsApp, SMS and shared-folder knowledge), Teams.
+**Not started:** Phase 5 (native ERP connectors), Phase 6 (WhatsApp, SMS and shared-folder knowledge), Teams.
