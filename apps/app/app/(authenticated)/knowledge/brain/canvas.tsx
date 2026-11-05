@@ -2,10 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import type { BrainLink, BrainNode } from "@/lib/knowledge/brain";
+import type { BrainMode } from "./brain-layout";
 import { buildScene, drawScene, nodeAt, type Scene, type View } from "./draw";
-import type { BrainMode } from "./layout";
 
-export type { BrainMode } from "./layout";
+export type { BrainMode } from "./brain-layout";
 
 interface Callbacks {
   matchIds: Set<string> | null;

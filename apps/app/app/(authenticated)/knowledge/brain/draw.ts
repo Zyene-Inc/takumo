@@ -7,7 +7,7 @@ import {
   layoutFlat,
   layoutGlobe,
   type Placed,
-} from "./layout";
+} from "./brain-layout";
 
 export interface View {
   dpr: number;

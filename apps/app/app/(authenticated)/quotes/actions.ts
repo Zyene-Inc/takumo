@@ -1,4 +1,4 @@
-"use server";
+// The RFQ and quote server actions, by topic. Each module is "use server".
 
 export type { LineInputs, SubmitResult } from "./action-helpers";
 export {
