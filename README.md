@@ -16,7 +16,6 @@ apps/
   web/        takumo.ai marketing site (:3001)
   api/        Webhooks (Stripe, WorkOS org/member sync), cron (:3002)
   email/      React Email templates (:3003)
-  studio/     Prisma Studio (:3005)
 packages/
   database/   Prisma on Supabase Postgres: factory schema, forOrg() tenant guard, seed
   engine-client/  Typed client for services/engine

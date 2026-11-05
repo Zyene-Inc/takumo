@@ -213,8 +213,7 @@ takumo/                               # next-forge Turborepo (pnpm)
 │   ├── api/                          # webhooks: Stripe, WorkOS org sync, Gmail; cron
 │   ├── email/                        # React Email templates (invite, quote, alerts)
 │   ├── docs/                         # Mintlify help center (keep for later)
-│   ├── storybook/                    # (remove for now)
-│   └── studio/                       # Prisma Studio (keep)
+│   └── storybook/                    # (remove for now)
 ├── packages/
 │   ├── auth/                         # WorkOS AuthKit: auth(), proxy, org helpers
 │   ├── database/                     # Prisma → point at Supabase Postgres
