@@ -2,7 +2,7 @@
 
 Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); its §5 table has a one-line status per feature. This page gives the detail.
 
-**In one line:** Phases 1, 2, 3, 4 and 6 are built and tested; Phase 3 includes who runs each job (v2). Phases 1 and 2 are live; the rest wait on their database migrations. Nothing has run on a real shop's data yet. That needs the inbound domain, a Twilio number and design partners (Phase 0), which are owner actions. Phase 5 (native ERP connectors) is built per ERP when a paying shop uses it.
+**In one line:** Phases 1, 2, 3, 4 and 6 are built and tested; Phase 3 includes who runs each job (v2). All of it is live (2026-11-05, every migration applied). Nothing has run on a real shop's data yet. That needs the inbound domain, a Twilio number and design partners (Phase 0), which are owner actions. Phase 5 (native ERP connectors) is built per ERP when a paying shop uses it.
 
 ## Phases
 
