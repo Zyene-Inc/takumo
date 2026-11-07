@@ -24,7 +24,8 @@ interface AuthContext {
 // The access token's `role` claim is "authenticated" because the JWT template
 // is shaped for Supabase third-party auth, so the shop role (admin, planner…)
 // comes from the WorkOS membership. Cached for the duration of a request.
-const membershipRole = cache(
+/** A user's role in a shop, or null when they aren't an active member. */
+export const shopRole = cache(
   async (userId: string, organizationId: string): Promise<string | null> => {
     const memberships =
       await getWorkOS().userManagement.listOrganizationMemberships({
@@ -36,16 +37,20 @@ const membershipRole = cache(
   }
 );
 
+/**
+ * The signed-in user and the shop they're working in. `orgId` is set only
+ * while they are an active member of it: a session can still name a shop
+ * after its WorkOS membership ended (until the session refreshes), and that
+ * must not reach the shop's data, so the membership is checked on every
+ * request and the shop is dropped without one.
+ */
 export const auth = async (): Promise<AuthContext> => {
   const { user, organizationId } = await withAuth();
   const userId = user?.id ?? null;
-  const orgId = organizationId ?? null;
+  const role =
+    userId && organizationId ? await shopRole(userId, organizationId) : null;
 
-  return {
-    userId,
-    orgId,
-    role: userId && orgId ? await membershipRole(userId, orgId) : null,
-  };
+  return { userId, orgId: role ? (organizationId ?? null) : null, role };
 };
 
 export const currentUser = async () => {

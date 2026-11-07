@@ -63,10 +63,22 @@ model Org {
   // When the subscription went past due (the payment grace runs from here).
   pastDueSince         DateTime?
   cancelAtPeriodEnd    Boolean   @default(false)
+  // The shop's owner (WorkOS user ID). WorkOS gives the creator the admin
+  // role, so ownership is recorded here; it only changes by an owner's
+  // transfer. Null for shops whose owner couldn't be told from old data.
+  ownerUserId          String?
+  // Company Knowledge Hub rollout: off | library | confidential. Restricted
+  // and confidential documents need "confidential", which stays unavailable
+  // until every AI path enforces document permissions.
+  libraryStage         String    @default("off")
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
   members            Member[]
+  folders            Folder[]
+  departments        Department[]
+  departmentMembers  DepartmentMember[]
+  accessGrants       AccessGrant[]
   workCenters        WorkCenter[]
   calendarDays       CalendarDay[]
   operators          Operator[]
@@ -666,20 +678,122 @@ model ShopSettings {
 // ---------------------------------------------------------------------------
 
 model Source {
-  id        String   @id @default(uuid())
-  orgId     String
-  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name      String
-  type      String // "upload" | "quickbooks" | "gmail" | …
-  filePath  String? // Supabase Storage path
-  status    String   @default("pending") // pending | parsing | ready | failed
-  profile   String? // quotes | routings | travelers | sops | erp_export | generic
-  summary   String?
-  createdAt DateTime @default(now())
+  id            String   @id @default(uuid())
+  orgId         String
+  org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name          String
+  type          String // "upload" | "quickbooks" | "gmail" | …
+  filePath      String? // Supabase Storage path
+  status        String   @default("pending") // pending | parsing | ready | failed
+  profile       String? // quotes | routings | travelers | sops | erp_export | generic
+  summary       String?
+  createdAt     DateTime @default(now())
+  // Company Knowledge Hub. A document outside any folder (every document
+  // stored before folders) is readable by everyone in the shop, as before.
+  folderId      String?
+  // false: only this document's own grants apply, not its folder's.
+  inheritAccess Boolean  @default(true)
 
+  folder Folder?       @relation(fields: [folderId], references: [id], onDelete: NoAction)
   chunks DocChunk[]
+  grants AccessGrant[]
 
   @@index([orgId])
+  @@index([orgId, folderId])
+}
+
+// ---------------------------------------------------------------------------
+// Company Knowledge Hub: folders, departments and who may do what.
+// Same-shop references, folder paths and grant shapes are enforced by
+// triggers and checks in the knowledge_hub_foundations migration; who may see
+// a folder or document is decided only by the library.* SQL functions.
+// ---------------------------------------------------------------------------
+
+model Folder {
+  id            String   @id @default(uuid())
+  orgId         String
+  parentId      String?
+  name          String
+  // normal | system (a default folder) | virtual_rfq | virtual_po
+  kind          String   @default("normal")
+  // Which default folder this is (sops, engineering, hr, finance, …).
+  systemKey     String?
+  // Ancestor folder IDs from the top, ending with this folder's own ID.
+  // Maintained by a trigger; never written by the app.
+  path          String[] @default([])
+  depth         Int      @default(1)
+  // false: grants on the folders above don't apply here ("Restricted").
+  inheritAccess Boolean  @default(true)
+  // Confidential folders (HR, Finance): admins get no automatic access, and
+  // everyone/role grants may only allow uploading. Applies to subfolders.
+  confidential  Boolean  @default(false)
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  org      Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  parent   Folder?       @relation("FolderTree", fields: [parentId], references: [id], onDelete: NoAction)
+  children Folder[]      @relation("FolderTree")
+  sources  Source[]
+  grants   AccessGrant[]
+
+  @@unique([orgId, parentId, name])
+  @@unique([orgId, systemKey])
+  @@index([orgId])
+  // "Everything under this folder" lookups.
+  @@index([path], type: Gin)
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  orgId       String
+  name        String
+  description String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  org     Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members DepartmentMember[]
+
+  @@unique([orgId, name])
+}
+
+model DepartmentMember {
+  orgId        String
+  departmentId String
+  userId       String // WorkOS user ID
+  addedBy      String?
+  createdAt    DateTime @default(now())
+
+  org        Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@id([departmentId, userId])
+  @@index([orgId, userId])
+}
+
+/// Who may do what with one folder or one document (exactly one is set).
+model AccessGrant {
+  id            String   @id @default(uuid())
+  orgId         String
+  folderId      String?
+  sourceId      String?
+  // everyone | role | department | user
+  principalType String
+  // Role slug, department ID or WorkOS user ID; "" for everyone.
+  principalId   String   @default("")
+  // Bits: 1 view, 2 download, 4 upload, 8 edit, 16 delete, 32 manage.
+  capabilities  Int
+  grantedBy     String?
+  createdAt     DateTime @default(now())
+
+  org    Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  folder Folder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  source Source? @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([folderId, principalType, principalId])
+  @@unique([sourceId, principalType, principalId])
+  @@index([orgId, principalType, principalId])
 }
 
 model DocChunk {
