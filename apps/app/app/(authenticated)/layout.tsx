@@ -31,7 +31,7 @@ const AppLayout = async ({ children }: AppLayoutProperties) => {
     listUserOrganizations(user.id),
     database.org.findUnique({
       where: { id: organizationId },
-      select: { name: true, plan: true },
+      select: { name: true, plan: true, libraryStage: true },
     }),
   ]);
   const name =
@@ -41,6 +41,7 @@ const AppLayout = async ({ children }: AppLayoutProperties) => {
     <SidebarProvider>
       <GlobalSidebar
         currentOrganizationId={organizationId}
+        libraryEnabled={Boolean(shop && shop.libraryStage !== "off")}
         organizations={organizations}
         user={{
           name,

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { DOC_TYPE_LABEL } from "@/lib/knowledge/understand";
+import { libraryEnabled } from "@/lib/library/stage";
 import { Header } from "../components/header";
 import { EmptyState } from "../shop/components/format";
 import { DeleteDocument, ReadAgain, UploadDocuments } from "./upload";
@@ -86,6 +87,15 @@ const KnowledgePage = async () => {
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
+        {(await libraryEnabled(orgId)) && (
+          <p className="max-w-3xl rounded-lg border bg-muted/40 p-3 text-sm">
+            Your company's documents now live in{" "}
+            <Link className="font-medium underline" href="/library">
+              Company Knowledge
+            </Link>
+            , with folders, versions and the original files.
+          </p>
+        )}
         <p className="max-w-3xl text-muted-foreground text-sm">
           Documents Ask Takumo can search and cite: how jobs are set up, quality
           rules, customer requirements, company policies. Anyone in the company

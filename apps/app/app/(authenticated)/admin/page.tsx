@@ -17,6 +17,7 @@ import { lateReports } from "@/lib/erp/health";
 import { formatHours, percent, quoteMetrics } from "@/lib/quotes/metrics";
 import { Header } from "../components/header";
 import { ExtendTrial } from "./extend-trial";
+import { LibrarySwitch } from "./library-switch";
 
 export const metadata: Metadata = { title: "Admin · Takumo" };
 
@@ -49,6 +50,7 @@ const AdminPage = async () => {
         pastDueSince: true,
         cancelAtPeriodEnd: true,
         createdAt: true,
+        libraryStage: true,
         _count: { select: { connections: true } },
       },
     }),
@@ -299,6 +301,7 @@ const AdminPage = async () => {
                   </TableCell>
                   <TableCell>
                     {s.plan === "trial" && <ExtendTrial orgId={s.id} />}
+                    <LibrarySwitch orgId={s.id} stage={s.libraryStage} />
                   </TableCell>
                 </TableRow>
               ))}

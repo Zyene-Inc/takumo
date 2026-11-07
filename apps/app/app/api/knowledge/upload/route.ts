@@ -6,6 +6,9 @@ import { ingestDocument } from "@/lib/knowledge/ingest";
 import { streamSteps } from "@/lib/knowledge/stream";
 import { fileFrom } from "@/lib/knowledge/upload-file";
 import { checkDocumentFile } from "@/lib/library/files";
+import { authorizeDocument, authorizeFolder } from "@/lib/library/guard";
+import { libraryEnabled } from "@/lib/library/stage";
+import { resolveViewer, type Viewer } from "@/lib/library/viewer";
 
 // Long scans are read a few pages at a time.
 export const maxDuration = 300;
@@ -17,6 +20,60 @@ const problem = (status: number, error: string) =>
  * Upload one document. The response streams each step as it finishes (see
  * streamSteps), so the page can show the work as it happens.
  */
+/** A clash with a live document: what the person may do about it. */
+const nameTaken = async (
+  existing: { id: string; name: string },
+  viewer: Viewer | null
+) => {
+  // The existing document is named only to someone who may see it, and the
+  // page offers a new version only to someone who may edit it.
+  const visible = viewer
+    ? await authorizeDocument(viewer, existing.id, "view")
+    : null;
+  const editable =
+    viewer && visible?.ok
+      ? await authorizeDocument(viewer, existing.id, "edit")
+      : null;
+  return Response.json(
+    {
+      error: new DocumentExistsError(existing.name).message,
+      code: "name_taken",
+      ...(visible?.ok
+        ? {
+            existing: {
+              id: existing.id,
+              name: existing.name,
+              canAddVersion: Boolean(editable?.ok),
+            },
+          }
+        : {}),
+    },
+    { status: 409 }
+  );
+};
+
+/** The folder to upload into, when one is chosen (the library). */
+const targetFolder = async (
+  orgId: string,
+  viewer: Viewer | null,
+  raw: FormDataEntryValue | null
+): Promise<{ ok: true; folderId: string | null } | Response> => {
+  if (raw === null || raw === "") {
+    return { ok: true, folderId: null };
+  }
+  if (!(viewer && typeof raw === "string" && (await libraryEnabled(orgId)))) {
+    return problem(404, "That folder doesn't exist.");
+  }
+  const allowed = await authorizeFolder(viewer, raw, "upload");
+  if (!allowed.ok) {
+    return problem(allowed.status, allowed.error);
+  }
+  if (allowed.folder.kind.startsWith("virtual")) {
+    return problem(400, "Documents can't be added to that folder.");
+  }
+  return { ok: true, folderId: allowed.folder.id };
+};
+
 export const POST = async (request: Request) => {
   const access = await authorize("knowledge:share");
   if (!access.ok) {
@@ -28,7 +85,13 @@ export const POST = async (request: Request) => {
   if (locked) {
     return problem(402, locked);
   }
-  const file = await fileFrom(access.orgId, await request.formData());
+  const form = await request.formData();
+  const viewer = await resolveViewer();
+  const target = await targetFolder(access.orgId, viewer, form.get("folderId"));
+  if (target instanceof Response) {
+    return target;
+  }
+  const file = await fileFrom(access.orgId, form);
   if (!file) {
     return problem(400, "Choose a file.");
   }
@@ -41,18 +104,18 @@ export const POST = async (request: Request) => {
   // its own action (api/library/documents/[sourceId]/versions). Checked here
   // so nothing is stored for nothing, and again (under a lock) when the
   // document is created, in case one with this name arrived meanwhile.
-  const existing = await documentNamed(access.orgId, file.name);
+  const existing = await documentNamed(
+    access.orgId,
+    file.name,
+    target.folderId
+  );
   if (existing) {
-    // `code` lets the page offer "upload as a new version" (phase 3).
-    return Response.json(
-      {
-        error: new DocumentExistsError(existing.name).message,
-        code: "name_taken",
-      },
-      { status: 409 }
-    );
+    return nameTaken(existing, viewer);
   }
   return streamSteps((emit) =>
-    ingestDocument(access.orgId, userId ?? null, file, emit, { via: "upload" })
+    ingestDocument(access.orgId, userId ?? null, file, emit, {
+      via: "upload",
+      folderId: target.folderId,
+    })
   );
 };

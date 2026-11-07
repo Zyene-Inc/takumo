@@ -92,9 +92,22 @@ export const ingestDocument = async (
   userId: string | null,
   file: { name: string; bytes: Uint8Array },
   emit: (event: IngestEvent) => void,
-  { via }: { via: "upload" | "email" }
+  {
+    via,
+    folderId = null,
+  }: {
+    via: "upload" | "email";
+    /** Checked by the caller; null: outside any folder. */
+    folderId?: string | null;
+  }
 ) => {
-  const made = await createDocument(orgId, userId, checked(file), via);
+  const made = await createDocument(
+    orgId,
+    userId,
+    checked(file),
+    via,
+    folderId
+  );
   return runNow(made, file.bytes, emit);
 };
 

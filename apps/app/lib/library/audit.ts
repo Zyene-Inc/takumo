@@ -18,7 +18,12 @@ export type AuditAction =
   | "trash"
   | "restore"
   | "purge"
-  | "purge_complete";
+  | "purge_complete"
+  | "move"
+  | "folder_create"
+  | "folder_rename"
+  | "folder_move"
+  | "folder_delete";
 
 export interface AuditEntry {
   action: AuditAction;

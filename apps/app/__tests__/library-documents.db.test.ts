@@ -113,8 +113,8 @@ describe.skipIf(!TEST_DATABASE_URL)("documents and versions (database)", () => {
     );
 
   /** Upload as a planner and return the stored document. */
-  const uploaded = async (name: string, body: string) => {
-    const response = await postUpload(name, h.text(body));
+  const uploaded = async (name: string, body: string, bytes = h.text(body)) => {
+    const response = await postUpload(name, bytes);
     expect((await h.events(response)).at(-1)?.type).toBe("done");
     return database.source.findFirstOrThrow({
       where: { orgId, name: documents.cleanName(name) },
@@ -246,6 +246,8 @@ describe.skipIf(!TEST_DATABASE_URL)("documents and versions (database)", () => {
           error:
             "There's already a document called SOP-12. Rename your file and upload it again.",
           code: "name_taken",
+          // The library offers to open it or add a new version (phase 3).
+          existing: { id: original.id, name: "SOP-12", canAddVersion: true },
         });
       }
       const after = await database.source.findMany({
@@ -531,6 +533,64 @@ describe.skipIf(!TEST_DATABASE_URL)("documents and versions (database)", () => {
       );
       const response = await getFile(legacy.sourceId);
       expect(response.status).toBe(410);
+    });
+
+    test("the preview inside the page is sent by Takumo itself, after the same checks", async () => {
+      const drawing = await uploaded("Drawing A102.pdf", "", h.pdf("A102"));
+      const notes = await uploaded("Shift notes.txt", "Notes.");
+      as("operator", "user_sam");
+      const shown = await getFile(drawing.id, "?preview=1");
+      expect(shown.status).toBe(200);
+      expect(shown.headers.get("content-type")).toBe("application/pdf");
+      expect(shown.headers.get("content-disposition")).toMatch(/^inline;/);
+      expect(shown.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(shown.headers.get("cache-control")).toBe("private, no-store");
+      expect(new TextDecoder().decode(await shown.arrayBuffer())).toBe(
+        "%PDF-1.7\nA102"
+      );
+      // Only PDFs and images are shown in the page.
+      expect((await getFile(notes.id, "?preview=1")).status).toBe(415);
+      const audits = await database.documentAuditLog.findMany({
+        where: { orgId, sourceId: drawing.id, actorId: "user_sam" },
+        select: { action: true },
+      });
+      expect(audits.map((a) => a.action)).toEqual(["preview"]);
+      expect(h.state.store?.signedUrl).not.toHaveBeenCalled();
+    });
+
+    test("previews: large files, other shops, trashed and unkept files are refused", async () => {
+      const big = await uploaded("Big scan.pdf", "", h.pdf("Big."));
+      await database.documentVersion.updateMany({
+        where: { sourceId: big.id },
+        data: { size: 4 * 1024 * 1024 + 1 },
+      });
+      const gone = await uploaded("Gone.pdf", "", h.pdf("Gone."));
+      await database.source.update({
+        where: { id: gone.id },
+        data: { deletedAt: new Date() },
+      });
+      const reads = h.state.store?.get.mock.calls.length;
+      expect((await getFile(big.id, "?preview=1")).status).toBe(413);
+      const theirs = await database.source.create({
+        data: {
+          orgId: otherOrgId,
+          name: `Theirs ${randomUUID()}`,
+          type: "upload",
+          profile: "document",
+        },
+      });
+      expect((await getFile(theirs.id, "?preview=1")).status).toBe(404);
+      const legacy = await documents.storeDocument(
+        orgId,
+        "Old drawing",
+        "Old.",
+        [{ content: "Old words.", heading: null, page: 1 }],
+        { mayReplace: false }
+      );
+      expect((await getFile(legacy.sourceId, "?preview=1")).status).toBe(410);
+      expect((await getFile(gone.id, "?preview=1")).status).toBe(404);
+      // Nothing was read from storage for any of them.
+      expect(h.state.store?.get.mock.calls.length).toBe(reads);
     });
 
     test("the database refuses a stored key outside the document's own place", async () => {

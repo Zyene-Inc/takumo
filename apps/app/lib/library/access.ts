@@ -56,6 +56,32 @@ export const accessTo = async (
   return row ?? null;
 };
 
+const ALL_SOURCES_SQL = `
+  select source_id, capabilities from library.source_access($1, $2, $3)`;
+
+const ALL_FOLDERS_SQL = `
+  select folder_id, capabilities from library.folder_access($1, $2, $3)`;
+
+/** What the viewer may do with each uploaded document of their shop (by id). */
+export const documentCapabilities = async (viewer: Viewer) =>
+  new Map(
+    (
+      await database.$queryRawUnsafe<
+        { capabilities: number; source_id: string }[]
+      >(ALL_SOURCES_SQL, ...args(viewer))
+    ).map((r) => [r.source_id, r.capabilities])
+  );
+
+/** What the viewer may do with each folder of their shop (by id). */
+export const folderCapabilities = async (viewer: Viewer) =>
+  new Map(
+    (
+      await database.$queryRawUnsafe<
+        { capabilities: number; folder_id: string }[]
+      >(ALL_FOLDERS_SQL, ...args(viewer))
+    ).map((r) => [r.folder_id, r.capabilities])
+  );
+
 /** IDs of the uploaded documents the viewer may view. */
 export const visibleSourceIds = async (viewer: Viewer) =>
   (

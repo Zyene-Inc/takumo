@@ -166,6 +166,18 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 - **Migration** `20261113090000_knowledge_channels`: `PhoneNumber` and `PhoneMessage` tables (with row-level security) and `Note.channel`, `Note.senderName`.
 - **Tests:** Twilio signature, phone numbers, codes and replies; the docs address and its reply; on a database, registering and confirming a phone, unknown and unconfirmed numbers ignored, one shop per phone, retries read once, and a member's emailed document read and answered while an outsider is bounced.
 
+## Company Knowledge Hub (in development, not live)
+
+Branches `feat/knowledge-hub-*`. Built so far: ownership, folders, departments and access checks (phase 1); original files in private storage, versions, recoverable processing, provenance, Trash and permanent delete (phase 2); the Company Knowledge library at `/library` (phase 3), shown only to shops whose `libraryStage` is `library` (Takumo staff switch it on per shop in `/admin`). Restricted and confidential documents stay off (`CONFIDENTIAL_READY = false`) until phase 4.
+
+**Release blockers (must be fixed before any shop uses the library)**
+1. **Facts from documents in the Trash are still used.** Moving a document to the Trash hides the document from the library, search and Ask's document search, but the facts already proposed or approved from it still appear under Knowledge → Facts, in Ask (`get_record`, the facts view) and in fact review. The library says so in its Trash; it must not claim that trashing removes what Takumo learnt from the document until this is enforced and tested (phase 4, fact visibility).
+2. The staging checks for phase 2 and 3: the private bucket and its signed links (Open in a new tab, Download), pooled-connection transactions, the library sweep cron, and the in-page previews. Takumo's pages are cross-origin isolated (COEP), so they can't frame a Storage link: PDFs and images up to 4 MB are sent by Takumo itself (`/api/library/documents/[id]/file?preview=1`), larger ones open in a new tab (docs/DEPLOY.md).
+
+**Known from browser QA (local, mocked Storage and AI)**
+- Several uploads at once: past the per-shop limit the rest are queued for the library sweep, which reads about 3 per run. With the 5-minute cron, 40 queued documents take over an hour; the library shows them as Queued meanwhile.
+- If the server stops while reading a document, it shows as Processing until its lease (5 min) runs out and the next sweep resumes it, so up to about 10 minutes.
+
 ## Pending
 
 **Owner actions (needed before real use)**

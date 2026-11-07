@@ -27,6 +27,14 @@ export const cleanName = (fileName: string) =>
 
 const vectorLiteral = (values: number[]) => `[${values.join(",")}]`;
 
+/**
+ * A document's card: Takumo's summary passage, not the document's own text.
+ * Checked in code: in SQL, "not a card" would also drop every passage whose
+ * meta has no "kind" (NULL), which is nearly all of them.
+ */
+export const isCard = (meta: unknown) =>
+  (meta as { kind?: unknown } | null)?.kind === "card";
+
 // Uploaded documents, as opposed to spreadsheet imports or ERP reports.
 export const DOCUMENT = { type: "upload", profile: "document" } as const;
 
@@ -35,11 +43,15 @@ export const DOCUMENT = { type: "upload", profile: "document" } as const;
  * if any. Matches by the cleaned name, so "SOP.pdf" and "SOP.docx" both find
  * "SOP".
  */
-export const documentNamed = (orgId: string, fileName: string) =>
+export const documentNamed = (
+  orgId: string,
+  fileName: string,
+  folderId: string | null = null
+) =>
   forOrg(database, orgId).source.findFirst({
     where: {
       name: cleanName(fileName),
-      folderId: null,
+      folderId,
       deletedAt: null,
       ...DOCUMENT,
     },
@@ -311,6 +323,34 @@ const VECTOR_SQL = `
     and ${LIVE}
   order by c.embedding <=> $2::vector
   limit $3`;
+
+/**
+ * Keyword search only, with no AI call (the library's search box): the best
+ * passages of current versions of documents not in the Trash, with a
+ * highlighted snippet.
+ */
+export const keywordPassages = async (
+  orgId: string,
+  query: string,
+  limit = 30
+) => {
+  const terms = searchTerms(query);
+  if (terms.length === 0) {
+    return [];
+  }
+  const rows = await database.$queryRawUnsafe<Row[]>(
+    KEYWORD_SQL,
+    orgId,
+    terms,
+    limit
+  );
+  return rows.map((row) => ({
+    sourceId: row.sourceId,
+    page: row.page,
+    snippet: cleanSnippet(row.snippet),
+    rank: Number(row.rank),
+  }));
+};
 
 /**
  * Hybrid search: keyword ranking always; vector similarity too when an

@@ -30,15 +30,36 @@ export const streamSteps = (
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      const emit = (event: IngestEvent) =>
-        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      // When the browser goes away the stream is closed, but the document
+      // keeps being read: its steps just aren't sent any more.
+      let open = true;
+      const emit = (event: IngestEvent) => {
+        if (!open) {
+          return;
+        }
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          open = false;
+        }
+      };
       try {
         await run(emit);
       } catch (error) {
         log.warn("Reading a document failed", { error: String(error) });
         emit({ type: "error", error: errorText(error) });
       }
-      controller.close();
+      if (open) {
+        try {
+          controller.close();
+        } catch {
+          // Already closed by the browser leaving.
+        }
+      }
+    },
+    cancel() {
+      // The browser left; processing carries on (and the sweep is there if
+      // this run stops).
     },
   });
   return new Response(stream, {

@@ -6,6 +6,7 @@ import {
   cleanName,
   DOCUMENT,
   DocumentExistsError,
+  isCard,
   LOCK_NAME_SQL,
   nameLock,
 } from "../knowledge/documents";
@@ -103,7 +104,9 @@ export const createDocument = async (
   orgId: string,
   userId: string | null,
   file: IncomingFile,
-  via: "upload" | "email"
+  via: "upload" | "email",
+  /** Checked by the caller (the viewer may add documents to it); null: the top. */
+  folderId: string | null = null
 ): Promise<NewVersion> => {
   const name = cleanName(file.name);
   const sha256 = sha256Hex(file.bytes);
@@ -114,7 +117,7 @@ export const createDocument = async (
     await database.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(LOCK_NAME_SQL, nameLock(orgId, name));
       const taken = await tx.source.findFirst({
-        where: { orgId, name, folderId: null, deletedAt: null, ...DOCUMENT },
+        where: { orgId, name, folderId, deletedAt: null, ...DOCUMENT },
         select: { id: true },
       });
       if (taken) {
@@ -126,6 +129,7 @@ export const createDocument = async (
           orgId,
           name,
           ...DOCUMENT,
+          folderId,
           status: "processing",
           uploadedBy: userId,
           versionSeq: 1,
@@ -163,6 +167,7 @@ export const createDocument = async (
     sourceId,
     versionId,
     subjectName: name,
+    folderId,
     detail: { version: 1, via, size: file.bytes.length },
   });
   return { sourceId, versionId, number: 1, name };
@@ -265,16 +270,13 @@ const currentText = async (
     return pages;
   }
   // Passages overlap a little; that's harmless for reading them again.
-  const chunks = await tx.docChunk.findMany({
-    where: {
-      orgId,
-      sourceId,
-      versionId,
-      NOT: { meta: { path: ["kind"], equals: "card" } },
-    },
-    orderBy: [{ ordinal: "asc" }, { id: "asc" }],
-    select: { content: true, page: true },
-  });
+  const chunks = (
+    await tx.docChunk.findMany({
+      where: { orgId, sourceId, versionId },
+      orderBy: [{ ordinal: "asc" }, { id: "asc" }],
+      select: { content: true, page: true, meta: true },
+    })
+  ).filter((c) => !isCard(c.meta));
   const byPage = new Map<number | null, string[]>();
   for (const c of chunks) {
     byPage.set(c.page, [...(byPage.get(c.page) ?? []), c.content]);
