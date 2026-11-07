@@ -28,27 +28,33 @@ export const cleanName = (fileName: string) =>
 const vectorLiteral = (values: number[]) => `[${values.join(",")}]`;
 
 // Uploaded documents, as opposed to spreadsheet imports or ERP reports.
-const DOCUMENT = { type: "upload", profile: "document" } as const;
+export const DOCUMENT = { type: "upload", profile: "document" } as const;
 
 /**
- * The stored document a file of this name would replace, if any. Matches by
- * the cleaned name, the same key storeDocument replaces by, so "SOP.pdf" and
- * "SOP.docx" both find "SOP".
+ * The live document (not in the Trash) a file of this name would clash with,
+ * if any. Matches by the cleaned name, so "SOP.pdf" and "SOP.docx" both find
+ * "SOP".
  */
 export const documentNamed = (orgId: string, fileName: string) =>
   forOrg(database, orgId).source.findFirst({
-    where: { name: cleanName(fileName), ...DOCUMENT },
+    where: {
+      name: cleanName(fileName),
+      folderId: null,
+      deletedAt: null,
+      ...DOCUMENT,
+    },
     select: { id: true, name: true },
   });
 
 /**
- * Thrown when a document with this name exists and the person storing the new
- * one may not replace it. The message is written for people.
+ * Thrown when a live document already has this name. Uploading never
+ * replaces a document: a new version is its own, explicit action. The
+ * message is written for people.
  */
 export class DocumentExistsError extends Error {
   constructor(name: string) {
     super(
-      `There's already a document called ${name}. Rename your file, or ask an admin to replace it.`
+      `There's already a document called ${name}. Rename your file and upload it again.`
     );
     this.name = "DocumentExistsError";
   }
@@ -89,31 +95,36 @@ const embedChunks = async (chunks: StoredChunk[]) => {
   }
 };
 
-// One statement for every passage's vector, so the transaction stays short.
-const SET_EMBEDDINGS_SQL = `
+// One statement for every passage's vector (in order), so the transaction
+// stays short.
+const SET_VERSION_EMBEDDINGS_SQL = `
   update "DocChunk" c set embedding = v.embedding::vector
-  from unnest($1::text[], $2::text[]) as v(id, embedding)
-  where c.id = v.id and c."orgId" = $3`;
+  from unnest($2::text[]) with ordinality as v(embedding, n)
+  where c."versionId" = $1 and c.ordinal = v.n - 1 and c."orgId" = $3`;
 
 // Holds other stores of the same document name in this shop until this one
-// commits, so two uploads can't both pass the check below. The lock key and
+// commits, so two uploads can't both pass the name check. The lock key and
 // the lookup use the same shop and the same cleaned name (callers pass
 // cleanName's result or a stored name), so "SOP.pdf" and "SOP.docx" queue on
-// one lock.
-const LOCK_NAME_SQL = "select pg_advisory_xact_lock(hashtextextended($1, 0))";
+// one lock. A unique index on live names backs it up.
+export const LOCK_NAME_SQL =
+  "select pg_advisory_xact_lock(hashtextextended($1, 0))";
+export const nameLock = (orgId: string, name: string) =>
+  `knowledge-document:${orgId}:${name}`;
 
 // Long enough for a few hundred passages; nothing slow runs inside it.
 const STORE_TIMEOUT_MS = 30_000;
 
 /**
- * Replace a document (same name) with these passages and make them
- * searchable: keywords at once, meaning when an embedding model is set up.
+ * Store a whole document at once, as a new version that is current straight
+ * away: for text Takumo writes itself (the demo shop, evaluations), which
+ * needs no reading. Uploads go through the library's processing instead.
  *
- * Everything is written in one transaction: the old document stays as it was
- * until the new one is complete, and a failure leaves nothing half-written.
- * Without `mayReplace`, an existing document with this name is left alone and
- * DocumentExistsError is thrown; the check runs inside the transaction, so a
- * document stored while this one was being read is caught too.
+ * Everything is written in one transaction, so the document is never seen
+ * half-written. With `mayReplace` (Takumo's own sample documents only) an
+ * existing document of this name gets the new version and keeps its id;
+ * without it DocumentExistsError is thrown. When embedding fails the
+ * document is still stored, searchable by keyword.
  */
 export const storeDocument = async (
   orgId: string,
@@ -124,61 +135,88 @@ export const storeDocument = async (
 ) => {
   // Before the transaction: it calls the embedding model.
   const vectors = await embedChunks(chunks);
-  const sourceId = crypto.randomUUID();
-  const rows = chunks.map((c) => ({
-    id: crypto.randomUUID(),
-    orgId,
-    sourceId,
-    content: c.content,
-    page: c.page,
-    meta: {
-      ...(c.heading ? { heading: c.heading } : {}),
-      ...(c.context ? { context: c.context } : {}),
-      ...c.meta,
-    },
-  }));
+  const versionId = crypto.randomUUID();
 
-  await forOrg(database, orgId).$transaction(
+  const sourceId = await forOrg(database, orgId).$transaction(
     async (tx) => {
-      await tx.$executeRawUnsafe(
-        LOCK_NAME_SQL,
-        `knowledge-document:${orgId}:${name}`
-      );
-      const existing = await tx.source.findMany({
-        where: { name, ...DOCUMENT },
+      await tx.$executeRawUnsafe(LOCK_NAME_SQL, nameLock(orgId, name));
+      const existing = await tx.source.findFirst({
+        where: { orgId, name, folderId: null, deletedAt: null, ...DOCUMENT },
         select: { id: true },
       });
-      if (existing.length > 0 && !mayReplace) {
+      if (existing && !mayReplace) {
         throw new DocumentExistsError(name);
       }
-      if (existing.length > 0) {
-        await tx.source.deleteMany({
-          where: { id: { in: existing.map((s) => s.id) }, ...DOCUMENT },
+      const id = existing?.id ?? crypto.randomUUID();
+      if (!existing) {
+        await tx.source.create({
+          data: { id, orgId, name, ...DOCUMENT, status: "processing" },
         });
       }
-      await tx.source.create({
+      const [{ number }] = await tx.$queryRawUnsafe<{ number: number }[]>(
+        `update "Source" set "versionSeq" = "versionSeq" + 1 where id = $1
+         returning "versionSeq" as number`,
+        id
+      );
+      await tx.documentVersion.create({
         data: {
-          id: sourceId,
+          id: versionId,
           orgId,
+          sourceId: id,
+          number,
           name,
-          ...DOCUMENT,
           status: "ready",
-          summary,
+          stage: "done",
+          activatedAt: new Date(),
         },
       });
-      await tx.docChunk.createMany({ data: rows });
+      await tx.docChunk.createMany({
+        data: chunks.map((c, ordinal) => ({
+          id: crypto.randomUUID(),
+          orgId,
+          sourceId: id,
+          versionId,
+          ordinal,
+          content: c.content,
+          page: c.page,
+          meta: {
+            ...(c.heading ? { heading: c.heading } : {}),
+            ...(c.context ? { context: c.context } : {}),
+            ...c.meta,
+          },
+        })),
+      });
       if (vectors) {
         await tx.$executeRawUnsafe(
-          SET_EMBEDDINGS_SQL,
-          rows.map((r) => r.id),
+          SET_VERSION_EMBEDDINGS_SQL,
+          versionId,
           vectors,
           orgId
         );
       }
+      await tx.source.update({
+        where: { id },
+        data: { currentVersionId: versionId, status: "ready", summary },
+      });
+      // Earlier versions' passages are never searched again.
+      await tx.docChunk.deleteMany({
+        where: {
+          orgId,
+          sourceId: id,
+          OR: [{ versionId: null }, { NOT: { versionId } }],
+        },
+      });
+      return id;
     },
     { timeout: STORE_TIMEOUT_MS }
   );
-  return { sourceId, name, chunks: rows.length, embedded: vectors !== null };
+  return {
+    sourceId,
+    versionId,
+    name,
+    chunks: chunks.length,
+    embedded: vectors !== null,
+  };
 };
 
 /**
@@ -225,6 +263,11 @@ interface Row {
   sourceId: string;
 }
 
+// Only the current version of a document that isn't in the Trash is ever
+// searched: a version still being read, a failed one and an older one are
+// not.
+const LIVE = `s."deletedAt" is null and c."versionId" = s."currentVersionId"`;
+
 // What keyword search reads: the passage with its context sentence.
 const SEARCHED = `coalesce(c.meta ->> 'context', '') || ' ' || c.content`;
 
@@ -252,6 +295,7 @@ const KEYWORD_SQL = `
   join "Source" s on s.id = c."sourceId"
   cross join q
   where c."orgId" = $1
+    and ${LIVE}
     and (to_tsvector('english', ${SEARCHED}) @@ q.query
       or to_tsvector('simple', ${SEARCHED}) @@ q.exact)
   order by rank desc
@@ -264,6 +308,7 @@ const VECTOR_SQL = `
   from "DocChunk" c
   join "Source" s on s.id = c."sourceId"
   where c."orgId" = $1 and c.embedding is not null
+    and ${LIVE}
   order by c.embedding <=> $2::vector
   limit $3`;
 

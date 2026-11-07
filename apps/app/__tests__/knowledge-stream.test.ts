@@ -1,6 +1,7 @@
 // @vitest-environment node
-// What an upload's step stream says when storing fails: a refused replacement
-// explains itself; anything else (which could name the AI provider) doesn't.
+// What an upload's step stream says when storing fails: a name already taken
+// and Takumo's own processing problems explain themselves; anything else
+// (which could name the AI provider) doesn't.
 import { describe, expect, test, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -12,6 +13,9 @@ vi.mock("@repo/observability/log", () => ({
 
 const { DocumentExistsError } = await import("../lib/knowledge/documents");
 const { streamSteps } = await import("../lib/knowledge/stream");
+const { DocumentProblem, OriginalNotStoredError } = await import(
+  "../lib/library/problems"
+);
 
 const lastEvent = async (error: unknown) => {
   const response = streamSteps(() => Promise.reject(error));
@@ -20,11 +24,23 @@ const lastEvent = async (error: unknown) => {
 };
 
 describe("upload stream errors", () => {
-  test("a refused replacement says why", async () => {
+  test("a name already taken says why (uploading never replaces)", async () => {
     expect(await lastEvent(new DocumentExistsError("SOP-12"))).toEqual({
       type: "error",
       error:
-        "There's already a document called SOP-12. Rename your file, or ask an admin to replace it.",
+        "There's already a document called SOP-12. Rename your file and upload it again.",
+    });
+  });
+
+  test("Takumo's own processing and storage problems say what happened", async () => {
+    expect(
+      await lastEvent(
+        new DocumentProblem("No text found in that file.", { permanent: true })
+      )
+    ).toEqual({ type: "error", error: "No text found in that file." });
+    expect(await lastEvent(new OriginalNotStoredError())).toEqual({
+      type: "error",
+      error: "Couldn't save the file just now. Try again in a minute.",
     });
   });
 

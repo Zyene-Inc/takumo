@@ -57,7 +57,11 @@ const loadStarters = async (orgId: string) => {
         select: { quoteNo: true },
       }),
       db.source.findMany({
-        where: { profile: "document" },
+        where: {
+          profile: "document",
+          deletedAt: null,
+          currentVersionId: { not: null },
+        },
         orderBy: { createdAt: "desc" },
         take: 5,
         select: { name: true },

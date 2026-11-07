@@ -11,6 +11,7 @@ import { track } from "../analytics";
 import { featureProblem } from "../billing";
 import { DocumentExistsError, documentNamed } from "../knowledge/documents";
 import { ingestDocument } from "../knowledge/ingest";
+import { DocumentProblem } from "../library/problems";
 import { parseEmail } from "../quotes/email";
 import { replySubject, threadHeaders } from "./ask-email";
 import { type DocOutcome, docsReply, pickDocuments } from "./docs-email";
@@ -47,11 +48,14 @@ const send = async (
 };
 
 const EXISTS =
-  "there's already a document with this name. Rename the file, or ask an admin to replace it.";
+  "there's already a document with this name. Rename the file and send it again.";
 
 const failureText = (error: unknown) => {
   if (error instanceof DocumentExistsError) {
     return EXISTS;
+  }
+  if (error instanceof DocumentProblem) {
+    return error.message;
   }
   return error instanceof Error && error.message.startsWith("No text found")
     ? "no text found in it."
@@ -62,12 +66,11 @@ const failureText = (error: unknown) => {
 const readOne = async (
   orgId: string,
   userId: string,
-  file: { name: string; bytes: Uint8Array },
-  mayReplace: boolean
+  file: { name: string; bytes: Uint8Array }
 ): Promise<DocOutcome> => {
-  // Like an upload: only people who can remove documents replace one. Checked
-  // again when the document is stored, in case one arrived in the meantime.
-  if (!mayReplace && (await documentNamed(orgId, file.name))) {
+  // Like an upload: an email never replaces a document. Checked again when
+  // the document is created, in case one arrived in the meantime.
+  if (await documentNamed(orgId, file.name)) {
     return { ok: false, name: file.name, error: EXISTS };
   }
   const steps: string[] = [];
@@ -91,7 +94,7 @@ const readOne = async (
           };
         }
       },
-      { mayReplace }
+      { via: "email" }
     );
   } catch (error) {
     log.warn("Reading an emailed document failed", {
@@ -136,10 +139,10 @@ export const processDocs = async (
       return;
     }
     const { read, left } = pickDocuments(email.attachments);
-    const mayReplace = can(member.role, "knowledge:write");
     const outcomes: DocOutcome[] = [];
     for (const file of read) {
-      outcomes.push(await readOne(orgId, member.userId, file, mayReplace));
+      // The uploader is the shop member the sender's address belongs to.
+      outcomes.push(await readOne(orgId, member.userId, file));
     }
     const emailed = await send(
       sender,

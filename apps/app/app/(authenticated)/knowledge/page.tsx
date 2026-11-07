@@ -44,25 +44,34 @@ const KnowledgePage = async () => {
   if (!orgId) {
     notFound();
   }
+  // Documents in the Trash aren't listed.
   const sources = await forOrg(database, orgId).source.findMany({
-    where: { profile: "document" },
+    where: { profile: "document", deletedAt: null },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
       name: true,
       summary: true,
       createdAt: true,
+      currentVersionId: true,
       _count: { select: { chunks: true } },
     },
   });
-  // What Takumo understood about each document, when it has read it.
+  const current = new Set(sources.map((s) => s.currentVersionId));
+  // What Takumo understood about each document (its current version), when
+  // it has read it.
   const cards = new Map(
     (
       await forOrg(database, orgId).docChunk.findMany({
-        where: { meta: { path: ["kind"], equals: "card" } },
-        select: { sourceId: true, meta: true },
+        where: {
+          meta: { path: ["kind"], equals: "card" },
+          source: { deletedAt: null },
+        },
+        select: { sourceId: true, versionId: true, meta: true },
       })
-    ).map((c) => [c.sourceId, c.meta as CardMeta])
+    )
+      .filter((c) => current.has(c.versionId))
+      .map((c) => [c.sourceId, c.meta as CardMeta])
   );
 
   return (

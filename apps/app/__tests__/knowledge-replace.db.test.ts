@@ -1,9 +1,16 @@
 // @vitest-environment node
-// Replacing a Knowledge document against a real database: only people who may
-// remove documents replace one (whatever the file's extension, and even when
-// the other document arrives while this one is being read), and a replacement
-// is all-or-nothing. Runs only with TEST_DATABASE_URL.
+// Replacing a Knowledge document against a real database. Phase 0 stopped
+// people without knowledge:write replacing documents by uploading the same
+// name; since the Knowledge Hub's phase 2, uploading never replaces a
+// document for anyone (whatever the file's extension, and even when the
+// other document arrives while this one is being read): a new version is a
+// separate, explicit action (library-documents.db.test.ts). Takumo's own
+// sample documents (storeDocument) still replace all-or-nothing. Runs only
+// with TEST_DATABASE_URL.
+
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   afterAll,
   beforeAll,
@@ -94,13 +101,25 @@ const vectors = (n: number, dimensions = DIMENSIONS) =>
     Array.from({ length: dimensions }, (_, j) => (i + j + 1) / dimensions)
   );
 
+// Real file contents for each type (uploads are checked for them).
+const DOCX = new Uint8Array(
+  readFileSync(join(import.meta.dirname, "fixtures", "sample.docx"))
+);
+const bytesFor = (fileName: string, text: string) => {
+  const ext = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
+  if (ext === ".pdf") {
+    return new TextEncoder().encode(`%PDF-1.7\n${text}`);
+  }
+  return ext === ".docx" ? DOCX : new TextEncoder().encode(text);
+};
+
 const upload = (
   fileName: string,
   text = `${fileName} body text`,
   extra: Record<string, string> = {}
 ) => {
   const form = new FormData();
-  form.set("file", new File([text], fileName));
+  form.set("file", new File([bytesFor(fileName, text)], fileName));
   for (const [key, value] of Object.entries(extra)) {
     form.set(key, value);
   }
@@ -203,7 +222,8 @@ describe.skipIf(!TEST_DATABASE_URL)("replacing a document (database)", () => {
       expect(response.status).toBe(409);
       expect(await response.json()).toEqual({
         error:
-          "There's already a document called SOP-12. Rename your file, or ask an admin to replace it.",
+          "There's already a document called SOP-12. Rename your file and upload it again.",
+        code: "name_taken",
       });
       expect(readDocument).not.toHaveBeenCalled();
       const after = await stored("SOP-12");
@@ -237,40 +257,42 @@ describe.skipIf(!TEST_DATABASE_URL)("replacing a document (database)", () => {
       expect(proposeFact).toHaveBeenCalledTimes(1);
     });
 
-    test("a planner replaces SOP-12 by uploading SOP-12.docx", async () => {
-      session.role = "planner";
+    test.each([
+      "planner",
+      "admin",
+      "owner",
+    ])("a %s can't replace SOP-12 by uploading SOP-12.docx either", async (role) => {
+      session.role = role;
       const original = await seed("SOP-12");
       const response = await route.POST(upload("SOP-12.docx"));
-      expect((await events(response)).at(-1)?.type).toBe("done");
+      expect(response.status).toBe(409);
+      expect(readDocument).not.toHaveBeenCalled();
       const after = await stored("SOP-12");
-      expect(after).toHaveLength(1);
-      expect(after[0]?.id).not.toBe(original.sourceId);
-      expect(after[0]?.summary).toBe("About SOP-12.");
-      expect(
-        await database.docChunk.count({
-          where: { sourceId: original.sourceId },
-        })
-      ).toBe(0);
-      expect(proposeFact).toHaveBeenCalledTimes(1);
+      expect(after.map((s) => s.id)).toEqual([original.sourceId]);
+      expect(after[0]?.summary).toBe("Original.");
+      expect(after[0]?._count.chunks).toBe(1);
+      expect(proposeFact).not.toHaveBeenCalled();
     });
 
-    test("a document stored while the upload is being read isn't replaced", async () => {
+    test("while an upload is being read, its name is taken: nothing else can store it", async () => {
+      const raced: unknown[] = [];
       readDocument.mockImplementation(async (_org: string, name: string) => {
-        // Someone else's upload of the same name finishes first.
-        await seed("Late SOP", ["Someone else's version."]);
+        // Someone else tries to store the same name meanwhile.
+        raced.push(
+          await documents
+            .storeDocument(orgId, "Late SOP", "Theirs.", [chunk("Theirs.")], {
+              mayReplace: false,
+            })
+            .catch((e: unknown) => e)
+        );
         return { pages: [{ page: 1, text: `Text of ${name}` }], recognized: 0 };
       });
       const response = await route.POST(upload("Late SOP.pdf"));
-      const streamed = await events(response);
-      expect(streamed.at(-1)).toEqual({
-        type: "error",
-        error:
-          "There's already a document called Late SOP. Rename your file, or ask an admin to replace it.",
-      });
+      expect((await events(response)).at(-1)?.type).toBe("done");
+      expect(raced[0]).toBeInstanceOf(documents.DocumentExistsError);
       const after = await stored("Late SOP");
       expect(after).toHaveLength(1);
-      expect(after[0]?.summary).toBe("Original.");
-      expect(proposeFact).not.toHaveBeenCalled();
+      expect(after[0]?.summary).toBe("About Late SOP.");
     });
   });
 
@@ -403,21 +425,21 @@ describe.skipIf(!TEST_DATABASE_URL)("replacing a document (database)", () => {
   describe("ingestDocument", () => {
     // The lock and the lookup both use the cleaned name, so files that
     // differ only by extension contend for the same document.
-    const ingestAtOnce = (fileNames: string[], mayReplace: boolean) =>
+    const ingestAtOnce = (fileNames: string[]) =>
       Promise.allSettled(
         fileNames.map((name) =>
           ingest.ingestDocument(
             orgId,
             "user_sam",
-            { name, bytes: new Uint8Array([1]) },
+            { name, bytes: bytesFor(name, "Plan") },
             () => undefined,
-            { mayReplace }
+            { via: "upload" }
           )
         )
       );
 
-    test("Plan.pdf and Plan.docx at once without permission: one is stored", async () => {
-      const results = await ingestAtOnce(["Plan.pdf", "Plan.docx"], false);
+    test("Plan.pdf and Plan.docx at once: one is stored", async () => {
+      const results = await ingestAtOnce(["Plan.pdf", "Plan.docx"]);
       expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
       const refused = results.find((r) => r.status === "rejected");
       expect(refused?.status === "rejected" && refused.reason).toBeInstanceOf(
@@ -426,28 +448,25 @@ describe.skipIf(!TEST_DATABASE_URL)("replacing a document (database)", () => {
       expect(await stored("Plan")).toHaveLength(1);
     });
 
-    test("Plan.pdf, Plan.PDF and Plan.md at once with permission: one document remains", async () => {
-      await seed("Plan");
-      const results = await ingestAtOnce(
-        ["Plan.pdf", "Plan.PDF", "Plan.md"],
-        true
-      );
-      expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+    test("Plan.pdf, Plan.PDF and Plan.md at once never replace Plan", async () => {
+      const original = await seed("Plan");
+      const results = await ingestAtOnce(["Plan.pdf", "Plan.PDF", "Plan.md"]);
+      expect(results.every((r) => r.status === "rejected")).toBe(true);
       const after = await stored("Plan");
-      expect(after).toHaveLength(1);
-      expect(after[0]?.summary).toBe("About Plan.");
+      expect(after.map((s) => s.id)).toEqual([original.sourceId]);
+      expect(after[0]?.summary).toBe("Original.");
     });
 
-    test("without permission, no facts are proposed for a refused document", async () => {
+    test("no facts are proposed for a refused document", async () => {
       await seed("Setup P-1001");
       const emitted: { type: string }[] = [];
       await expect(
         ingest.ingestDocument(
           orgId,
           "user_sam",
-          { name: "Setup P-1001.docx", bytes: new Uint8Array([1]) },
+          { name: "Setup P-1001.docx", bytes: DOCX },
           (e) => emitted.push(e),
-          { mayReplace: false }
+          { via: "upload" }
         )
       ).rejects.toBeInstanceOf(documents.DocumentExistsError);
       expect(emitted.some((e) => e.type === "done")).toBe(false);

@@ -32,6 +32,13 @@ import { chooseMode } from "@/lib/agent/mode";
 import { recordUsage } from "@/lib/ai-usage";
 import { track } from "@/lib/analytics";
 import { featureProblem } from "@/lib/billing";
+import {
+  answerProvenance,
+  linkProposedFacts,
+  recordAnswerSources,
+  removedAnswer,
+  settleSources,
+} from "@/lib/library/provenance";
 import { checkToday } from "@/lib/schedule/request";
 
 // Several tool calls (and a capacity check) per answer.
@@ -135,6 +142,7 @@ export const POST = async (request: Request) => {
       role: "user",
       content: text,
       parts: userMessage.parts as object,
+      provenance: "recorded",
     },
   });
 
@@ -201,23 +209,36 @@ export const POST = async (request: Request) => {
         userId,
         properties: { tools: tools.map((t) => t.tool), mode, asked },
       });
-      await database.message.create({
-        data: {
-          id: responseMessage.id,
-          conversationId: id,
-          role: "assistant",
-          content: splitAnswer(messageText(responseMessage)).body,
-          parts: (context
-            ? [...responseMessage.parts, { type: CONTEXT_PART, data: context }]
-            : responseMessage.parts) as object,
-          // Audit trail of what the agent looked at.
-          toolCalls: tools.map((t) => ({
-            tool: t.tool,
-            input: t.input,
-            error: t.error,
-          })) as object,
-          citations: sourcesIn([responseMessage]) as object,
-        },
+      // Which documents the answer drew on, saved with it (MessageSource).
+      const worked = await answerProvenance(orgId, id, tools);
+      await database.$transaction(async (tx) => {
+        const found = await settleSources(tx, orgId, worked);
+        await tx.message.create({
+          data: {
+            id: responseMessage.id,
+            conversationId: id,
+            role: "assistant",
+            content: splitAnswer(messageText(responseMessage)).body,
+            parts: (context
+              ? [
+                  ...responseMessage.parts,
+                  { type: CONTEXT_PART, data: context },
+                ]
+              : responseMessage.parts) as object,
+            // Audit trail of what the agent looked at.
+            toolCalls: tools.map((t) => ({
+              tool: t.tool,
+              input: t.input,
+              error: t.error,
+            })) as object,
+            citations: sourcesIn([responseMessage]) as object,
+            provenance: found.provenance,
+            // A document it used was permanently deleted meanwhile.
+            ...(found.gone ? removedAnswer() : {}),
+          },
+        });
+        await recordAnswerSources(tx, orgId, id, responseMessage.id, found);
+        await linkProposedFacts(tx, orgId, tools, found);
       });
       await database.conversation.update({
         where: { id },

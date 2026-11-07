@@ -13,6 +13,13 @@ import { MAX_MESSAGE_CHARS, titleFrom } from "../agent/conversations";
 import { budgetProblem, recordUsage } from "../ai-usage";
 import { track } from "../analytics";
 import { featureProblem } from "../billing";
+import {
+  answerProvenance,
+  linkProposedFacts,
+  recordAnswerSources,
+  removedAnswer,
+  settleSources,
+} from "../library/provenance";
 import { parseEmail } from "../quotes/email";
 import {
   answerEmail,
@@ -115,6 +122,7 @@ export const processAsk = async (
         role: "user",
         content: question,
         parts: [{ type: "text", text: question }],
+        provenance: "recorded",
       },
     });
 
@@ -133,17 +141,35 @@ export const processAsk = async (
     const answer = splitAnswer(result.text).body.trim();
     const links = addToPlanLinks(result.steps);
     const tools = result.steps.flatMap((s) => s.toolCalls);
-    await database.message.create({
-      data: {
-        conversationId: conversation.id,
-        role: "assistant",
-        content: answer,
-        parts: [{ type: "text", text: answer }],
-        toolCalls: tools.map((t) => ({
-          tool: t.toolName,
-          input: t.input,
-        })) as object,
-      },
+    // Which documents the answer drew on, saved with it (MessageSource).
+    const used = result.steps.flatMap((s) =>
+      s.toolResults.map((r) => ({
+        tool: r.toolName,
+        input: r.input,
+        output: r.output,
+      }))
+    );
+    const worked = await answerProvenance(orgId, conversation.id, used);
+    await database.$transaction(async (tx) => {
+      const found = await settleSources(tx, orgId, worked);
+      const saved = await tx.message.create({
+        data: {
+          conversationId: conversation.id,
+          role: "assistant",
+          content: answer,
+          parts: [{ type: "text", text: answer }],
+          toolCalls: tools.map((t) => ({
+            tool: t.toolName,
+            input: t.input,
+          })) as object,
+          provenance: found.provenance,
+          // A document it used was permanently deleted meanwhile.
+          ...(found.gone ? removedAnswer() : {}),
+        },
+        select: { id: true },
+      });
+      await recordAnswerSources(tx, orgId, conversation.id, saved.id, found);
+      await linkProposedFacts(tx, orgId, used, found);
     });
     const emailed = await send(
       sender,

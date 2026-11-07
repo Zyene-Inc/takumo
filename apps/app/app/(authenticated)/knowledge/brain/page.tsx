@@ -104,13 +104,18 @@ const BrainPage = async () => {
         value: true,
       },
     }),
+    // Documents in the Trash, and versions still being read, aren't shown.
     db.source.findMany({
-      where: { profile: "document" },
+      where: { profile: "document", deletedAt: null },
       select: { id: true, name: true, summary: true },
     }),
     // Each read document's card lists the records it's about.
     db.docChunk.findMany({
-      where: { meta: { path: ["kind"], equals: "card" } },
+      where: {
+        meta: { path: ["kind"], equals: "card" },
+        source: { deletedAt: null },
+        version: { currentOf: { isNot: null } },
+      },
       select: { sourceId: true, meta: true },
     }),
   ]);

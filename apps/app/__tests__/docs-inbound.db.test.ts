@@ -156,13 +156,13 @@ describe.skipIf(!TEST_DATABASE_URL)("documents by email (database)", () => {
       return;
     }
     await inbound.processMessage(accepted, raw);
-    // Sam is an operator: a new document, but never a replacement.
+    // An emailed document is a new document, never a replacement.
     expect(ingestDocument).toHaveBeenCalledWith(
       orgId,
       "user_sam",
       expect.objectContaining({ name: "Setup P-1001.pdf" }),
       expect.any(Function),
-      { mayReplace: false }
+      { via: "email" }
     );
     const reply = emails.at(-1);
     expect(reply).toMatchObject({
@@ -228,7 +228,7 @@ describe.skipIf(!TEST_DATABASE_URL)("documents by email (database)", () => {
     expect(message.status).toBe("failed");
     expect(message.detail).toMatchObject({
       documents: [
-        "Late sheet.pdf: there's already a document with this name. Rename the file, or ask an admin to replace it.",
+        "Late sheet.pdf: there's already a document with this name. Rename the file and send it again.",
       ],
     });
   });

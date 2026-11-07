@@ -25,8 +25,22 @@ export { approveFact, rejectFact } from "./review";
 export type { FactSource } from "./subjects";
 export { currentValue, findSubject } from "./subjects";
 
+/** A document a fact was read from, with the words it used. */
+export interface FactDocument {
+  quote: string | null;
+  sourceId: string;
+  versionId: string | null;
+}
+
 interface Proposal {
   attribute: string;
+  /**
+   * Documents the fact came from (FactSource). Given: the fact's provenance
+   * is "documents". Not given: "none" for what people say or measure, and
+   * "unknown" for chat, where the conversation's documents are added when
+   * the answer is saved (lib/library/provenance.ts).
+   */
+  documents?: FactDocument[];
   evidence: string | null;
   noteId?: string | null;
   source: FactSource;
@@ -40,6 +54,42 @@ type ProposeResult = Result<{
   existing: boolean;
   fact: { id: string; label: string; number: number };
 }>;
+
+const provenanceOf = (proposal: Proposal) => {
+  if (proposal.documents?.length) {
+    return "documents";
+  }
+  return proposal.source === "chat" ? "unknown" : "none";
+};
+
+const sourceRows = (orgId: string, documents: FactDocument[]) =>
+  documents.map((d) => ({
+    orgId,
+    sourceId: d.sourceId,
+    versionId: d.versionId,
+    quote: d.quote?.slice(0, 2000) ?? null,
+  }));
+
+/** Link a fact to the documents it was read from; a link already there is kept. */
+const linkDocuments = async (
+  orgId: string,
+  factId: string,
+  documents: FactDocument[] | undefined
+) => {
+  if (!documents?.length) {
+    return;
+  }
+  await database.factSource.createMany({
+    data: sourceRows(orgId, documents).map((row) => ({ ...row, factId })),
+    skipDuplicates: true,
+  });
+};
+
+/** The fact's sources, created with it. */
+const sourcesOf = (orgId: string, proposal: Proposal) =>
+  proposal.documents?.length
+    ? { sources: { create: sourceRows(orgId, proposal.documents) } }
+    : {};
 
 /**
  * Record a fact as pending. Checks the value, skips a change that wouldn't
@@ -95,6 +145,8 @@ export const proposeFact = async (
     select: { id: true, number: true },
   });
   if (same) {
+    // Another document stating the same fact is another source for it.
+    await linkDocuments(orgId, same.id, proposal.documents);
     return {
       ok: true,
       existing: true,
@@ -121,6 +173,8 @@ export const proposeFact = async (
           statedBy: proposal.statedBy,
           evidence: proposal.evidence?.trim().slice(0, 2000) || null,
           noteId: proposal.noteId ?? null,
+          provenance: provenanceOf(proposal),
+          ...sourcesOf(orgId, proposal),
         },
         select: { id: true, number: true },
       });

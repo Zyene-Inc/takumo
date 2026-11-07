@@ -28,6 +28,26 @@ Use a separate Supabase project for anything customers touch; the dev project is
    `takumo_reader.<project-ref>` and that password. It can only read the `ask.*` views, one
    shop at a time, read-only, with a 5-second statement timeout.
 
+4. **Original documents (Knowledge Hub): a private Storage bucket.** Not created by any
+   migration; set it up by hand in each environment (test first, never straight in production):
+   - Supabase → Storage → New bucket: name `company-documents` (or set `KNOWLEDGE_BUCKET`),
+     **Public: off**, file size limit **20 MB**, allowed MIME types `application/pdf`,
+     `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `text/plain`,
+     `text/markdown`, `text/csv`, `image/jpeg`, `image/png`, `image/webp`.
+   - **Add no Storage policies.** Only the server touches the bucket, with the service-role key,
+     after Takumo has checked who may see the document; people get a link that works for 60
+     seconds. With no policies, the `anon` and `authenticated` roles can't list or read it.
+   - On the **app** project only, set `SUPABASE_URL` (Project URL) and
+     `SUPABASE_SERVICE_ROLE_KEY` (Settings → API → service_role). Server-only: never prefix them
+     with `NEXT_PUBLIC_`. Without them, documents are still read and searchable but their
+     original files aren't kept (uploads say so when someone tries to open one).
+   - Files live at `org/<shop>/src/<document>/v<version>/<sha256>`. A permanent delete removes
+     them; the `/api/cron/library` sweep (every 5 minutes, `vercel.json`) retries until Storage
+     confirms they're gone, and also resumes document processing that stopped.
+   - Check, before relying on it: upload a document, open it from a signed-in session, confirm a
+     second shop's member gets "doesn't exist", and that the bucket URL without a token is
+     refused.
+
 ## 2. Vercel projects
 
 For each row in the table: Vercel → Add New → Project → import `Zyene-Inc/takumo` → set the

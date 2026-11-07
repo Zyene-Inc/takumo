@@ -11,7 +11,20 @@
 // query runs in one READ ONLY transaction that is rolled back.
 import pg from "pg";
 
-const TABLES = ["Org", "Source", "DocChunk", "Fact", "Folder", "AccessGrant"];
+const TABLES = [
+  "Org",
+  "Source",
+  "DocChunk",
+  "Fact",
+  "Folder",
+  "AccessGrant",
+  "DocumentVersion",
+  "DocumentPage",
+  "FactSource",
+  "MessageSource",
+  "DocumentAuditLog",
+  "StorageDeletion",
+];
 const OTHER_ROLES = ["takumo_reader", "anon", "authenticated"];
 
 const yesNo = (value: boolean | null | undefined) => {

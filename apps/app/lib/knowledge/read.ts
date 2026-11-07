@@ -96,6 +96,17 @@ export const inGroups = <T>(items: T[], size: number) =>
     items.slice(i * size, (i + 1) * size)
   );
 
+export interface ReadOptions {
+  /** Scanned pages already read by an earlier run, by page number: not read again. */
+  known?: Map<number, string>;
+  onProgress?: (done: number, total: number) => void;
+  /**
+   * Called after each batch of scanned pages is read, before the next one,
+   * so a run that stops resumes from there (Knowledge Hub processing).
+   */
+  onRecognized?: (pages: PageText[]) => Promise<void>;
+}
+
 interface ReadResult {
   pages: PageText[];
   /** Pages read from an image (scans, photos) rather than a text layer. */
@@ -110,11 +121,17 @@ export const readDocument = async (
   orgId: string,
   name: string,
   bytes: Uint8Array,
-  onProgress?: (done: number, total: number) => void
+  options: ReadOptions = {}
 ): Promise<ReadResult> => {
+  const { known, onProgress, onRecognized } = options;
   const ext = name.slice(name.lastIndexOf(".")).toLowerCase();
   if ((IMAGE_TYPES as readonly string[]).includes(ext)) {
+    const saved = known?.get(1);
+    if (saved !== undefined) {
+      return { pages: [{ page: 1, text: saved }], recognized: 1 };
+    }
     const [markdown] = await recognize(orgId, bytes, IMAGE_MEDIA[ext], 1);
+    await onRecognized?.([{ page: 1, text: markdown }]);
     return { pages: [{ page: 1, text: markdown }], recognized: 1 };
   }
   const pages = await extractPages(name, bytes);
@@ -127,8 +144,15 @@ export const readDocument = async (
   if (scanned.length === 0) {
     return { pages, recognized: 0 };
   }
-  const groups = inGroups(scanned, PAGES_PER_CALL);
-  let done = 0;
+  for (const page of scanned) {
+    const saved = known?.get(page);
+    if (saved !== undefined) {
+      pages[page - 1] = { page, text: saved };
+    }
+  }
+  const toRead = scanned.filter((page) => !known?.has(page));
+  const groups = inGroups(toRead, PAGES_PER_CALL);
+  let done = scanned.length - toRead.length;
   for (const batch of inGroups(groups, PARALLEL_CALLS)) {
     await Promise.all(
       batch.map(async (group) => {
@@ -141,6 +165,7 @@ export const readDocument = async (
         group.forEach((page, i) => {
           pages[page - 1] = { page, text: texts[i] };
         });
+        await onRecognized?.(group.map((page) => pages[page - 1]));
         done += group.length;
         onProgress?.(done, scanned.length);
       })

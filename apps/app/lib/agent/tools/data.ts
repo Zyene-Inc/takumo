@@ -64,7 +64,11 @@ Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in 
       const hits = await searchDocuments(ctx.orgId, query, 6);
       if (hits.length === 0) {
         const count = await forOrg(database, ctx.orgId).source.count({
-          where: { profile: "document" },
+          where: {
+            profile: "document",
+            deletedAt: null,
+            currentVersionId: { not: null },
+          },
         });
         return {
           results: [],

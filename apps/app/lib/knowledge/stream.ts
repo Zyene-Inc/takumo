@@ -1,13 +1,18 @@
 import "server-only";
 
 import { log } from "@repo/observability/log";
+import { DocumentProblem, OriginalNotStoredError } from "../library/problems";
 import { DocumentExistsError } from "./documents";
-import type { IngestEvent } from "./ingest";
+import type { IngestEvent } from "./steps";
 
 // Our own messages are written for people; others can name the AI provider,
 // so they get a plain one.
 const errorText = (error: unknown) => {
-  if (error instanceof DocumentExistsError) {
+  if (
+    error instanceof DocumentExistsError ||
+    error instanceof DocumentProblem ||
+    error instanceof OriginalNotStoredError
+  ) {
     return error.message;
   }
   return error instanceof Error && error.message.startsWith("No text found")

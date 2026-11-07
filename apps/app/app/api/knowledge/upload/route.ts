@@ -1,13 +1,11 @@
-import { can } from "@repo/auth/permissions";
 import { auth } from "@repo/auth/server";
 import { authorize } from "@/lib/access";
 import { featureProblem } from "@/lib/billing";
 import { DocumentExistsError, documentNamed } from "@/lib/knowledge/documents";
 import { ingestDocument } from "@/lib/knowledge/ingest";
 import { streamSteps } from "@/lib/knowledge/stream";
-import { DOCUMENT_TYPES, MAX_DOCUMENT_BYTES } from "@/lib/knowledge/types";
-import { isUploadId } from "@/lib/quotes/upload-limits";
-import { takeUpload } from "@/lib/quotes/upload-parts";
+import { fileFrom } from "@/lib/knowledge/upload-file";
+import { checkDocumentFile } from "@/lib/library/files";
 
 // Long scans are read a few pages at a time.
 export const maxDuration = 300;
@@ -19,28 +17,13 @@ const problem = (status: number, error: string) =>
  * Upload one document. The response streams each step as it finishes (see
  * streamSteps), so the page can show the work as it happens.
  */
-/** The file: sent whole (small) or in pieces first (uploadKnowledgePart). */
-const fileFrom = async (orgId: string, form: FormData) => {
-  const uploadId = String(form.get("uploadId") ?? "");
-  if (uploadId) {
-    if (!isUploadId(uploadId)) {
-      return null;
-    }
-    const [file] = await takeUpload(orgId, uploadId);
-    return file ?? null;
-  }
-  const file = form.get("file");
-  return file instanceof File && file.size > 0
-    ? { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }
-    : null;
-};
-
 export const POST = async (request: Request) => {
   const access = await authorize("knowledge:share");
   if (!access.ok) {
     return problem(403, access.error);
   }
-  const { userId, role } = await auth();
+  // The uploader is the signed-in person, never something the form says.
+  const { userId } = await auth();
   const locked = await featureProblem(access.orgId, "knowledge");
   if (locked) {
     return problem(402, locked);
@@ -49,25 +32,27 @@ export const POST = async (request: Request) => {
   if (!file) {
     return problem(400, "Choose a file.");
   }
-  if (file.bytes.length > MAX_DOCUMENT_BYTES) {
-    return problem(400, "Files can be up to 20 MB.");
+  // Size, type and content (a renamed file is refused) before anything is kept.
+  const check = checkDocumentFile(file.name, file.bytes);
+  if (!check.ok) {
+    return problem(400, check.error);
   }
-  const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-  if (!(DOCUMENT_TYPES as readonly string[]).includes(ext)) {
-    return problem(400, `Takumo reads ${DOCUMENT_TYPES.join(", ")} files.`);
-  }
-  // A document with the same name is replaced; only people who can remove
-  // documents may do that, so nobody overwrites an SOP by accident. Checked
-  // here so nothing is read for nothing, and again when the document is
-  // stored, in case one with this name arrived in the meantime.
-  const mayReplace = can(role, "knowledge:write");
-  if (!mayReplace) {
-    const existing = await documentNamed(access.orgId, file.name);
-    if (existing) {
-      return problem(409, new DocumentExistsError(existing.name).message);
-    }
+  // Uploading never replaces a document, whoever uploads: a new version is
+  // its own action (api/library/documents/[sourceId]/versions). Checked here
+  // so nothing is stored for nothing, and again (under a lock) when the
+  // document is created, in case one with this name arrived meanwhile.
+  const existing = await documentNamed(access.orgId, file.name);
+  if (existing) {
+    // `code` lets the page offer "upload as a new version" (phase 3).
+    return Response.json(
+      {
+        error: new DocumentExistsError(existing.name).message,
+        code: "name_taken",
+      },
+      { status: 409 }
+    );
   }
   return streamSteps((emit) =>
-    ingestDocument(access.orgId, userId ?? null, file, emit, { mayReplace })
+    ingestDocument(access.orgId, userId ?? null, file, emit, { via: "upload" })
   );
 };
