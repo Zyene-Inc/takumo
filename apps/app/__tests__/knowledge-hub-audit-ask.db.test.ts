@@ -1,4 +1,6 @@
 // @vitest-environment node
+// This file: C1 and M1. M3, L8 and the system viewer are in
+// knowledge-hub-audit-email.db.test.ts (same setup).
 // Security audit regressions (Knowledge Hub phase 4), Ask Takumo on the web
 // and by email: C1 (query_data error messages quoted other shops' values and
 // restricted facts), M1 (two documents with the same name collapsed in an
@@ -235,17 +237,10 @@ describe.skipIf(!(TEST_DATABASE_URL && READER))(
     let database: Db["database"];
     let route: typeof import("../app/api/ask/route");
     let viewers: typeof import("../lib/library/viewer");
-    let tools: typeof import("../lib/agent/tools");
     let redact: typeof import("../lib/agent/redact");
     let conversations: typeof import("../lib/agent/conversations");
     let aiAccess: typeof import("../lib/library/ai-access");
-    let provenance: typeof import("../lib/library/provenance");
-    let brief: typeof import("../lib/brief/load");
     let inbound: typeof import("../lib/inbound/process");
-    let inboundAsk: typeof import("../lib/inbound/ask");
-    let inboundDocs: typeof import("../lib/inbound/docs");
-    let verify: typeof import("../lib/inbound/verify");
-    let parse: typeof import("../lib/quotes/email");
     let reader: typeof import("@repo/database/reader");
 
     const dept = { hr: id(), eng: id() };
@@ -253,7 +248,6 @@ describe.skipIf(!(TEST_DATABASE_URL && READER))(
     const doc = { pub: "", hr: "", polHr: "", polPub: "" };
     const token = { ask: "", docs: "" };
     let partId = "";
-    let hrFactId = "";
     const today = new Date().toISOString().slice(0, 10);
 
     const sqlOn = () => {
@@ -516,17 +510,10 @@ describe.skipIf(!(TEST_DATABASE_URL && READER))(
       ({ database } = await import("@repo/database"));
       route = await import("../app/api/ask/route");
       viewers = await import("../lib/library/viewer");
-      tools = await import("../lib/agent/tools");
       redact = await import("../lib/agent/redact");
       conversations = await import("../lib/agent/conversations");
       aiAccess = await import("../lib/library/ai-access");
-      provenance = await import("../lib/library/provenance");
-      brief = await import("../lib/brief/load");
       inbound = await import("../lib/inbound/process");
-      inboundAsk = await import("../lib/inbound/ask");
-      inboundDocs = await import("../lib/inbound/docs");
-      verify = await import("../lib/inbound/verify");
-      parse = await import("../lib/quotes/email");
       reader = await import("@repo/database/reader");
 
       for (const [u, r] of [
@@ -636,26 +623,6 @@ describe.skipIf(!(TEST_DATABASE_URL && READER))(
         },
       });
       // A pending fact read from the HR document only.
-      hrFactId = (
-        await database.fact.create({
-          data: {
-            orgId: A,
-            number: 1,
-            subjectType: "part",
-            subjectId: partId,
-            subjectLabel: "P-SEC rev A",
-            attribute: "note",
-            value: `Salary note ${HR_WORD}`,
-            evidence: `"${HR_WORD}" (Payroll 2026)`,
-            source: "document",
-            status: "pending",
-            provenance: "documents",
-            sources: {
-              create: [{ orgId: A, sourceId: doc.hr, quote: HR_WORD }],
-            },
-          },
-        })
-      ).id;
       token.ask = `askaudit${id().slice(0, 8)}`;
       token.docs = `docsaudit${id().slice(0, 8)}`;
       await database.inboundAddress.createMany({
@@ -938,311 +905,6 @@ describe.skipIf(!(TEST_DATABASE_URL && READER))(
         });
       }
       expect(await history()).toContain(HR_POLICY);
-    });
-
-    describe("M3: who sent an email", () => {
-      const conversationsOf = (userId: string) =>
-        database.conversation.count({ where: { orgId: A, userId } });
-
-      test("M3: an encoded-word From display name isn't taken as the sender", async () => {
-        const forged =
-          "=?utf-8?q?=3Cuser=5Fhr=40shop.test=3E?= <attacker@evil.test>";
-        const parsed = parse.parseEmail(
-          `From: ${forged}\r\nSubject: hi\r\n\r\nbody`
-        );
-        // Decoded for display only; the sender is read from the header as sent.
-        expect(parsed.fromCount).toBe(1);
-        expect(parsed.fromHeader).toBe(forged);
-        expect(verify.emailAddress(parsed.fromHeader)).toBe(
-          "attacker@evil.test"
-        );
-        const auth = {
-          spf: "pass",
-          dkim: "pass",
-          dkimDomains: ["evil.test"],
-          dmarc: "pass",
-          from: "attacker@evil.test",
-        };
-        expect(
-          verify.authenticated(auth, "user_hr@shop.test", "bounce@evil.test")
-        ).toBe(false);
-
-        const hrBefore = await conversationsOf("user_hr");
-        const mail = await deliver({
-          raw: rawEmail(
-            [forged],
-            askAddress(),
-            `spoof ${id()}`,
-            "Show payroll"
-          ),
-          to: askAddress(),
-          auth,
-          mailFrom: "bounce@evil.test",
-          script: [
-            {
-              tools: [
-                {
-                  name: "search_documents",
-                  input: { query: "salary payroll" },
-                },
-              ],
-            },
-            { text: "__ECHO__" },
-          ],
-        });
-        expect(mail.got.ok).toBe(false);
-        expect(mail.prompts).toBe("");
-        expect(mail.emails).toEqual([]);
-        expect(await conversationsOf("user_hr")).toBe(hrBefore);
-        const stored = await database.inboundMessage.findFirst({
-          where: { orgId: A, subject: { startsWith: "spoof" } },
-          select: { fromAddress: true, status: true },
-        });
-        expect(stored).toEqual({
-          fromAddress: "attacker@evil.test",
-          status: "rejected",
-        });
-      });
-
-      test("M3: two From headers are refused", async () => {
-        const raw = rawEmail(
-          ["user_hr@shop.test", "attacker@evil.test"],
-          askAddress(),
-          `twofrom ${id()}`,
-          "Show payroll"
-        );
-        const parsed = parse.parseEmail(new TextDecoder().decode(raw));
-        expect(parsed.fromCount).toBe(2);
-        expect(parsed.fromHeader).toBeNull();
-        const hrBefore = await conversationsOf("user_hr");
-        const mail = await deliver({
-          raw,
-          to: askAddress(),
-          auth: { dmarc: "pass", from: "user_hr@shop.test" },
-          mailFrom: "user_hr@shop.test",
-          script: [{ text: "should not run" }],
-        });
-        expect(mail.got.ok).toBe(false);
-        expect(mail.prompts).toBe("");
-        expect(mail.emails).toEqual([]);
-        expect(await conversationsOf("user_hr")).toBe(hrBefore);
-      });
-
-      test("M3: DMARC passing for another domain doesn't vouch for the From address", async () => {
-        const auth = {
-          spf: "none",
-          dkim: "none",
-          dkimDomains: [],
-          dmarc: "pass",
-          from: "attacker@evil.test",
-        };
-        expect(
-          verify.authenticated(auth, "user_hr@shop.test", "bounce@evil.test")
-        ).toBe(false);
-        // Control: DMARC for the From domain itself does.
-        expect(
-          verify.authenticated(
-            { ...auth, from: "user_hr@shop.test" },
-            "user_hr@shop.test",
-            "bounce@evil.test"
-          )
-        ).toBe(true);
-        const hrBefore = await conversationsOf("user_hr");
-        const mail = await deliver({
-          raw: rawEmail(
-            ["HR <user_hr@shop.test>"],
-            askAddress(),
-            `dmarc ${id()}`,
-            "Show payroll"
-          ),
-          to: askAddress(),
-          auth,
-          mailFrom: "bounce@evil.test",
-          script: [{ text: "should not run" }],
-        });
-        expect(mail.got).toMatchObject({ ok: false, status: 403 });
-        expect(mail.got.ok ? "" : mail.got.error).toContain("Couldn't verify");
-        expect(mail.prompts).toBe("");
-        expect(mail.emails).toEqual([]);
-        expect(await conversationsOf("user_hr")).toBe(hrBefore);
-      });
-
-      test("M3: email Ask and Docs act for the stored, verified sender, not the header", async () => {
-        h.prompts.length = 0;
-        h.emails.length = 0;
-        // Stored as received from the engineer; the header claims HR.
-        const forgedHeader = (to: string, subject: string) =>
-          rawEmail(["HR <user_hr@shop.test>"], to, subject, "Show payroll");
-        const askMessage = await database.inboundMessage.create({
-          data: {
-            orgId: A,
-            kind: "ask",
-            sha256: id(),
-            fromAddress: "user_eng@shop.test",
-            subject: "stored",
-            status: "received",
-          },
-        });
-        const hrBefore = await conversationsOf("user_hr");
-        const engBefore = await conversationsOf("user_eng");
-        h.script = [{ text: "Answer for the engineer." }];
-        await inboundAsk.processAsk(
-          A,
-          askMessage.id,
-          forgedHeader(askAddress(), `stored ${id()}`)
-        );
-        expect(h.emails.map((e) => e.to)).toEqual(["user_eng@shop.test"]);
-        expect(await conversationsOf("user_hr")).toBe(hrBefore);
-        expect(await conversationsOf("user_eng")).toBe(engBefore + 1);
-
-        // No verified sender stored (refused on arrival): nothing runs.
-        h.prompts.length = 0;
-        h.emails.length = 0;
-        const refused = await database.inboundMessage.create({
-          data: {
-            orgId: A,
-            kind: "ask",
-            sha256: id(),
-            fromAddress: null,
-            subject: "refused",
-            status: "received",
-          },
-        });
-        h.script = [{ text: "should not run" }];
-        await inboundAsk.processAsk(
-          A,
-          refused.id,
-          forgedHeader(askAddress(), `refused ${id()}`)
-        );
-        expect(h.prompts).toEqual([]);
-        expect(h.emails).toEqual([]);
-        expect(await conversationsOf("user_hr")).toBe(hrBefore);
-        expect(
-          (
-            await database.inboundMessage.findUnique({
-              where: { id: refused.id },
-              select: { status: true },
-            })
-          )?.status
-        ).toBe("rejected");
-
-        // The docs address the same way: the header names the owner.
-        const docsMessage = await database.inboundMessage.create({
-          data: {
-            orgId: A,
-            kind: "docs",
-            sha256: id(),
-            fromAddress: null,
-            subject: "docs",
-            status: "received",
-          },
-        });
-        const sourcesBefore = await database.source.count({
-          where: { orgId: A },
-        });
-        await inboundDocs.processDocs(
-          A,
-          docsMessage.id,
-          rawEmail(
-            ["Owner <user_owner@shop.test>"],
-            `docs-${token.docs}@in.test`,
-            `docs ${id()}`
-          )
-        );
-        expect(h.emails).toEqual([]);
-        expect(await database.source.count({ where: { orgId: A } })).toBe(
-          sourcesBefore
-        );
-        expect(
-          (
-            await database.inboundMessage.findUnique({
-              where: { id: docsMessage.id },
-              select: { status: true },
-            })
-          )?.status
-        ).toBe("rejected");
-      });
-    });
-
-    test("L8: query_data over facts written with a U& identifier counts as a bulk fact read", async () => {
-      // A pending fact read from the public document: a bulk read of the
-      // facts view can show it, so its document counts.
-      const pub = await database.fact.create({
-        data: {
-          orgId: A,
-          number: 50,
-          subjectType: "part",
-          subjectId: partId,
-          subjectLabel: "P-SEC rev A",
-          attribute: "note",
-          value: "public note",
-          source: "document",
-          status: "pending",
-          provenance: "documents",
-          sources: { create: [{ orgId: A, sourceId: doc.pub }] },
-        },
-      });
-      sqlOn();
-      try {
-        const all = tools.createTools(
-          tools.agentContext(await as("user_eng"), today)
-        );
-        const run = (sql: string) =>
-          (
-            all.query_data.execute as unknown as (
-              i: unknown,
-              o: unknown
-            ) => Promise<unknown>
-          )({ purpose: "x", sql }, { toolCallId: "x", messages: [] });
-        const of = async (sql: string) =>
-          provenance.answerProvenance(A, id(), [
-            { tool: "query_data", input: { sql }, output: await run(sql) },
-          ]);
-        const viaName = await of("select fact_no, value from facts");
-        expect(viaName.documentIds).toContain(doc.pub);
-        for (const sql of [
-          String.raw`select fact_no, value from U&"\0066acts"`,
-          String.raw`select fact_no, value from u&"\0066\0061cts"`,
-          `select fact_no, value from U&"!0066acts" uescape '!'`,
-        ]) {
-          const viaEscape = await of(sql);
-          expect({ sql, ids: viaEscape.documentIds }).toEqual({
-            sql,
-            ids: expect.arrayContaining([doc.pub]),
-          });
-          expect(viaEscape.provenance).toBe(viaName.provenance);
-        }
-        // Control: a query that doesn't read facts doesn't count them.
-        expect(
-          (await of("select name from customers")).documentIds
-        ).not.toContain(doc.pub);
-      } finally {
-        sqlOff();
-        await database.fact.delete({ where: { id: pub.id } });
-      }
-    });
-
-    test("factAccess, the brief and the system viewer never show the HR-sourced pending fact", async () => {
-      const sys = viewers.systemViewer(A);
-      expect([...(await aiAccess.factAccess(sys)).keys()]).not.toContain(
-        hrFactId
-      );
-      expect(await aiAccess.visibleFactIds(sys)).not.toContain(hrFactId);
-      expect([
-        ...(await aiAccess.factAccess(await as("user_eng"))).keys(),
-      ]).not.toContain(hrFactId);
-      // Control: the HR member, who may open its document, sees it.
-      expect([
-        ...(await aiAccess.factAccess(await as("user_hr"))).keys(),
-      ]).toContain(hrFactId);
-      const shopBrief = await brief.loadShopBrief(
-        A,
-        today,
-        new Date(),
-        new Set(["facts"]) as Parameters<typeof brief.loadShopBrief>[3]
-      );
-      expect(shopBrief.facts.top.map((f) => f.id)).not.toContain(hrFactId);
-      expect(JSON.stringify(shopBrief)).not.toContain(HR_WORD);
     });
   }
 );

@@ -2,9 +2,16 @@ import "server-only";
 
 import type { Prisma } from "@repo/database";
 import { accessTo, type Target } from "./access";
+import { lockAccess } from "./access-lock";
 import { type AiMode, invalidateAi, isAiMode, lower } from "./ai-mode";
 import { has, onlyUpload } from "./capabilities";
-import { type ChainGrant, freezeAccess, grantKey, grantsUnder } from "./grants";
+import {
+  type ChainGrant,
+  freezeAccess,
+  grantKey,
+  grantsUnder,
+  lockedParent,
+} from "./grants";
 import { confidentialEnabled } from "./stage";
 import { trustedViewer, type Viewer } from "./viewer";
 
@@ -25,7 +32,7 @@ import { trustedViewer, type Viewer } from "./viewer";
 export interface MovePlan {
   /** The destination's access instead of keeping the item's own. */
   adopt: boolean;
-  /** The folder it's in now (null: top level). */
+  /** The folder it was in when the caller looked (guardMove reads it again under lock). */
   from: string | null;
   target: Target;
   /** The folder it goes to (null: top level). */
@@ -110,7 +117,13 @@ export const guardMove = async (
   if (!(await confidentialEnabled(orgId))) {
     return null;
   }
-  const { target, from, to, adopt } = plan;
+  // One access change at a time per shop (access-lock.ts).
+  await lockAccess(tx, orgId);
+  const { target, to, adopt } = plan;
+  // Where it is now, read under its row lock: a move that committed since
+  // the caller looked can't make this one copy the wrong access (audit,
+  // move race).
+  const from = await lockedParent(tx, orgId, target);
   const isDocument = "sourceId" in target;
   const now = await accessTo(viewer, target);
   if (!now) {

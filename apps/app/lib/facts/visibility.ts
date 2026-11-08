@@ -3,6 +3,7 @@ import "server-only";
 import { can } from "@repo/auth/permissions";
 import { database, type Prisma } from "@repo/database";
 import { documentCapabilities } from "../library/access";
+import { serialized } from "../library/access-lock";
 import { factAccess } from "../library/ai-access";
 import { audit } from "../library/audit";
 import { has } from "../library/capabilities";
@@ -92,24 +93,26 @@ export const markPublished = async (
 };
 
 /** Publish a fact the viewer may see to the whole company (audited). */
-export const publishFact = async (
-  viewer: Viewer,
-  factId: string
-): Promise<Result<{ label: string }>> => {
-  const fact = await visibleFact(viewer, factId);
-  if (!fact) {
-    return { ok: false, error: NO_FACT };
-  }
-  const label = factLabel(fact.number);
-  if (fact.publishedAt) {
+export const publishFact = serialized(
+  async (
+    viewer: Viewer,
+    factId: string
+  ): Promise<Result<{ label: string }>> => {
+    const fact = await visibleFact(viewer, factId);
+    if (!fact) {
+      return { ok: false, error: NO_FACT };
+    }
+    const label = factLabel(fact.number);
+    if (fact.publishedAt) {
+      return { ok: true, label };
+    }
+    const problem = await publishProblem(viewer, fact);
+    if (problem) {
+      return { ok: false, error: problem };
+    }
+    await database.$transaction((tx) =>
+      markPublished(tx, viewer, fact, "publish")
+    );
     return { ok: true, label };
   }
-  const problem = await publishProblem(viewer, fact);
-  if (problem) {
-    return { ok: false, error: problem };
-  }
-  await database.$transaction((tx) =>
-    markPublished(tx, viewer, fact, "publish")
-  );
-  return { ok: true, label };
-};
+);

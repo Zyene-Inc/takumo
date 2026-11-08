@@ -209,5 +209,54 @@ describe.skipIf(!TEST_DATABASE_URL)(
         ])
       ).toEqual([0, 0, 0, 0, 0]);
     });
+
+    test("race: a grant waits for an access change in progress, then sees it", async () => {
+      const grants = await import("../lib/library/grants");
+      const { ACCESS_LOCK_SQL } = await import("../lib/library/access-lock");
+      members.set(`${orgId}:u_mgr`, "planner");
+      members.set(`${orgId}:u_op`, "operator");
+      const managerGrant = await database.accessGrant.create({
+        data: {
+          orgId,
+          folderId,
+          principalType: "user",
+          principalId: "u_mgr",
+          capabilities: 63,
+        },
+      });
+      const manager = await viewers.viewerForMember(orgId, "u_mgr");
+      if (!manager) {
+        throw new Error("no manager");
+      }
+      let settled = false;
+      const pending: { granting?: Promise<{ ok: boolean }> } = {};
+      // Another change holds the lock: it takes the manager's own access away.
+      await database.$transaction(
+        async (tx) => {
+          await tx.$executeRawUnsafe(ACCESS_LOCK_SQL, orgId);
+          pending.granting = grants
+            .grantAccess(
+              manager,
+              { folderId },
+              { type: "user", id: "u_op" },
+              VIEWER
+            )
+            .finally(() => {
+              settled = true;
+            });
+          await new Promise((r) => setTimeout(r, 400));
+          expect(settled).toBe(false);
+          await tx.accessGrant.delete({ where: { id: managerGrant.id } });
+        },
+        { timeout: 20_000 }
+      );
+      // Checked after the change committed: no "manage" any more.
+      expect((await pending.granting)?.ok).toBe(false);
+      expect(
+        await database.accessGrant.count({
+          where: { folderId, principalId: "u_op" },
+        })
+      ).toBe(0);
+    });
   }
 );

@@ -1,4 +1,6 @@
 // @vitest-environment node
+// This file: C1 and M4. H2 is in knowledge-hub-audit-restricted.db.test.ts
+// (same setup).
 // Security audit regressions (Knowledge Hub phase 4), facts:
 // - C1: Ask Takumo's SQL tool showed restricted fact values through
 //   database error messages ("invalid input syntax … <value>"). It is now off
@@ -16,7 +18,6 @@
 // switched off in code; these tests switch it on. No AI service is called.
 // Needs TEST_DATABASE_URL and TEST_ASK_DATABASE_URL (takumo_reader).
 import { randomUUID } from "node:crypto";
-import { strFromU8, unzipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
@@ -87,8 +88,6 @@ const markers = (value: unknown) => {
 const RAW_POSTGRES = /invalid input syntax|does not exist|division by zero/;
 const REF = /\(ref [0-9a-f]{8}\)/;
 
-const PEOPLE_WITHOUT_ACCESS = ["u_op", "u_eng", "u_admin"] as const;
-
 describe.skipIf(!(TEST_DATABASE_URL && READER))(
   "security audit: facts (C1, M4, H2)",
   () => {
@@ -99,8 +98,6 @@ describe.skipIf(!(TEST_DATABASE_URL && READER))(
     let viewers: typeof import("../lib/library/viewer");
     let aiAccess: typeof import("../lib/library/ai-access");
     let facts: typeof import("../lib/facts/facts");
-    let lifecycle: typeof import("../lib/library/lifecycle");
-    let steps: typeof import("../lib/knowledge/steps");
 
     const folder = { general: id(), hr: id(), fin: id() };
     const dept = { hr: id(), fin: id(), eng: id() };
@@ -181,14 +178,6 @@ describe.skipIf(!(TEST_DATABASE_URL && READER))(
       return sourceId;
     };
 
-    const versionOf = async (sourceId: string) =>
-      (
-        await database.source.findUniqueOrThrow({
-          where: { id: sourceId },
-          select: { currentVersionId: true },
-        })
-      ).currentVersionId as string;
-
     /** A fact as the pipeline (or an older version of Takumo) wrote it. */
     const mkFact = async (
       data: Record<string, unknown>,
@@ -226,35 +215,8 @@ describe.skipIf(!(TEST_DATABASE_URL && READER))(
     };
 
     /** A fact the pipeline reads from a document (no AI: the result is given). */
-    const readFromDocument = async (
-      sourceId: string,
-      name: string,
-      stated: Record<string, unknown>
-    ) => {
-      const tally = { confirmed: 0, conflicts: 0, proposed: [], skipped: 0 };
-      await steps.proposeOne(
-        A,
-        null,
-        { name, sourceId, versionId: await versionOf(sourceId) },
-        stated as never,
-        tally
-      );
-      return tally;
-    };
 
     /** What each person is shown of a fact's evidence. */
-    const shownEvidence = async (viewer: Viewer, factId: string) => {
-      const access = await aiAccess.factAccess(viewer);
-      if (!access.get(factId)?.evidence) {
-        return null;
-      }
-      return (
-        await database.fact.findUniqueOrThrow({
-          where: { id: factId },
-          select: { evidence: true },
-        })
-      ).evidence;
-    };
 
     const dataTool = async (userId: string) => {
       const { dataTools } = await import("../lib/agent/tools/data");
@@ -280,8 +242,6 @@ describe.skipIf(!(TEST_DATABASE_URL && READER))(
       viewers = await import("../lib/library/viewer");
       aiAccess = await import("../lib/library/ai-access");
       facts = await import("../lib/facts/facts");
-      lifecycle = await import("../lib/library/lifecycle");
-      steps = await import("../lib/knowledge/steps");
       for (const [user, role] of [
         ["u_owner", "admin"],
         ["u_admin", "admin"],
@@ -713,372 +673,6 @@ describe.skipIf(!(TEST_DATABASE_URL && READER))(
         });
         expect(made.ok && made.existing).toBe(true);
         expect(made.ok && made.fact.id).toBe(secret.id);
-      });
-    });
-
-    describe("H2: facts from restricted documents", () => {
-      test("H2: (a) a document never merges into a typed fact; deleting the public source never copies a restricted quote (EXPLOIT 2)", async () => {
-        const typed = await facts.proposeFact(A, {
-          subject: { type: "material", id: rec.mat2, label: "SS-AUD" },
-          attribute: "unitCost",
-          value: 77.25,
-          evidence: "typed by planner",
-          source: "manual",
-          statedBy: "u_eng",
-        });
-        if (!typed.ok) {
-          throw new Error(typed.error);
-        }
-        const typedId = typed.fact.id;
-        const stated = {
-          subjectType: "material",
-          name: "SS-AUD",
-          attribute: "unitCost",
-          value: 77.25,
-        };
-        await readFromDocument(doc.pub2, "Public price list", {
-          ...stated,
-          quote: "public price 77.25",
-        });
-        await readFromDocument(doc.fin, "Budget", {
-          ...stated,
-          quote: `Supplier cost ${FIN}`,
-        });
-        // The typed fact got no document attached.
-        expect(
-          await database.factSource.count({ where: { factId: typedId } })
-        ).toBe(0);
-        const typedRow = await database.fact.findUniqueOrThrow({
-          where: { id: typedId },
-        });
-        expect(typedRow.provenance).toBe("none");
-        expect(typedRow.evidence).toBe("typed by planner");
-        // The documents' statement is its own fact, from documents.
-        const fromDocs = await database.fact.findFirstOrThrow({
-          where: {
-            orgId: A,
-            subjectId: rec.mat2,
-            attribute: "unitCost",
-            NOT: { id: typedId },
-          },
-          include: { sources: { select: { sourceId: true } } },
-        });
-        expect(fromDocs.provenance).toBe("documents");
-        expect(fromDocs.sources.map((s) => s.sourceId).sort()).toEqual(
-          [doc.pub2, doc.fin].sort()
-        );
-
-        // The rest of the exploit: an admin approves the typed fact and
-        // permanently deletes the public price list.
-        const admin = await as(A, "u_admin");
-        expect((await facts.approveFact(admin, typedId)).ok).toBe(true);
-        expect(await lifecycle.trashDocument(admin, doc.pub2)).toMatchObject({
-          ok: true,
-        });
-        expect(await lifecycle.purgeDocument(admin, doc.pub2)).toMatchObject({
-          ok: true,
-        });
-        const after = await database.fact.findUniqueOrThrow({
-          where: { id: typedId },
-        });
-        expect(markers(after.evidence ?? "")).toEqual([]);
-        // Finance's quote wasn't copied into the documents' fact either.
-        const docsAfter = await database.fact.findUniqueOrThrow({
-          where: { id: fromDocs.id },
-        });
-        expect(markers(docsAfter.evidence ?? "")).toEqual([]);
-        for (const user of PEOPLE_WITHOUT_ACCESS) {
-          const viewer = await as(A, user);
-          for (const factId of [typedId, fromDocs.id]) {
-            expect(
-              markers((await shownEvidence(viewer, factId)) ?? ""),
-              user
-            ).toEqual([]);
-          }
-        }
-        const company = await aiAccess.factAccess(viewers.systemViewer(A));
-        expect(company.get(fromDocs.id)?.evidence ?? false).toBe(false);
-        process.env.ASK_SQL_ENABLED = "true";
-        try {
-          const rows = await reader.askQuery(
-            database,
-            A,
-            "select fact_no, value, evidence from facts where evidence is not null"
-          );
-          expect(markers(rows.rows)).toEqual([]);
-        } finally {
-          Reflect.deleteProperty(process.env, "ASK_SQL_ENABLED");
-        }
-      });
-
-      test("H2: (a) a document never merges into a fact from chat (provenance unknown)", async () => {
-        const chat = await facts.proposeFact(A, {
-          subject: { type: "customer", id: rec.cust, label: "CUST-AUD" },
-          attribute: "paymentTermDays",
-          value: 60,
-          evidence: "said in chat",
-          source: "chat",
-          statedBy: "u_eng",
-        });
-        if (!chat.ok) {
-          throw new Error(chat.error);
-        }
-        await readFromDocument(doc.fin, "Budget", {
-          subjectType: "customer",
-          name: "CUST-AUD",
-          attribute: "paymentTermDays",
-          value: 60,
-          quote: `terms ${FIN}`,
-        });
-        expect(
-          await database.factSource.count({ where: { factId: chat.fact.id } })
-        ).toBe(0);
-        const row = await database.fact.findUniqueOrThrow({
-          where: { id: chat.fact.id },
-        });
-        expect(row.provenance).toBe("unknown");
-        expect(markers(row.evidence ?? "")).toEqual([]);
-      });
-
-      test("H2: (a) a public document's fact joined by a Finance document leaks nothing (EXPLOIT 3)", async () => {
-        const stated = {
-          subjectType: "customer",
-          name: "CUST-AUD",
-          attribute: "paymentTermDays",
-          value: 45,
-        };
-        await readFromDocument(doc.pub, "Public SOP", {
-          ...stated,
-          quote: "net 45",
-        });
-        const factId = (
-          await database.fact.findFirstOrThrow({
-            where: {
-              orgId: A,
-              subjectId: rec.cust,
-              attribute: "paymentTermDays",
-              value: { equals: 45 },
-              status: "pending",
-            },
-          })
-        ).id;
-        const eng = await as(A, "u_eng");
-        expect(await shownEvidence(eng, factId)).toBe('"net 45" (Public SOP)');
-        await readFromDocument(doc.fin, "Budget", {
-          ...stated,
-          quote: `terms ${FIN}`,
-        });
-        for (const user of PEOPLE_WITHOUT_ACCESS) {
-          const viewer = await as(A, user);
-          expect(await shownEvidence(viewer, factId), user).toBeNull();
-          expect(
-            markers(await facts.factsAbout(viewer, "customer", [rec.cust])),
-            user
-          ).toEqual([]);
-        }
-        // Finance may use both documents: the evidence is theirs to see.
-        expect(
-          await shownEvidence(await as(A, "u_fin"), factId)
-        ).not.toBeNull();
-      });
-
-      test("H2: (b) evidence only when the person may use every attached document, whatever the provenance", async () => {
-        const both = [
-          { id: doc.pub, quote: "public words" },
-          { id: doc.fin, quote: FIN },
-        ];
-        const probe = (
-          provenance: string,
-          extra: Record<string, unknown> = {}
-        ) =>
-          mkFact(
-            {
-              value: `${provenance} probe`,
-              evidence: `"${FIN}" (Budget)`,
-              provenance,
-              source: provenance === "unknown" ? "chat" : "manual",
-              ...extra,
-            },
-            both
-          );
-        const cases = {
-          none: await probe("none"),
-          unknown: await probe("unknown"),
-          documents: await probe("documents"),
-          publishedNone: await probe("none", {
-            status: "approved",
-            reviewedAt: new Date(),
-            publishedAt: new Date(),
-            publishedBy: "u_owner",
-          }),
-          publishedDocuments: await probe("documents", {
-            status: "approved",
-            reviewedAt: new Date(),
-            publishedAt: new Date(),
-            publishedBy: "u_owner",
-          }),
-        };
-        const viewersWithout = [
-          ...(await Promise.all(PEOPLE_WITHOUT_ACCESS.map((u) => as(A, u)))),
-          await as(A, "u_hr"),
-          viewers.systemViewer(A),
-        ];
-        for (const viewer of viewersWithout) {
-          const access = await aiAccess.factAccess(viewer);
-          for (const [name, factId] of Object.entries(cases)) {
-            expect(
-              access.get(factId)?.evidence ?? false,
-              `${viewer.userId ?? "company"}: ${name}`
-            ).toBe(false);
-          }
-        }
-        // Finance may use both documents: evidence where the fact is theirs.
-        const fin = await aiAccess.factAccess(await as(A, "u_fin"));
-        expect(fin.get(cases.none)?.evidence).toBe(true);
-        expect(fin.get(cases.documents)?.evidence).toBe(true);
-      });
-
-      test("H2: (c) deleting a document copies another source's quote only from a company-wide document", async () => {
-        const approvedPublished = {
-          status: "approved",
-          reviewedAt: new Date(),
-          publishedAt: new Date(),
-          publishedBy: "u_owner",
-          subjectType: "customer",
-          subjectId: rec.cust,
-          subjectLabel: "CUST-AUD",
-        };
-        // A public and a Finance document: the Finance quote must not move up.
-        const mixed = await mkFact(
-          {
-            ...approvedPublished,
-            value: "mixed sources",
-            evidence: '"rates" (Public rates)',
-          },
-          [
-            { id: doc.pub3, quote: "rates" },
-            { id: doc.fin, quote: `rates ${FIN}` },
-          ]
-        );
-        // Two public documents: the remaining one's quote becomes the evidence.
-        const open = await mkFact(
-          {
-            ...approvedPublished,
-            value: "public sources",
-            evidence: '"terms" (Public terms)',
-          },
-          [
-            { id: doc.pub4, quote: "terms" },
-            { id: doc.pub5, quote: "terms again" },
-          ]
-        );
-        const owner = await as(A, "u_owner");
-        for (const sourceId of [doc.pub3, doc.pub4]) {
-          expect(await lifecycle.trashDocument(owner, sourceId)).toMatchObject({
-            ok: true,
-          });
-          expect(await lifecycle.purgeDocument(owner, sourceId)).toMatchObject({
-            ok: true,
-          });
-        }
-        const mixedAfter = await database.fact.findUniqueOrThrow({
-          where: { id: mixed },
-        });
-        expect(mixedAfter.evidence).toBeNull();
-        const openAfter = await database.fact.findUniqueOrThrow({
-          where: { id: open },
-        });
-        expect(openAfter.evidence).toBe('"terms again" (Public terms copy)');
-        for (const user of PEOPLE_WITHOUT_ACCESS) {
-          expect(
-            markers((await shownEvidence(await as(A, user), mixed)) ?? ""),
-            user
-          ).toEqual([]);
-        }
-      });
-
-      test("H2: marker sweep: facts loaders, export, get_record, brief, ERP feed, estimates and the SQL reader", async () => {
-        const { exportShop } = await import("../lib/export/shop");
-        const { getRecordWithKnowledge } = await import("../lib/agent/records");
-        const sweep = async (userId: string) => {
-          const viewer = await as(A, userId);
-          const access = await aiAccess.factAccess(viewer);
-          const rows = await database.fact.findMany({
-            where: { id: { in: [...access.keys()] } },
-          });
-          const loader = rows.map((r) => ({
-            ...r,
-            evidence: access.get(r.id)?.evidence ? r.evidence : null,
-          }));
-          const about = [
-            await facts.factsAbout(viewer, "part", [rec.part]),
-            await facts.factsAbout(viewer, "material", [rec.mat, rec.mat2]),
-            await facts.factsAbout(viewer, "customer", [rec.cust]),
-            await facts.factsAbout(viewer, "routing", [rec.routing]),
-          ];
-          const zip = unzipSync(await exportShop(viewer));
-          const exported = Object.values(zip)
-            .map((b) => strFromU8(b))
-            .join("\n");
-          const records: unknown[] = [];
-          for (const [type, key] of [
-            ["part", "P-AUD"],
-            ["material", "AL-AUD"],
-            ["customer", "CUST-AUD"],
-            ["machine", "MILL-AUD"],
-          ] as const) {
-            records.push(await getRecordWithKnowledge(viewer, type, key));
-          }
-          return {
-            loader: markers(loader),
-            factsAbout: markers(about),
-            export: markers(exported),
-            exportRoutingSetup41: exported.includes(",41,"),
-            getRecord: markers(records),
-          };
-        };
-        const clean = {
-          loader: [],
-          factsAbout: [],
-          export: [],
-          exportRoutingSetup41: false,
-          getRecord: [],
-        };
-        for (const user of PEOPLE_WITHOUT_ACCESS) {
-          expect(await sweep(user), user).toEqual(clean);
-        }
-        // The markers are reachable: HR and Finance see their own.
-        expect((await sweep("u_hr")).export).toEqual([HR]);
-        expect((await sweep("u_fin")).export).toEqual([FIN]);
-
-        const { loadShopBrief } = await import("../lib/brief/load");
-        const brief = await loadShopBrief(
-          A,
-          new Date().toISOString().slice(0, 10),
-          new Date(),
-          new Set(["facts"]) as never
-        );
-        expect(markers(brief)).toEqual([]);
-        const { changesForErp } = await import("../lib/erp/changes");
-        expect(markers(await changesForErp(A))).toEqual([]);
-        const { routingFacts } = await import("../lib/quotes/estimate-inputs");
-        const finRouting = await database.fact.findUniqueOrThrow({
-          where: { id: fact.finRouting },
-          select: { number: true },
-        });
-        const estimate = await routingFacts(A, rec.part);
-        expect([...estimate.facts.values()].map((f) => f.number)).not.toContain(
-          finRouting.number
-        );
-        process.env.ASK_SQL_ENABLED = "true";
-        try {
-          const all = await reader.askQuery(database, A, "select * from facts");
-          expect(all.rows.length).toBeGreaterThan(0);
-          expect(markers(all.rows)).toEqual([]);
-          expect(JSON.stringify(all.rows)).not.toContain(FIN_VALUE);
-        } finally {
-          Reflect.deleteProperty(process.env, "ASK_SQL_ENABLED");
-        }
       });
     });
   }

@@ -4,6 +4,7 @@ import { can } from "@repo/auth/permissions";
 import { shopRole } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
 import { accessTo, folderCapabilities, visibleSourceIds } from "./access";
+import { serialized } from "./access-lock";
 import { audit } from "./audit";
 import { has } from "./capabilities";
 import { confidentialEnabled, NOT_YET } from "./stage";
@@ -164,34 +165,36 @@ export const deleteDepartment = async (
 };
 
 /** Add an active member of the shop to a department. */
-export const addDepartmentMember = async (
-  viewer: Viewer,
-  departmentId: string,
-  userId: string
-): Promise<Result> => {
-  const problem =
-    (await allowed(viewer)) ??
-    ((await findDepartment(viewer, departmentId)) ? null : NOT_THERE) ??
-    ((await shopRole(userId, viewer.orgId))
-      ? null
-      : "They need to be in the shop before joining a department.") ??
-    (await reachProblem(viewer, departmentId));
-  if (problem) {
-    return { ok: false, error: problem };
+export const addDepartmentMember = serialized(
+  async (
+    viewer: Viewer,
+    departmentId: string,
+    userId: string
+  ): Promise<Result> => {
+    const problem =
+      (await allowed(viewer)) ??
+      ((await findDepartment(viewer, departmentId)) ? null : NOT_THERE) ??
+      ((await shopRole(userId, viewer.orgId))
+        ? null
+        : "They need to be in the shop before joining a department.") ??
+      (await reachProblem(viewer, departmentId));
+    if (problem) {
+      return { ok: false, error: problem };
+    }
+    await forOrg(database, viewer.orgId).departmentMember.createMany({
+      data: [
+        { orgId: viewer.orgId, departmentId, userId, addedBy: viewer.userId },
+      ],
+      skipDuplicates: true,
+    });
+    await record(viewer, {
+      change: "add_member",
+      department: departmentId,
+      user: userId,
+    });
+    return { ok: true };
   }
-  await forOrg(database, viewer.orgId).departmentMember.createMany({
-    data: [
-      { orgId: viewer.orgId, departmentId, userId, addedBy: viewer.userId },
-    ],
-    skipDuplicates: true,
-  });
-  await record(viewer, {
-    change: "add_member",
-    department: departmentId,
-    user: userId,
-  });
-  return { ok: true };
-};
+);
 
 export const removeDepartmentMember = async (
   viewer: Viewer,
