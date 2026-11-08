@@ -66,7 +66,10 @@ Use a separate Supabase project for anything customers touch; the dev project is
       `ASK_DATABASE_URL='<reader url>' pnpm --filter @repo/database check:ask-sql` prints
       "database checks passed" (it reads only the catalog, no shop's data). Any problem it
       lists must be fixed first, e.g. a grant that lets the reader read another table.
-   3. On **staging only** (they create test shops), run the reader tests against it:
+   3. On a **disposable** Supabase database only (a new project or branch, migrated the
+      same way, deleted afterwards), run the reader tests against it. **Never against
+      production or a persistent staging database:** they create test shops and
+      temporarily alter views, functions and grants:
       `TEST_DATABASE_URL='<owner url>' TEST_ASK_DATABASE_URL='<reader url>' pnpm --filter @repo/database test:db`.
       They show that one shop's session can't read another's SQL (`pg_stat_activity`,
       `query_to_xml`, and `pg_stat_statements` where its view is readable) and that every
@@ -83,7 +86,9 @@ Use a separate Supabase project for anything customers touch; the dev project is
    `ask_private.org_id()` (joined tables too), then end the migration with
    `select ask_private.record_trusted();` (it refuses views that aren't). Until then the
    app keeps the tool off. Update `ASK_VIEWS` in `packages/database/sql-allow.ts` for a new
-   view.
+   view. `record_trusted()` trusts only the functions `org_id` and `run`: a new
+   `ask_private` function the reader can execute keeps the tool off until a reviewed
+   migration adds it to that list (or the view is written without it).
 
 ## 2. Vercel projects
 
