@@ -1,5 +1,8 @@
 import "server-only";
 
+// Knowledge owns reading a document into text, chunks and facts. Folders,
+// grants and who may open the file are lib/library.
+
 import { embed, embedMany } from "@repo/ai";
 import { canEmbed, embeddingOptions, models } from "@repo/ai/lib/models";
 import { database, forOrg } from "@repo/database";

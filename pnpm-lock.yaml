@@ -212,6 +212,9 @@ importers:
       require-in-the-middle:
         specifier: 8.0.1
         version: 8.0.1
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
       streamdown:
         specifier: 2.7.1
         version: 2.7.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)

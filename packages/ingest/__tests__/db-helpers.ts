@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../../database/generated/client";
+import { PrismaClient } from "@repo/database/client";
 import type { EntityKey } from "../entities";
 import { suggestMapping } from "../match";
 import { saveRecords } from "../save";

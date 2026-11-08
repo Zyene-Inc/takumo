@@ -1,5 +1,8 @@
 import "server-only";
 
+// Library owns where a document lives and who may see it: folders, grants,
+// lifecycle, versions. Reading it into text, chunks and facts is lib/knowledge.
+
 import { database } from "@repo/database";
 import { type Capability, has } from "./capabilities";
 import { trustedViewer, type Viewer } from "./viewer";

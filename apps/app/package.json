@@ -1,6 +1,11 @@
 {
   "name": "app",
   "private": true,
+  "turbo": {
+    "tags": [
+      "app"
+    ]
+  },
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
@@ -45,6 +50,7 @@
     "react-dom": "19.2.4",
     "recharts": "3.8.0",
     "require-in-the-middle": "8.0.1",
+    "server-only": "^0.0.1",
     "streamdown": "2.7.1",
     "unpdf": "2.0.1",
     "xlsx": "file:../../vendor/xlsx",

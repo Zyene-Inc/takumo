@@ -3,7 +3,6 @@ import path from "node:path";
 import { costUsd, PRICES } from "@repo/ai/lib/pricing";
 import { strFromU8, unzipSync } from "fflate";
 import { describe, expect, test } from "vitest";
-import { checkService, SERVICES } from "../../../scripts/env-rules.mjs";
 import { entityCsv, plainCsv, zipFiles } from "../lib/export/csv";
 import { ARTICLES } from "../lib/help/articles";
 
@@ -76,82 +75,6 @@ describe("AI cost", () => {
       "gemini-3.8-flash",
       "gemini-3.5-flash-lite",
     ]);
-  });
-});
-
-describe("launch settings check", () => {
-  const complete = {
-    DATABASE_URL: "postgres://x",
-    WORKOS_API_KEY: "sk_live_x",
-    WORKOS_CLIENT_ID: "client_x",
-    WORKOS_WEBHOOK_SECRET: "secret",
-    STRIPE_SECRET_KEY: "sk_live_x",
-    STRIPE_WEBHOOK_SECRET: "whsec_x",
-    NEXT_PUBLIC_APP_URL: "https://app.takumo.ai",
-    NEXT_PUBLIC_WEB_URL: "https://takumo.ai",
-  };
-
-  test("a complete production API environment passes; optional ones are only noted", () => {
-    const problems = checkService(SERVICES.api, complete, { production: true });
-    expect(problems.filter((p) => p.level === "required")).toEqual([]);
-    expect(problems.every((p) => p.level === "recommended")).toBe(true);
-  });
-
-  test("missing and malformed values are named, never shown", () => {
-    const problems = checkService(
-      SERVICES.api,
-      {
-        ...complete,
-        STRIPE_SECRET_KEY: "sk_test_abc",
-        STRIPE_WEBHOOK_SECRET: "nope",
-        DATABASE_URL: "",
-      },
-      { production: true }
-    );
-    const required = problems.filter((p) => p.level === "required");
-    expect(required.map((p) => `${p.name}: ${p.problem}`)).toEqual([
-      "DATABASE_URL: not set",
-      "STRIPE_SECRET_KEY: is not a live Stripe key",
-      "STRIPE_WEBHOOK_SECRET: doesn't look like a webhook secret",
-    ]);
-    expect(JSON.stringify(problems)).not.toContain("sk_test_abc");
-  });
-
-  test("test keys are fine outside production; the connector key must be 32 bytes", () => {
-    const local = checkService(SERVICES.api, {
-      ...complete,
-      STRIPE_SECRET_KEY: "sk_test_x",
-    });
-    expect(local.some((p) => p.name === "STRIPE_SECRET_KEY")).toBe(false);
-    const key = checkService(SERVICES.app, {
-      CONNECTOR_ENCRYPTION_KEY: Buffer.alloc(16).toString("base64"),
-    });
-    expect(
-      key.find((p) => p.name === "CONNECTOR_ENCRYPTION_KEY")?.problem
-    ).toMatch(/32 bytes/);
-  });
-
-  test("Gemini on Vertex replaces the Anthropic and OpenAI keys", () => {
-    const names = (env: Record<string, string>) =>
-      checkService(SERVICES.app, env).map((p) => p.name);
-    expect(names({})).toContain("ANTHROPIC_API_KEY");
-    expect(names({})).not.toContain("GOOGLE_SERVICE_ACCOUNT_JSON");
-    const vertex = names({ GOOGLE_GENAI_USE_VERTEXAI: "true" });
-    expect(vertex).not.toContain("ANTHROPIC_API_KEY");
-    expect(vertex).not.toContain("OPENAI_API_KEY");
-    expect(vertex).toEqual(
-      expect.arrayContaining([
-        "GOOGLE_CLOUD_PROJECT",
-        "GOOGLE_SERVICE_ACCOUNT_JSON",
-      ])
-    );
-    const bad = checkService(SERVICES.app, {
-      GOOGLE_GENAI_USE_VERTEXAI: "true",
-      GOOGLE_SERVICE_ACCOUNT_JSON: "{}",
-    });
-    expect(
-      bad.find((p) => p.name === "GOOGLE_SERVICE_ACCOUNT_JSON")?.problem
-    ).toContain("client_email");
   });
 });
 

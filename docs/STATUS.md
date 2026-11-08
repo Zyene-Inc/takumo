@@ -1,8 +1,8 @@
 # Takumo status: what's done and what's pending
 
-Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); its §5 table has a one-line status per feature. This page gives the detail.
+Last updated 2026-11-08. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); its §5 table has a one-line status per feature. This page gives the detail.
 
-**In one line:** Phases 1, 2, 3, 4 and 6 are built and tested; Phase 3 includes who runs each job (v2). All of it is live (2026-11-05, every migration applied). Nothing has run on a real shop's data yet. That needs the inbound domain, a Twilio number and design partners (Phase 0), which are owner actions. Phase 5 (native ERP connectors) is built per ERP when a paying shop uses it.
+**In one line:** Phases 1, 2, 3, 4 and 6 are built and tested; Phase 3 includes who runs each job (v2). The Company Knowledge Hub is on main, and gate G3 passed on 2026-11-08 (owners can turn on restricted access). All of it is live (2026-11-05, every migration applied). Nothing has run on a real shop's data yet. That needs the inbound domain, a Twilio number and design partners (Phase 0), which are owner actions. Phase 5 (native ERP connectors) is built per ERP when a paying shop uses it.
 
 ## Phases
 
@@ -168,7 +168,7 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 
 ## Company Knowledge Hub (live; restricted access available to owners)
 
-Branches `feat/knowledge-hub-*`. Built so far: ownership, folders, departments and access checks (phase 1); original files in private storage, versions, recoverable processing, provenance, Trash and permanent delete (phase 2); the Company Knowledge library at `/library` (phase 3), shown only to shops whose `libraryStage` is `library` (Takumo staff switch it on per shop in `/admin`); access-aware AI memory (phase 4, below). Gate G3 passed on 2026-11-08 (below): `CONFIDENTIAL_READY = true` in `apps/app/lib/library/stage.ts` lets a shop's owner turn restricted access on (Settings → Departments, one way). The switch only lets shops start: a shop that restricts keeps restricting even if it's set back to false, so setting it back never opens confidential folders to everyone.
+On main. Built so far: ownership, folders, departments and access checks (phase 1); original files in private storage, versions, recoverable processing, provenance, Trash and permanent delete (phase 2); the Company Knowledge library at `/library` (phase 3), shown only to shops whose `libraryStage` is `library` (Takumo staff switch it on per shop in `/admin`); access-aware AI memory (phase 4, below). Gate G3 passed on 2026-11-08 (below): `CONFIDENTIAL_READY = true` in `apps/app/lib/library/stage.ts` lets a shop's owner turn restricted access on (Settings → Departments, one way). The switch only lets shops start: a shop that restricts keeps restricting even if it's set back to false, so setting it back never opens confidential folders to everyone.
 
 **Phase 4 (secure memory), built and tested locally only**
 - Every AI path reads as the person asking (`lib/library/ai-access.ts`, SQL `library.ai_source_ids` and `library.fact_access`, migration `20261116090000_knowledge_hub_secure_memory`): Ask's document search (keyword and vector, filtered inside the query), `get_record`'s facts, `propose_fact`, starter questions, the Brain, the facts pages, the home page count, exports and email Ask. The SQL reader (`query_data`) sees only facts everyone may see, and quotes from documents only when every one of them is company-wide.

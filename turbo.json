@@ -3,6 +3,20 @@
   "globalDependencies": ["**/.env.*local"],
   "ui": "tui",
   "envMode": "loose",
+  "boundaries": {
+    "tags": {
+      "app": {
+        "dependencies": {
+          "allow": ["package"]
+        }
+      },
+      "package": {
+        "dependencies": {
+          "deny": ["app"]
+        }
+      }
+    }
+  },
   "tasks": {
     "build": {
       "dependsOn": ["^build", "test"],

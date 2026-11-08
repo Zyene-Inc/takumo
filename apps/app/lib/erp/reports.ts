@@ -5,7 +5,6 @@ import {
   type ColumnMapping,
   ENTITIES,
   type EntityKey,
-  missingRequired,
   parseRows,
 } from "@repo/ingest";
 import { suggestMappingWithAi } from "@repo/ingest/ai-mapping";
@@ -15,7 +14,8 @@ import type { Sheet } from "@/app/(authenticated)/onboarding/read-file";
 import { budgetProblem, recordUsage } from "../ai-usage";
 import { markEnteredFromErp } from "../orders/settle";
 import { settleFromErp } from "../quotes/settle";
-import { findRenamed, type KnownReport, type Renamed } from "./renamed";
+import { findRenamed, type Renamed } from "./renamed";
+import { confirmedReports, isResend } from "./report-resend";
 import { headerKey, sheetHash } from "./sheets";
 
 // A shop's ERP emails the same reports every night (docs/PRODUCT-PLAN.md
@@ -29,9 +29,9 @@ const MAX_PENDING_ROWS = 20_000;
  * duplicate report the same day is a no-op). Hours rather than the calendar
  * day, so a resend just after midnight is still caught.
  */
-const DUPLICATE_WITHIN_MS = 20 * 3_600_000;
+export const DUPLICATE_WITHIN_MS = 20 * 3_600_000;
 export const REPORT_MODES = ["full", "changes"] as const;
-type ReportMode = (typeof REPORT_MODES)[number];
+export type ReportMode = (typeof REPORT_MODES)[number];
 
 export interface ReportResult {
   /** Records the ERP no longer lists (full reports): closed, received, zeroed. */
@@ -45,7 +45,7 @@ export interface ReportResult {
   updated: number;
 }
 
-interface PendingRows {
+export interface PendingRows {
   fileName: string;
   firstRow: number;
   /** The confirmed report this one replaces (its columns were renamed). */
@@ -61,7 +61,7 @@ export type Replaces = Pick<
 >;
 
 /** Nothing in the report could be read: a column was renamed or removed. */
-class UnreadableReportError extends Error {}
+export class UnreadableReportError extends Error {}
 
 export type SheetOutcome =
   | { status: "imported"; report: string; result: ReportResult }
@@ -174,7 +174,7 @@ const closeIfSafe = async (
 };
 
 /** Import rows with a confirmed mapping, stamped as coming from the ERP. */
-const importReportRows = async (
+export const importReportRows = async (
   orgId: string,
   report: { id: string; name: string; mode: string },
   mapping: ColumnMapping,
@@ -391,124 +391,4 @@ export const handleReportSheet = async (
   };
 };
 
-/** The same file as the last import, within a resend's time: skip it. */
-const isResend = (
-  report: { lastImportAt: Date | null; lastResult: unknown },
-  fileHash: string,
-  now: Date
-) => {
-  const last = report.lastResult as { fileHash?: string } | null;
-  return Boolean(
-    report.lastImportAt &&
-      last?.fileHash === fileHash &&
-      now.getTime() - report.lastImportAt.getTime() < DUPLICATE_WITHIN_MS
-  );
-};
-
-/** Reports whose columns the shop confirmed: what a renamed one may be. */
-const confirmedReports = async (orgId: string): Promise<KnownReport[]> => {
-  const rows = await forOrg(database, orgId).erpReport.findMany({
-    where: {
-      status: { in: ["active", "paused"] },
-      mapping: { not: Prisma.DbNull },
-    },
-    select: { id: true, name: true, headers: true, mapping: true, mode: true },
-  });
-  return rows.map((r) => ({
-    ...r,
-    mapping: r.mapping as unknown as ColumnMapping,
-  }));
-};
-
-/**
- * An admin confirms what a report's columns mean (and whether it lists
- * everything): the waiting rows are imported and later reports run alone.
- */
-export const confirmReport = async (
-  orgId: string,
-  reportId: string,
-  mapping: ColumnMapping,
-  mode: ReportMode,
-  /** The report's columns were renamed: retire the one it replaces. */
-  replace = false
-): Promise<
-  { ok: true; result: ReportResult | null } | { ok: false; error: string }
-> => {
-  if (!(mapping.entity in ENTITIES)) {
-    return { ok: false, error: "Choose what this report contains." };
-  }
-  const missing = missingRequired(mapping);
-  if (missing.length) {
-    return { ok: false, error: `Choose a column for: ${missing.join(", ")}.` };
-  }
-  const db = forOrg(database, orgId);
-  const report = await db.erpReport.findFirst({ where: { id: reportId } });
-  if (!report) {
-    return { ok: false, error: "That report no longer exists." };
-  }
-  await db.erpReport.updateMany({
-    where: { id: report.id },
-    data: {
-      mapping: mapping as object,
-      entity: mapping.entity,
-      mode,
-      status: "active",
-    },
-  });
-  const pending = report.pending as PendingRows | null;
-  const replaced = replace ? pending?.replaces?.report.id : undefined;
-  const old = replaced
-    ? await db.erpReport.findFirst({
-        where: { id: replaced, NOT: { id: report.id } },
-        select: { id: true, status: true },
-      })
-    : null;
-  // The old header row won't arrive again: this report takes over. Paused
-  // while importing so it's the one full report of its kind; removed once
-  // the rows are in (records it imported stay).
-  const retire = async () => {
-    if (old) {
-      await db.erpReport.deleteMany({ where: { id: old.id } });
-    }
-  };
-  if (old) {
-    await db.erpReport.updateMany({
-      where: { id: old.id },
-      data: { status: "paused" },
-    });
-  }
-  if (!pending?.rows?.length) {
-    await retire();
-    return { ok: true, result: null };
-  }
-  try {
-    const result = await importReportRows(
-      orgId,
-      { id: report.id, name: report.name, mode },
-      mapping,
-      pending
-    );
-    await retire();
-    return { ok: true, result };
-  } catch (error) {
-    if (old) {
-      await db.erpReport.updateMany({
-        where: { id: old.id },
-        data: { status: old.status },
-      });
-    }
-    if (error instanceof UnreadableReportError) {
-      // Not confirmed after all: it waits for the right columns.
-      await db.erpReport.updateMany({
-        where: { id: report.id },
-        data: { status: "needs_mapping" },
-      });
-      return {
-        ok: false,
-        error:
-          "None of the rows could be read with these columns. Check which column holds each value.",
-      };
-    }
-    throw error;
-  }
-};
+export { confirmReport } from "./report-confirm";

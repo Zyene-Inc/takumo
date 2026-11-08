@@ -8,7 +8,6 @@ import {
 import { Badge } from "@repo/design-system/components/ui/badge";
 import { Button } from "@repo/design-system/components/ui/button";
 import { Spinner } from "@repo/design-system/components/ui/spinner";
-import { cn } from "@repo/design-system/lib/utils";
 import type {
   OrderResult,
   ScheduledOperation,
@@ -31,23 +30,15 @@ import {
   replanShop,
   unpinOperation,
 } from "./actions";
-import {
-  LateOrders,
-  Legend,
-  OperationBar,
-  type OrderInfo,
-  OrderPanel,
-} from "./board-parts";
+import { BoardGrid, type Drag, opKey, ROW_HEIGHT } from "./board-grid";
+import { LateOrders, Legend, type OrderInfo, OrderPanel } from "./board-parts";
 import {
   addDays,
-  barGeometry,
   boardDays,
-  closedReason,
   daysBetween,
   fmtDay,
   localToday,
   moveProblem,
-  orderHue,
 } from "./gantt";
 
 export type { OrderInfo } from "./board-parts";
@@ -62,25 +53,11 @@ interface BoardProps {
   readonly request: ScheduleRequest;
 }
 
-const ROW_HEIGHT = 48;
-const NAME_WIDTH = 168;
 const ZOOMS = [
   { label: "Month", width: 40 },
   { label: "2 weeks", width: 80 },
   { label: "Week", width: 150 },
 ] as const;
-
-const opKey = (op: Pick<ScheduledOperation, "order_no" | "seq">) =>
-  `${op.order_no}#${op.seq}`;
-
-interface Drag {
-  dx: number;
-  dy: number;
-  key: string;
-  row: number;
-  x: number;
-  y: number;
-}
 
 export const Board = ({
   request,
@@ -320,145 +297,28 @@ export const Board = ({
         </Alert>
       )}
 
-      <div className="relative overflow-x-auto rounded-xl border">
-        {pending && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center gap-2 bg-background/60 text-sm backdrop-blur-[1px]">
-            <Spinner /> Re-planning the shop…
-          </div>
-        )}
-        <div
-          className="relative select-none"
-          style={{ width: NAME_WIDTH + width }}
-        >
-          {/* Day header */}
-          <div className="sticky top-0 z-20 flex border-b bg-background">
-            <div
-              className="sticky left-0 z-20 shrink-0 border-r bg-background px-3 py-2 font-medium text-muted-foreground text-xs"
-              style={{ width: NAME_WIDTH }}
-            >
-              Machine
-            </div>
-            {days.map((day) => (
-              <div
-                className={cn(
-                  "shrink-0 border-r px-1 py-2 text-center text-xs",
-                  day === request.start_date
-                    ? "font-semibold text-primary"
-                    : "text-muted-foreground"
-                )}
-                key={day}
-                style={{ width: dayWidth }}
-                title={fmtDay(day, "long")}
-              >
-                {dayWidth >= 80
-                  ? fmtDay(day)
-                  : new Date(`${day}T00:00:00Z`).getUTCDate()}
-              </div>
-            ))}
-          </div>
-
-          {/* Machine rows */}
-          {request.work_centers.map((wc, row) => (
-            <div
-              className="relative flex border-b last:border-b-0"
-              key={wc.name}
-              style={{ height: ROW_HEIGHT }}
-            >
-              <div
-                className="sticky left-0 z-10 flex shrink-0 flex-col justify-center border-r bg-background px-3"
-                style={{ width: NAME_WIDTH }}
-              >
-                <span className="truncate font-medium text-sm">{wc.name}</span>
-                <span className="text-muted-foreground text-xs">
-                  {wc.hours_per_day} h/day
-                </span>
-              </div>
-              <div className="relative" style={{ width }}>
-                {days.map((day, i) => {
-                  const closed = closedReason(wc, day);
-                  return closed ? (
-                    <div
-                      className="absolute inset-y-0 bg-[repeating-linear-gradient(135deg,transparent,transparent_4px,var(--muted)_4px,var(--muted)_8px)]"
-                      key={day}
-                      style={{ left: i * dayWidth, width: dayWidth }}
-                      title={`${wc.name}: ${closed}`}
-                    />
-                  ) : null;
-                })}
-                {days.map((day, i) => (
-                  <div
-                    className="absolute inset-y-0 border-r border-dashed opacity-60"
-                    key={`${day}-line`}
-                    style={{ left: (i + 1) * dayWidth - 1 }}
-                  />
-                ))}
-                {dropTarget && dropTarget.row === row && (
-                  <div
-                    className={cn(
-                      "absolute inset-y-1 z-10 rounded-md border-2 border-dashed",
-                      dropTarget.why
-                        ? "border-destructive bg-destructive/10"
-                        : "border-primary bg-primary/10"
-                    )}
-                    style={{
-                      left:
-                        daysBetween(request.start_date, dropTarget.day) *
-                        dayWidth,
-                      width: dayWidth,
-                    }}
-                  />
-                )}
-                {operations
-                  .filter((op) => op.work_center === wc.name)
-                  .map((op) => {
-                    const key = opKey(op);
-                    return (
-                      <OperationBar
-                        canEdit={canEdit}
-                        crew={crews[key]}
-                        dimmed={Boolean(selected && selected !== op.order_no)}
-                        dragOffset={
-                          drag?.key === key && moved.current
-                            ? { x: drag.dx, y: drag.dy }
-                            : null
-                        }
-                        geometry={barGeometry(op, request.start_date, dayWidth)}
-                        hue={orderHue(op.order_no)}
-                        info={orderInfo[op.order_no]}
-                        key={key}
-                        onCancel={() => updateDrag(null)}
-                        onClick={() => {
-                          if (!moved.current) {
-                            setSelected(
-                              selected === op.order_no ? null : op.order_no
-                            );
-                          }
-                        }}
-                        onPointerDown={(e) => onPointerDown(e, op)}
-                        onPointerMove={onPointerMove}
-                        onPointerUp={onPointerUp}
-                        op={op}
-                        result={results.get(op.order_no)}
-                      />
-                    );
-                  })}
-              </div>
-            </div>
-          ))}
-
-          {dueLine !== undefined && dueLine !== null && (
-            <div
-              className="pointer-events-none absolute top-0 bottom-0 z-10 border-destructive border-l-2 border-dashed"
-              style={{ left: NAME_WIDTH + dueLine }}
-              title="Due"
-            >
-              <span className="ml-1 rounded bg-destructive px-1 text-[10px] text-white">
-                Due
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
+      <BoardGrid
+        canEdit={canEdit}
+        crews={crews}
+        days={days}
+        dayWidth={dayWidth}
+        drag={drag}
+        dropTarget={dropTarget}
+        dueLine={dueLine}
+        moved={moved.current}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        operations={operations}
+        orderInfo={orderInfo}
+        pending={pending}
+        request={request}
+        results={results}
+        selected={selected}
+        setSelected={setSelected}
+        updateDrag={updateDrag}
+        width={width}
+      />
 
       {dropTarget && (
         <p className="text-muted-foreground text-sm">
