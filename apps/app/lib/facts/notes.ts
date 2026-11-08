@@ -6,7 +6,7 @@ import { database, forOrg } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { z } from "zod";
 import { recordFailedUsage, recordUsage } from "../ai-usage";
-import { viewerForMember } from "../library/viewer";
+import { systemViewer, viewerForMember } from "../library/viewer";
 import { ATTRIBUTES, SUBJECT_TYPES } from "./attributes";
 import { type FactSource, findSubject, proposeFact } from "./facts";
 
@@ -190,7 +190,10 @@ const readNote = async (
         source: note.source ?? (note.kind === "voice" ? "voice" : "note"),
         statedBy: note.statedBy,
         noteId,
-        ...(author ? { viewer: author } : {}),
+        // Someone without a Takumo login (a texted note from the phone
+        // roster, a former member's note read again) may only join facts
+        // the whole company may see (audit G3-C).
+        viewer: author ?? systemViewer(orgId),
       });
       if (made.ok) {
         result.proposed.push(made.fact.label);

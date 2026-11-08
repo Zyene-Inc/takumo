@@ -191,15 +191,17 @@ describe.skipIf(!TEST_DATABASE_URL)(
         expect(await database.department.count({ where: { orgId } })).toBe(1);
       });
 
-      test("the real switch is off for every shop", async () => {
+      test("the real switch only lets owners start: a shop that restricts keeps restricting", async () => {
         const real = await vi.importActual<
           typeof import("../lib/library/stage")
         >("../lib/library/stage");
+        expect(real.restrictedAccessReady()).toBe(true);
+        expect(await real.confidentialEnabled(orgId)).toBe(false);
         await database.org.update({
           where: { id: orgId },
           data: { libraryStage: "confidential" },
         });
-        expect(await real.confidentialEnabled(orgId)).toBe(false);
+        expect(await real.confidentialEnabled(orgId)).toBe(true);
         await database.org.update({
           where: { id: orgId },
           data: { libraryStage: "off" },

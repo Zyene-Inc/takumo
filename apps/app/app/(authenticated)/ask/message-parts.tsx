@@ -34,7 +34,12 @@ import {
   TableIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { type AnchorHTMLAttributes, memo, useMemo } from "react";
+import {
+  type AnchorHTMLAttributes,
+  type ImgHTMLAttributes,
+  memo,
+  useMemo,
+} from "react";
 import {
   Bar,
   BarChart,
@@ -127,6 +132,37 @@ export const citationNumbers = (
   return numbers;
 };
 
+/**
+ * A link in an answer that isn't a citation. Only links within the app can
+ * be clicked. An answer can repeat text planted in a document ("click here",
+ * with what the person may read in the address), so a web address is shown
+ * as text, in full, and never opened from here (audit G3-A).
+ */
+const PlainLink = ({
+  href,
+  children,
+  ...props
+}: AnchorHTMLAttributes<HTMLAnchorElement>) => {
+  if (!(href && SAFE_LINK.test(href))) {
+    return <span>{children}</span>;
+  }
+  if (!href.startsWith("/")) {
+    return (
+      <span>
+        {children}
+        {typeof children === "string" && children === href
+          ? null
+          : ` (${href})`}
+      </span>
+    );
+  }
+  return (
+    <a {...props} className="underline" href={href}>
+      {children}
+    </a>
+  );
+};
+
 /** Markdown answer with [kind id] citations turned into chips. */
 export const AnswerText = ({
   text,
@@ -160,23 +196,16 @@ export const AnswerText = ({
             />
           );
         }
-        // Only web links and links within the app; anything else is plain text.
-        if (!(href && SAFE_LINK.test(href))) {
-          return <span>{children}</span>;
-        }
-        const external = !href.startsWith("/");
         return (
-          <a
-            {...props}
-            className="underline"
-            href={href}
-            rel={external ? "noreferrer noopener" : undefined}
-            target={external ? "_blank" : undefined}
-          >
+          <PlainLink {...props} href={href}>
             {children}
-          </a>
+          </PlainLink>
         );
       },
+      // Answers never load images: an image address would be fetched
+      // without a click, with whatever the model put in it (audit G3-A).
+      img: ({ alt }: ImgHTMLAttributes<HTMLImageElement>) =>
+        alt ? <span>{alt}</span> : null,
     }),
     [cited, numbers]
   );

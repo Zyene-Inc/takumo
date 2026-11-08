@@ -4,7 +4,7 @@ import { listShopMembers } from "@repo/auth/server";
 import { database, type Prisma } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { DOC_TYPE_LABEL } from "../knowledge/understand";
-import { documentCapabilities } from "./access";
+import { documentCapabilities, folderCapabilities } from "./access";
 import { allows } from "./guard";
 import { confidentialEnabled } from "./stage";
 import { trustedViewer, type Viewer } from "./viewer";
@@ -168,8 +168,9 @@ export const documentRows = async (
   } = {}
 ): Promise<DocumentRow[]> => {
   const { orgId, role } = trustedViewer(viewer);
-  const [capabilities, restricted] = await Promise.all([
+  const [capabilities, folderCaps, restricted] = await Promise.all([
     documentCapabilities(viewer),
+    folderCapabilities(viewer),
     confidentialEnabled(orgId),
   ]);
   const found: Selected[] = await database.source.findMany({
@@ -196,7 +197,13 @@ export const documentRows = async (
     return {
       id: s.id,
       name: s.name,
-      folder: s.folder,
+      // A folder the viewer can't open isn't named, even to someone given
+      // a document inside it (audit G3-F4).
+      folder:
+        s.folder &&
+        allows(folderCaps.get(s.folder.id) ?? 0, "view", role, restricted)
+          ? s.folder
+          : null,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
       deletedAt: s.deletedAt,

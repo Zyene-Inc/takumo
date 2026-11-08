@@ -447,6 +447,16 @@ export const moveDocument = async (
     if (target.folder.kind.startsWith("virtual")) {
       return NOT_ALLOWED;
     }
+    // Only into folders the mover can open: in a drop box they can't see,
+    // a name clash would tell them a hidden document's name (audit G3-F3).
+    // Handing a document in there is an upload, which never reveals one.
+    if (!(await authorizeFolder(viewer, folderId, "view")).ok) {
+      return {
+        ok: false,
+        status: 403,
+        error: "You can only move documents into folders you can open.",
+      };
+    }
   }
   const { source } = allowed;
   if (source.folderId === folderId) {

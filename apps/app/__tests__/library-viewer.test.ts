@@ -219,10 +219,13 @@ describe("grant rules", () => {
   });
 });
 
-test("restricted access is off in this release, whatever the shop's stage", async () => {
+test("a shop restricts documents once its owner turned it on, whatever the switch says", async () => {
   db.org.findUnique.mockClear().mockResolvedValue({
     libraryStage: "confidential",
   });
+  expect(await confidentialEnabled("org_1")).toBe(true);
+  db.org.findUnique.mockResolvedValue({ libraryStage: "library" });
   expect(await confidentialEnabled("org_1")).toBe(false);
-  expect(db.org.findUnique).not.toHaveBeenCalled();
+  db.org.findUnique.mockResolvedValue(null);
+  expect(await confidentialEnabled("org_1")).toBe(false);
 });

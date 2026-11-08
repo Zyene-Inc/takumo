@@ -63,10 +63,17 @@ export const setLibrary = async (
       error: "This shop restricts documents; change it by hand.",
     };
   }
-  await database.org.update({
-    where: { id: orgId },
+  // Never over a shop that turned restricted access on meanwhile (one way).
+  const { count } = await database.org.updateMany({
+    where: { id: orgId, libraryStage: { not: "confidential" } },
     data: { libraryStage: on ? "library" : "off" },
   });
+  if (count === 0) {
+    return {
+      ok: false,
+      error: "This shop restricts documents; change it by hand.",
+    };
+  }
   revalidatePath("/admin");
   return { ok: true };
 };
