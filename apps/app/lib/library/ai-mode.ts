@@ -140,9 +140,12 @@ export const localPassages = (
 
 // Everything derived by AI services from these documents' text: vectors and
 // context sentences on their passages, the card's type, summary and links.
+// The records each passage mentions were worked out by AI too: emptied, as
+// passages read without AI are stored (audit G3-D).
 const CLEAR_PASSAGES_SQL = `
   update "DocChunk"
-  set embedding = null, meta = meta - 'context'
+  set embedding = null,
+      meta = (meta - 'context') || jsonb_build_object('mentions', '[]'::jsonb)
   where "orgId" = $1 and "sourceId" = any($2::text[])`;
 
 const CLEAR_CARDS_SQL = `

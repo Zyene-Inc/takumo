@@ -3,7 +3,7 @@ import "server-only";
 import { database } from "@repo/database";
 import { isCard } from "../knowledge/documents";
 import { DOC_TYPE_LABEL } from "../knowledge/understand";
-import { documentCapabilities } from "./access";
+import { documentCapabilities, folderCapabilities } from "./access";
 import type { AuditAction } from "./audit";
 import { allows, authorizeDocument } from "./guard";
 import {
@@ -207,7 +207,7 @@ export const documentDetail = async (
   if (!allowed.ok) {
     return null;
   }
-  const [rows, source, versions, audits, names, caps, restricted] =
+  const [rows, source, versions, audits, names, caps, restricted, folderCaps] =
     await Promise.all([
       documentRows(viewer, { id: sourceId }),
       database.source.findUniqueOrThrow({
@@ -252,6 +252,7 @@ export const documentDetail = async (
       memberNames(orgId),
       documentCapabilities(viewer),
       confidentialEnabled(orgId),
+      folderCapabilities(viewer),
     ]);
   const [document] = rows;
   if (!document) {
@@ -293,8 +294,11 @@ export const documentDetail = async (
       const href = recordHref(l.ref, l.label);
       return href ? [{ href, label: l.label }] : [];
     }),
+    // Only folders the viewer can open are named (audit G3-F4).
     trail: (source.folder?.path ?? []).flatMap((id) =>
-      byId.has(id) ? [byId.get(id) as (typeof ancestors)[0]] : []
+      byId.has(id) && allows(folderCaps.get(id) ?? 0, "view", role, restricted)
+        ? [byId.get(id) as (typeof ancestors)[0]]
+        : []
     ),
     text,
     versions: versions.map((v) => ({

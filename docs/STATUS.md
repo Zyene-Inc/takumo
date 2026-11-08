@@ -166,9 +166,9 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 - **Migration** `20261113090000_knowledge_channels`: `PhoneNumber` and `PhoneMessage` tables (with row-level security) and `Note.channel`, `Note.senderName`.
 - **Tests:** Twilio signature, phone numbers, codes and replies; the docs address and its reply; on a database, registering and confirming a phone, unknown and unconfirmed numbers ignored, one shop per phone, retries read once, and a member's emailed document read and answered while an outsider is bounced.
 
-## Company Knowledge Hub (in development, not live)
+## Company Knowledge Hub (live; restricted access available to owners)
 
-Branches `feat/knowledge-hub-*`. Built so far: ownership, folders, departments and access checks (phase 1); original files in private storage, versions, recoverable processing, provenance, Trash and permanent delete (phase 2); the Company Knowledge library at `/library` (phase 3), shown only to shops whose `libraryStage` is `library` (Takumo staff switch it on per shop in `/admin`); access-aware AI memory (phase 4, below). Restricted and confidential documents stay off in code (`CONFIDENTIAL_READY = false` in `apps/app/lib/library/stage.ts`) until the release gate below is passed.
+Branches `feat/knowledge-hub-*`. Built so far: ownership, folders, departments and access checks (phase 1); original files in private storage, versions, recoverable processing, provenance, Trash and permanent delete (phase 2); the Company Knowledge library at `/library` (phase 3), shown only to shops whose `libraryStage` is `library` (Takumo staff switch it on per shop in `/admin`); access-aware AI memory (phase 4, below). Gate G3 passed on 2026-11-08 (below): `CONFIDENTIAL_READY = true` in `apps/app/lib/library/stage.ts` lets a shop's owner turn restricted access on (Settings → Departments, one way). The switch only lets shops start: a shop that restricts keeps restricting even if it's set back to false, so setting it back never opens confidential folders to everyone.
 
 **Phase 4 (secure memory), built and tested locally only**
 - Every AI path reads as the person asking (`lib/library/ai-access.ts`, SQL `library.ai_source_ids` and `library.fact_access`, migration `20261116090000_knowledge_hub_secure_memory`): Ask's document search (keyword and vector, filtered inside the query), `get_record`'s facts, `propose_fact`, starter questions, the Brain, the facts pages, the home page count, exports and email Ask. The SQL reader (`query_data`) sees only facts everyone may see, and quotes from documents only when every one of them is company-wide.
@@ -178,14 +178,24 @@ Branches `feat/knowledge-hub-*`. Built so far: ownership, folders, departments a
 - Folder AI settings (off, search, full), most restrictive on the path: off and search send nothing while reading (no recognising of scans, understanding, context, vectors or facts); search lets Ask use keyword passages. Lowering a setting removes vectors, context sentences, cards, summaries and unreviewed facts in the same transaction, and runs already going can't write them back (row lock and re-check).
 - Moves and restores never widen access (owner needed to leave a confidential folder; otherwise the item keeps a copy of its access); a folder with documents in the Trash can't be deleted once access can be restricted. Departments page (`/settings/departments`), access dialog on folders and documents, confidential and AI settings, the owner's one-way "turn on restricted access" (creates HR, Finance, Receipts and Contracts with AI off). Drop boxes never reveal a hidden document's name.
 
-**Release blockers**
-1. The staging checks for phases 2 to 4: the private bucket and its signed links (Open in a new tab, Download), pooled-connection transactions, the library sweep cron, the in-page previews (PDFs and images up to 4 MB are sent by Takumo itself, `/api/library/documents/[id]/file?preview=1`; larger ones open in a new tab; docs/DEPLOY.md), and the new SQL functions and `ask.facts` view against Supabase with the `takumo_reader` login.
-2. Before `CONFIDENTIAL_READY` may be switched on (gate G3): an independent security review of phase 4, the penetration checklist (guessed ids, direct server-action calls, grant escalation, moves, admin self-promotion), an AI evaluation with restricted documents and prompt-injection attempts on the real model, and the staging tests above.
+**Gate G3 (2026-11-08)**
+- Independent review in two parts (access control and penetration checklist; AI retrieval and derived data) by reviewers given the code, not the team's conclusions. Their exploit tests are in the suite: `knowledge-hub-g3-access.db.test.ts`, `knowledge-hub-g3-ai.db.test.ts`, `knowledge-hub-g3-answer-links.test.tsx`.
+- Fixed (migration `20261118090000_g3_access_fixes` and app):
+  - The owner on record whose WorkOS role was lowered kept every folder's full access in SQL (`library.who` now needs an admin role, as the app's viewer already did).
+  - A confidential folder set to inherit and moved under another confidential folder opened to that folder's people: every confidential folder is now its own root (`library.folder_grants`, `library.chain_grants`; the access dialog matches).
+  - `/onboarding` listed the newest uploads, confidential ones included, with their summaries: documents are now filtered by access.
+  - An answer could load an image (or offer a link) whose address carried what the asker read (prompt injection, no click needed): answers never load images and show web addresses as text; only links within the app can be clicked.
+  - An answer that quoted a published fact wasn't tied to the document behind the quote: it's now hidden with that document. Answers that propose a fact are no longer hidden from their own asker, and the fact gets the conversation's documents.
+  - A texted note from someone without a login could confirm a hidden pending fact's value: it joins only company-wide facts.
+  - Hidden folder names in a document's folder trail, in document lists and in the access dialog; a move into a drop box confirming a hidden document's name (moves now need view on the destination); passages kept AI-found record links after a folder's AI setting was lowered; a staff toggle in /admin could overwrite a shop that had just turned restricted access on.
+- Real-model evaluation: locally (restricted access turned on in the UI, HR, Finance and Contracts documents, prompt-injection notice, every role) for access, files, search and pages; on production's model in a synthetic shop for Ask.
+- Ask's SQL tool: database check and reader isolation tests passed on Supabase's Postgres image (all 33) and plain Postgres.
 
 **Known limits (phase 4)**
 - What was already streamed or emailed can't be taken back when access changes mid-answer; it's only not saved or reused. Text already sent to an AI service when a folder's AI setting is lowered can't be recalled; nothing more is sent and nothing it returns is kept.
 - A person removed in WorkOS loses access at once (their role is gone); their department places are removed by the WorkOS webhook (apps/api) and, as a backstop, daily (erp-health cron) and when the departments page opens.
 - A fact whose source document is permanently deleted stays owner-only until published; documents outside any folder keep company-wide reading (as before folders).
+- Names are unique among top-level folders and among documents in a folder, so being refused a name says that a hidden folder or document has that exact name (review G3-F6). Closing it would mean allowing duplicate names.
 - RFQ and PO folders stay company-wide, the same as the Quotes and Orders pages.
 
 **Known from browser QA (local, mocked Storage and AI)**

@@ -106,6 +106,25 @@ const bulkFactSources = async (orgId: string, tools: ToolUse[]) => {
   return { rows, untraced: Boolean(flag?.untraced) };
 };
 
+/**
+ * Facts whose quotes from documents a tool showed the asker (get_record's
+ * knowledge: the quote is there only for those who may use its documents).
+ */
+const quotedFactNumbers = (tools: ToolUse[]) =>
+  new Set(
+    tools.flatMap((t) => {
+      const knowledge = (t.output as { record?: { knowledge?: unknown } })
+        ?.record?.knowledge;
+      return Array.isArray(knowledge)
+        ? knowledge.flatMap((k) => {
+            const item = k as { evidence?: unknown; fact?: unknown } | null;
+            const n = item?.evidence ? parseFactLabel(String(item.fact)) : null;
+            return n === null ? [] : [n];
+          })
+        : [];
+    })
+  );
+
 export const answerProvenance = async (
   orgId: string,
   conversationId: string,
@@ -129,6 +148,20 @@ export const answerProvenance = async (
     .filter((s) => s.kind === "fact")
     .map((s) => parseFactLabel(s.label))
     .filter((n): n is number => n !== null);
+  // Also facts whose quote was shown but which the answer didn't cite.
+  const quoted = quotedFactNumbers(tools);
+  // Facts this answer itself created from the conversation (not ones it
+  // joined): their origin is this answer's documents, which linkProposedFacts
+  // gives them. Counting them as untraced made every such answer partial
+  // and every chat fact owner-only (G3 review).
+  const madeHere = new Set(
+    tools
+      .filter((t) => t.tool === "propose_fact")
+      .map((t) => t.output as { already_waiting?: unknown; fact?: unknown })
+      .filter((o) => o?.already_waiting === false && typeof o.fact === "string")
+      .map((o) => parseFactLabel(o.fact as string))
+      .filter((n): n is number => n !== null)
+  );
 
   const [documents, facts, earlier, unattributed, bulk] = await Promise.all([
     database.source.findMany({
@@ -136,8 +169,12 @@ export const answerProvenance = async (
       select: { id: true, currentVersionId: true },
     }),
     database.fact.findMany({
-      where: { orgId, number: { in: factNumbers } },
+      where: {
+        orgId,
+        number: { in: [...new Set([...factNumbers, ...quoted])] },
+      },
       select: {
+        number: true,
         provenance: true,
         publishedAt: true,
         sources: { select: { sourceId: true, versionId: true } },
@@ -169,9 +206,12 @@ export const answerProvenance = async (
   }
   // A published fact is company knowledge on purpose: its documents don't
   // restrict the answer (their quotes aren't shown to those who can't open
-  // them).
+  // them). Unless the asker was shown its quote: then the answer repeats
+  // the documents' words and is hidden with them (audit G3-B).
   const factSources = [
-    ...facts.filter((f) => !f.publishedAt).flatMap((f) => f.sources),
+    ...facts
+      .filter((f) => !f.publishedAt || quoted.has(f.number))
+      .flatMap((f) => f.sources),
     ...bulk.rows,
   ];
   for (const s of factSources) {
@@ -189,11 +229,12 @@ export const answerProvenance = async (
     bulk.untraced ||
     facts.some(
       (f) =>
-        !f.publishedAt &&
+        !(f.publishedAt || madeHere.has(f.number)) &&
         (f.provenance === "unknown" || f.provenance === "source_deleted")
     ) ||
     // A fact cited by number that isn't in this shop: can't be attributed.
-    facts.length < new Set(factNumbers).size;
+    facts.filter((f) => factNumbers.includes(f.number)).length <
+      new Set(factNumbers).size;
   const gone = documents.length < documentIds.size;
   return {
     provenance: partial || gone ? "partial" : "recorded",

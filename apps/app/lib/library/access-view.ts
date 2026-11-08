@@ -3,7 +3,7 @@ import "server-only";
 import { listShopMembers } from "@repo/auth/server";
 import { database } from "@repo/database";
 import { log } from "@repo/observability/log";
-import { requireCapability, type Target } from "./access";
+import { folderCapabilities, requireCapability, type Target } from "./access";
 import {
   type AiMode,
   documentAiMode,
@@ -11,6 +11,7 @@ import {
   isAiMode,
 } from "./ai-mode";
 import { has, onlyUpload, PRESETS } from "./capabilities";
+import { allows } from "./guard";
 import { confidentialEnabled } from "./stage";
 import { trustedViewer, type Viewer } from "./viewer";
 
@@ -133,12 +134,22 @@ const chainOf = async (orgId: string, folderId: string | null) => {
   });
   const chain = await database.folder.findMany({
     where: { orgId, id: { in: folder?.path ?? [] } },
-    select: { id: true, name: true, depth: true, inheritAccess: true },
+    select: {
+      id: true,
+      name: true,
+      depth: true,
+      inheritAccess: true,
+      confidential: true,
+    },
     orderBy: { depth: "asc" },
   });
+  // The same roots as library.chain_grants: where inheritance stops, and
+  // the nearest confidential folder (audit G3-F7).
   const root = Math.max(
     1,
-    ...chain.filter((f) => !f.inheritAccess).map((f) => f.depth)
+    ...chain
+      .filter((f) => !f.inheritAccess || f.confidential)
+      .map((f) => f.depth)
   );
   return chain.filter((f) => f.depth >= root);
 };
@@ -287,7 +298,7 @@ export const accessView = async (
   viewer: Viewer,
   target: Target
 ): Promise<AccessView | null> => {
-  const { orgId, isOwner } = trustedViewer(viewer);
+  const { orgId, isOwner, role } = trustedViewer(viewer);
   const check = await requireCapability(viewer, target, "view");
   const item = check.ok ? await itemOf(orgId, target) : null;
   if (!(check.ok && item)) {
@@ -307,7 +318,10 @@ export const accessView = async (
         where: { orgId, ...target },
         select: GRANT_SELECT,
       }),
-      item.inherits ? chainOf(orgId, item.parent) : Promise.resolve([]),
+      // A confidential folder inherits nothing (library.folder_grants).
+      item.inherits && !item.confidentialHere
+        ? chainOf(orgId, item.parent)
+        : Promise.resolve([]),
       aiModeOf(orgId, target),
     ]);
   const inherited = chain.length
@@ -316,7 +330,15 @@ export const accessView = async (
         select: GRANT_SELECT,
       })
     : [];
-  const folderName = new Map(chain.map((f) => [f.id, f.name]));
+  // A folder above that the viewer can't open isn't named (audit G3-F5).
+  const folderCaps = chain.length ? await folderCapabilities(viewer) : null;
+  const folderName = new Map(
+    chain
+      .filter((f) =>
+        allows(folderCaps?.get(f.id) ?? 0, "view", role, restricting)
+      )
+      .map((f) => [f.id, f.name])
+  );
   const context = {
     confidential: mine.confidential,
     canManage: restricting && has(mine.capabilities, "manage"),

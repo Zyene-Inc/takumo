@@ -428,8 +428,12 @@ describe.skipIf(!TEST_DATABASE_URL)("knowledge hub access (database)", () => {
         (await visibleRaw(orgId, "user_eng", "member")).has(doc.payslips)
       ).toBe(false);
       expect(
-        (await visibleRaw(orgId, "user_owner", "member")).has(doc.payslips)
+        (await visibleRaw(orgId, "user_owner", "admin")).has(doc.payslips)
       ).toBe(true);
+      // The owner on record whose role was lowered isn't the owner (G3-F1).
+      expect(
+        (await visibleRaw(orgId, "user_owner", "member")).has(doc.payslips)
+      ).toBe(false);
       expect(
         (await visibleRaw(orgId, "user_eng", "admin")).has(doc.payslips)
       ).toBe(false);

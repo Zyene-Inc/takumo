@@ -6,6 +6,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess, NO_ACCESS_MESSAGE, permissionFor } from "@/lib/access";
+import { visibleSourceIds } from "@/lib/library/access";
+import { resolveViewer } from "@/lib/library/viewer";
 import { Header } from "../components/header";
 import { ImportWizard } from "./import-wizard";
 
@@ -41,7 +43,8 @@ const OnboardingPage = async ({
   searchParams: Promise<{ type?: string }>;
 }) => {
   const { orgId, canEditShop, canEditQuotes } = await getAccess();
-  if (!orgId) {
+  const viewer = await resolveViewer();
+  if (!(orgId && viewer && viewer.orgId === orgId)) {
     notFound();
   }
   const { type } = await searchParams;
@@ -57,8 +60,18 @@ const OnboardingPage = async ({
       db.routing.count(),
       db.order.count(),
       db.quote.count(),
+      // Data files as before; documents only when this person may open
+      // them (restricted and confidential ones aren't named; audit G3-F2).
       db.source.findMany({
-        where: { type: "upload", deletedAt: null },
+        where: {
+          type: "upload",
+          deletedAt: null,
+          OR: [
+            { profile: null },
+            { profile: { not: "document" } },
+            { id: { in: await visibleSourceIds(viewer) } },
+          ],
+        },
         orderBy: { createdAt: "desc" },
         take: 8,
       }),

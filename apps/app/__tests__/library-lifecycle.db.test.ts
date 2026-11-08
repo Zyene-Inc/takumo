@@ -262,7 +262,13 @@ describe.skipIf(!TEST_DATABASE_URL)(
         expect(await database.source.count({ where: { id: sourceId } })).toBe(
           1
         );
-        const owner = await viewerAs("planner", "user_owner");
+        // The owner on record with a lesser role isn't the owner (G3-F1).
+        const demoted = await viewerAs("planner", "user_owner");
+        expect(await lifecycle.purgeDocument(demoted, sourceId)).toMatchObject({
+          ok: false,
+          status: 403,
+        });
+        const owner = await viewerAs("admin", "user_owner");
         expect(await lifecycle.purgeDocument(owner, sourceId)).toEqual({
           ok: true,
           complete: true,
