@@ -226,6 +226,15 @@ describe("document text extraction", () => {
     expect(pages[0].text).toContain("Break all edges 0.2 to 0.4 mm on P-3001");
   });
 
+  test("reading a PDF leaves its bytes usable (scanned pages are cut from them next)", async () => {
+    const bytes = fixture("sample.pdf");
+    const before = bytes.length;
+    await extractPages("sample.pdf", bytes);
+    expect(bytes.length).toBe(before);
+    const { PDFDocument } = await import("pdf-lib");
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1);
+  });
+
   test("reads Word documents", async () => {
     const pages = await extractPages("sample.docx", fixture("sample.docx"));
     expect(pages[0].page).toBeNull();
