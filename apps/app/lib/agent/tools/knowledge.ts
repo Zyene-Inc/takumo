@@ -67,6 +67,7 @@ Times in minutes (2 hours → 120). Use attribute "note" for anything that isn't
         evidence: input.evidence,
         source: "chat",
         statedBy: ctx.userId,
+        viewer: ctx.viewer,
       });
       if (!made.ok) {
         return { error: made.error, sources: [] };

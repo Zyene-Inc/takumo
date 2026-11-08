@@ -115,7 +115,12 @@ export const receiveMessage = async (input: {
   }
 
   const email = parseEmail(new TextDecoder().decode(input.raw));
-  const from = emailAddress(email.from) ?? emailAddress(input.auth.from);
+  // The sender is read from the From header as sent (never decoded); two
+  // From headers mean nobody can say who sent it (security audit M3).
+  const from =
+    email.fromCount === 0
+      ? emailAddress(input.auth.from)
+      : emailAddress(email.fromHeader);
   const sha256 = createHash("sha256").update(input.raw).digest("hex");
   const accepted: Accepted[] = [];
   const refused: string[] = [];

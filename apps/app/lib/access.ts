@@ -19,6 +19,8 @@ export const NO_ACCESS_MESSAGE: Record<Permission, string> = {
   "billing:manage": "Only the shop's owner or an admin can change the plan.",
   "connectors:manage":
     "Only the shop's owner or an admin can connect outside systems.",
+  "departments:manage":
+    "Only the shop's owner or an admin can change departments.",
 };
 
 /** The current shop and what the signed-in user may change in it. */

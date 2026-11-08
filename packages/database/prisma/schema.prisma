@@ -63,10 +63,28 @@ model Org {
   // When the subscription went past due (the payment grace runs from here).
   pastDueSince         DateTime?
   cancelAtPeriodEnd    Boolean   @default(false)
+  // The shop's owner (WorkOS user ID). WorkOS gives the creator the admin
+  // role, so ownership is recorded here; it only changes by an owner's
+  // transfer. Null for shops whose owner couldn't be told from old data.
+  ownerUserId          String?
+  // Company Knowledge Hub rollout: off | library | confidential. Restricted
+  // and confidential documents need "confidential", which stays unavailable
+  // until every AI path enforces document permissions.
+  libraryStage         String    @default("off")
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
   members            Member[]
+  folders            Folder[]
+  departments        Department[]
+  departmentMembers  DepartmentMember[]
+  accessGrants       AccessGrant[]
+  documentVersions   DocumentVersion[]
+  documentPages      DocumentPage[]
+  factSources        FactSource[]
+  messageSources     MessageSource[]
+  documentAuditLogs  DocumentAuditLog[]
+  storageDeletions   StorageDeletion[]
   workCenters        WorkCenter[]
   calendarDays       CalendarDay[]
   operators          Operator[]
@@ -666,20 +684,216 @@ model ShopSettings {
 // ---------------------------------------------------------------------------
 
 model Source {
-  id        String   @id @default(uuid())
-  orgId     String
-  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name      String
-  type      String // "upload" | "quickbooks" | "gmail" | …
-  filePath  String? // Supabase Storage path
-  status    String   @default("pending") // pending | parsing | ready | failed
-  profile   String? // quotes | routings | travelers | sops | erp_export | generic
-  summary   String?
-  createdAt DateTime @default(now())
+  id            String   @id @default(uuid())
+  orgId         String
+  org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name          String
+  type          String // "upload" | "quickbooks" | "gmail" | …
+  filePath      String? // Supabase Storage path
+  status        String   @default("pending") // pending | parsing | ready | failed
+  profile       String? // quotes | routings | travelers | sops | erp_export | generic
+  summary       String?
+  createdAt     DateTime @default(now())
+  // Company Knowledge Hub. A document outside any folder (every document
+  // stored before folders) is readable by everyone in the shop, as before.
+  folderId      String?
+  // false: only this document's own grants apply, not its folder's.
+  inheritAccess Boolean  @default(true)
 
-  chunks DocChunk[]
+  // Documents with versions (knowledge_hub_documents). The id never changes;
+  // each upload of a new file is a DocumentVersion, and only the current one
+  // is searched. `status` and `summary` describe the current version.
+  // WorkOS user who uploaded the first version; null for documents stored
+  // before uploads were attributed (never guessed).
+  uploadedBy       String?
+  currentVersionId String?   @unique
+  // The last version number handed out (incremented atomically).
+  versionSeq       Int       @default(0)
+  // In the Trash: hidden from the library, search and Ask; kept for restore.
+  deletedAt        DateTime?
+  deletedBy        String?
+  updatedAt        DateTime  @default(now()) @updatedAt
+
+  folder         Folder?           @relation(fields: [folderId], references: [id], onDelete: NoAction)
+  chunks         DocChunk[]
+  grants         AccessGrant[]
+  versions       DocumentVersion[] @relation("SourceVersions")
+  currentVersion DocumentVersion?  @relation("SourceCurrentVersion", fields: [currentVersionId], references: [id], onDelete: NoAction)
+  factSources    FactSource[]
 
   @@index([orgId])
+  @@index([orgId, folderId])
+  @@index([orgId, deletedAt])
+}
+
+// One uploaded file of a document. Processed in checkpointed stages under a
+// lease (lib/library/process.ts); it becomes the document's current version
+// only when processing has finished, in one transaction, and never over a
+// newer version.
+model DocumentVersion {
+  id            String    @id @default(uuid())
+  orgId         String
+  sourceId      String
+  number        Int
+  // The file's own name, as uploaded.
+  name          String
+  // Where the original is kept: org/<orgId>/src/<sourceId>/v<n>/<sha256>.
+  // Always derived on the server; null when no original was kept.
+  storageKey    String?
+  // false for documents stored before originals were kept (and when storage
+  // isn't set up): their text is searchable but there is no file to download.
+  originalKept  Boolean   @default(false)
+  mimeType      String?
+  size          Int?
+  sha256        String?
+  // WorkOS user who uploaded it; null when unknown (never guessed).
+  uploadedBy    String?
+  // uploading | queued | processing | ready | failed | superseded
+  status        String    @default("uploading")
+  // read | understand | chunk | embed | activate | facts | done
+  stage         String    @default("read")
+  // Progress saved between stages (what the document is about, the facts
+  // read from it and how many were proposed).
+  checkpoint    Json?
+  attempts      Int       @default(0)
+  // The run holding the lease; only it may write progress.
+  leaseOwner    String?
+  leaseUntil    DateTime?
+  nextAttemptAt DateTime?
+  // Written for people; never the AI provider's own error text.
+  error         String?
+  pageCount     Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
+  activatedAt   DateTime?
+
+  org       Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  source    Source         @relation("SourceVersions", fields: [sourceId], references: [id], onDelete: Cascade)
+  currentOf Source?        @relation("SourceCurrentVersion")
+  pages     DocumentPage[]
+  chunks    DocChunk[]
+
+  @@unique([sourceId, number])
+  @@index([orgId, sourceId])
+  @@index([orgId, sha256])
+  @@index([status, nextAttemptAt])
+}
+
+// Text read from a version, saved as it is read (scanned pages are read a
+// few at a time), so a stopped run resumes without reading pages again.
+model DocumentPage {
+  orgId      String
+  versionId  String
+  // Position in the document, from 0.
+  position   Int
+  page       Int?
+  text       String
+  // Read from an image (a scan or photo) rather than a text layer.
+  recognized Boolean @default(false)
+
+  org     Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  version DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@id([versionId, position])
+  @@index([orgId])
+}
+
+// ---------------------------------------------------------------------------
+// Company Knowledge Hub: folders, departments and who may do what.
+// Same-shop references, folder paths and grant shapes are enforced by
+// triggers and checks in the knowledge_hub_foundations migration; who may see
+// a folder or document is decided only by the library.* SQL functions.
+// ---------------------------------------------------------------------------
+
+model Folder {
+  id            String   @id @default(uuid())
+  orgId         String
+  parentId      String?
+  name          String
+  // normal | system (a default folder) | virtual_rfq | virtual_po
+  kind          String   @default("normal")
+  // Which default folder this is (sops, engineering, hr, finance, …).
+  systemKey     String?
+  // Ancestor folder IDs from the top, ending with this folder's own ID.
+  // Maintained by a trigger; never written by the app.
+  path          String[] @default([])
+  depth         Int      @default(1)
+  // false: grants on the folders above don't apply here ("Restricted").
+  inheritAccess Boolean  @default(true)
+  // Confidential folders (HR, Finance): admins get no automatic access, and
+  // everyone/role grants may only allow uploading. Applies to subfolders.
+  confidential  Boolean  @default(false)
+  // What may be sent to outside AI services for documents here: off |
+  // search | full. The most restrictive setting on the folder's path applies
+  // (library.folder_ai_modes); documents outside any folder are "full".
+  aiMode        String   @default("full")
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  org      Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  parent   Folder?       @relation("FolderTree", fields: [parentId], references: [id], onDelete: NoAction)
+  children Folder[]      @relation("FolderTree")
+  sources  Source[]
+  grants   AccessGrant[]
+
+  @@unique([orgId, parentId, name])
+  @@unique([orgId, systemKey])
+  @@index([orgId])
+  // "Everything under this folder" lookups.
+  @@index([path], type: Gin)
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  orgId       String
+  name        String
+  description String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  org     Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members DepartmentMember[]
+
+  @@unique([orgId, name])
+}
+
+model DepartmentMember {
+  orgId        String
+  departmentId String
+  userId       String // WorkOS user ID
+  addedBy      String?
+  createdAt    DateTime @default(now())
+
+  org        Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@id([departmentId, userId])
+  @@index([orgId, userId])
+}
+
+/// Who may do what with one folder or one document (exactly one is set).
+model AccessGrant {
+  id            String   @id @default(uuid())
+  orgId         String
+  folderId      String?
+  sourceId      String?
+  // everyone | role | department | user
+  principalType String
+  // Role slug, department ID or WorkOS user ID; "" for everyone.
+  principalId   String   @default("")
+  // Bits: 1 view, 2 download, 4 upload, 8 edit, 16 delete, 32 manage.
+  capabilities  Int
+  grantedBy     String?
+  createdAt     DateTime @default(now())
+
+  org    Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  folder Folder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  source Source? @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([folderId, principalType, principalId])
+  @@unique([sourceId, principalType, principalId])
+  @@index([orgId, principalType, principalId])
 }
 
 model DocChunk {
@@ -692,9 +906,16 @@ model DocChunk {
   meta      Json?
   // Created and indexed by prisma/sql/001_pgvector_rls.sql
   embedding Unsupported("vector(1024)")?
+  // The version this passage belongs to; only the document's current
+  // version is searched. ordinal: its place in the version (0 is the card),
+  // so writing a version's passages again adds nothing twice.
+  versionId String?
+  ordinal   Int?
 
-  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  source  Source           @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  version DocumentVersion? @relation(fields: [versionId], references: [id], onDelete: Cascade)
 
+  @@unique([versionId, ordinal])
   @@index([orgId])
 }
 
@@ -727,12 +948,44 @@ model Fact {
   validFrom        DateTime   @default(now())
   validTo          DateTime?
   createdAt        DateTime   @default(now())
+  // Where the fact came from, for permission checks on documents:
+  // documents (every document it came from is in FactSource) | none (no
+  // document was involved: typed, spoken, measured) | unknown (stored before
+  // this was recorded, or not worked out: never assumed safe) |
+  // source_deleted (its only document was permanently deleted).
+  provenance       String     @default("unknown")
+  // Published to the whole company on purpose (audited): seen by every
+  // member whatever its documents' access. Quotes from restricted
+  // documents stay hidden. Null: visibility follows provenance
+  // (library.fact_access).
+  publishedAt      DateTime?
+  publishedBy      String?
 
-  note Note? @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  note    Note?        @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  sources FactSource[]
 
   @@unique([orgId, number])
   @@index([orgId, subjectType, subjectId])
   @@index([orgId, status])
+}
+
+// A document a fact was read from (or that was in the conversation when
+// it was proposed). One row per fact and document.
+model FactSource {
+  orgId     String
+  factId    String
+  sourceId  String
+  versionId String?
+  // The words in that document, when the fact was read from it.
+  quote     String?
+  createdAt DateTime @default(now())
+
+  org    Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  fact   Fact   @relation(fields: [factId], references: [id], onDelete: Cascade)
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@id([factId, sourceId])
+  @@index([orgId, sourceId])
 }
 
 // A voice note or typed note from the shop floor. Takumo reads it for facts.
@@ -790,10 +1043,84 @@ model Message {
   // conversation re-opens exactly as it was shown.
   parts          Json?
   createdAt      DateTime @default(now())
+  // Which documents fed this message (MessageSource): recorded (complete),
+  // partial (recorded, but it also drew on something unattributed: an
+  // earlier legacy answer, facts read in bulk) or legacy (saved before this
+  // was recorded: unattributed, never assumed safe).
+  provenance     String   @default("legacy")
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sources      MessageSource[]
 
   @@index([conversationId, createdAt])
+}
+
+// A document an answer drew on, directly (search results, facts read from
+// it) or because an earlier answer in the conversation did (direct =
+// false), since later answers can repeat it. No foreign key to Source, so a
+// permanent delete can find and rewrite these messages after the document
+// row is gone.
+model MessageSource {
+  orgId          String
+  conversationId String
+  messageId      String
+  sourceId       String
+  versionId      String?
+  direct         Boolean
+  // document | fact | inherited
+  via            String
+  createdAt      DateTime @default(now())
+
+  org     Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, sourceId])
+  @@index([orgId, sourceId])
+  @@index([orgId, conversationId])
+}
+
+// What happened to a document, and who did it. No foreign key to Source:
+// entries outlive the document; a permanent delete clears subjectName. Never
+// holds document text.
+model DocumentAuditLog {
+  id          String   @id @default(uuid())
+  orgId       String
+  // WorkOS user; null for Takumo itself (processing, cleanup).
+  actorId     String?
+  // upload | version_upload | reread | processed | processing_failed |
+  // download | preview | trash | restore | purge | purge_complete (and, in
+  // phase 4, permission changes)
+  action      String
+  sourceId    String?
+  versionId   String?
+  folderId    String?
+  // The document's name when it happened; cleared on permanent delete.
+  subjectName String?
+  detail      Json?
+  createdAt   DateTime @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, sourceId, createdAt])
+  @@index([orgId, createdAt])
+}
+
+// Stored files still to be deleted (permanent delete, abandoned uploads).
+// Retried by the library sweep until storage confirms they're gone.
+model StorageDeletion {
+  id            String   @id @default(uuid())
+  orgId         String
+  // The document they belonged to (gone by now), for the audit entry.
+  sourceId      String?
+  keys          String[]
+  attempts      Int      @default(0)
+  lastError     String?
+  nextAttemptAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([nextAttemptAt])
 }
 
 model ScheduleRun {

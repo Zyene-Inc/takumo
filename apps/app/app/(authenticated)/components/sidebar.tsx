@@ -32,6 +32,7 @@ import {
   CalendarRangeIcon,
   ChevronRightIcon,
   FactoryIcon,
+  FoldersIcon,
   LifeBuoyIcon,
   MessageSquareIcon,
   Settings2Icon,
@@ -46,6 +47,8 @@ import { UserMenu, type UserMenuUser } from "./user-menu";
 interface GlobalSidebarProperties {
   readonly children: ReactNode;
   readonly currentOrganizationId: string;
+  /** The shop uses the Company Knowledge Library (Org.libraryStage). */
+  readonly libraryEnabled?: boolean;
   readonly organizations: UserOrganization[];
   readonly user: UserMenuUser;
 }
@@ -178,6 +181,10 @@ const data = {
           url: "/settings/team",
         },
         {
+          title: "Departments",
+          url: "/settings/departments",
+        },
+        {
           title: "Integrations",
           url: "/settings/integrations",
         },
@@ -210,13 +217,32 @@ const data = {
   ],
 };
 
+const LIBRARY = {
+  title: "Company Knowledge",
+  url: "/library",
+  icon: FoldersIcon,
+  isActive: false,
+  items: [
+    { title: "All files", url: "/library" },
+    { title: "My uploads", url: "/library/mine" },
+    { title: "Trash", url: "/library/trash" },
+  ],
+};
+
 export const GlobalSidebar = ({
   children,
   currentOrganizationId,
+  libraryEnabled = false,
   organizations,
   user,
 }: GlobalSidebarProperties) => {
   const sidebar = useSidebar();
+  // The library comes just before Knowledge, for shops that use it.
+  const navMain = libraryEnabled
+    ? data.navMain.flatMap((item) =>
+        item.url === "/knowledge" ? [LIBRARY, item] : [item]
+      )
+    : data.navMain;
 
   return (
     <>
@@ -243,7 +269,7 @@ export const GlobalSidebar = ({
           <SidebarGroup>
             <SidebarGroupLabel>Takumo</SidebarGroupLabel>
             <SidebarMenu>
-              {data.navMain.map((item) => (
+              {navMain.map((item) => (
                 <Collapsible
                   asChild
                   defaultOpen={item.isActive}

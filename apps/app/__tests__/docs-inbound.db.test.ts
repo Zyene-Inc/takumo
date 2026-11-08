@@ -16,6 +16,9 @@ vi.mock("@repo/observability/log", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@repo/auth/server", () => ({
+  // The same membership, as the Knowledge Hub's viewers read it.
+  shopRole: async (userId: string) =>
+    userId === "user_sam" ? "operator" : null,
   listShopMembers: async () => [
     {
       id: "m1",
@@ -156,11 +159,13 @@ describe.skipIf(!TEST_DATABASE_URL)("documents by email (database)", () => {
       return;
     }
     await inbound.processMessage(accepted, raw);
+    // An emailed document is a new document, never a replacement.
     expect(ingestDocument).toHaveBeenCalledWith(
       orgId,
       "user_sam",
       expect.objectContaining({ name: "Setup P-1001.pdf" }),
-      expect.any(Function)
+      expect.any(Function),
+      { via: "email", hidden: false }
     );
     const reply = emails.at(-1);
     expect(reply).toMatchObject({
@@ -176,6 +181,58 @@ describe.skipIf(!TEST_DATABASE_URL)("documents by email (database)", () => {
     expect(message.detail).toMatchObject({
       documents: ["Setup P-1001: 1 fact proposed"],
       emailed: true,
+    });
+  });
+
+  /** Send an email from Sam and process it; the stored message's status. */
+  const sendFromSam = async (files: string[]) => {
+    const raw = eml("Sam <sam@shop.example>", files);
+    const result = await inbound.receiveMessage({
+      raw,
+      mailFrom: "sam@shop.example",
+      recipients: [address],
+      auth: PASS,
+    });
+    const accepted = result.ok ? result.accepted[0] : undefined;
+    if (!accepted) {
+      throw new Error("The email wasn't accepted.");
+    }
+    await inbound.processMessage(accepted, raw);
+    return database.inboundMessage.findUniqueOrThrow({
+      where: { id: accepted.messageId },
+    });
+  };
+
+  test("an operator can't replace a document by email, whatever the extension", async () => {
+    const existing = await database.source.create({
+      data: { orgId, name: "SOP-12", type: "upload", profile: "document" },
+    });
+    ingestDocument.mockClear();
+    const message = await sendFromSam(["SOP-12.pdf", "SOP-12.docx"]);
+    expect(ingestDocument).not.toHaveBeenCalled();
+    expect(message.status).toBe("failed");
+    expect(emails.at(-1)?.text).toContain(
+      "Couldn't read it: there's already a document with this name."
+    );
+    expect(
+      await database.source.findMany({
+        where: { orgId, name: "SOP-12" },
+        select: { id: true },
+      })
+    ).toEqual([{ id: existing.id }]);
+  });
+
+  test("a document that arrives while the email is read is reported, not replaced", async () => {
+    const { DocumentExistsError } = await import("../lib/knowledge/documents");
+    ingestDocument.mockImplementationOnce(() =>
+      Promise.reject(new DocumentExistsError("Late sheet"))
+    );
+    const message = await sendFromSam(["Late sheet.pdf"]);
+    expect(message.status).toBe("failed");
+    expect(message.detail).toMatchObject({
+      documents: [
+        "Late sheet.pdf: there's already a document with this name. Rename the file and send it again.",
+      ],
     });
   });
 });

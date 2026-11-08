@@ -4,6 +4,7 @@ import { env } from "@/env";
 import { PROVIDER_NAME, type Provider } from "@/lib/connectors/config";
 import { healthLines, lateReports } from "@/lib/erp/health";
 import { reportLink } from "@/lib/erp/link";
+import { pruneDepartedMembers } from "@/lib/library/departments";
 import { notifyAdmins } from "@/lib/notify";
 import { markAllEnteredFromErp } from "@/lib/orders/settle";
 import { removeOldFiltered } from "@/lib/quotes/screening";
@@ -44,6 +45,14 @@ export const GET = async (request: Request) => {
   const now = new Date();
   // Housekeeping: pieces of uploads that were never submitted.
   await removeOldUploadParts(now.getTime()).catch(() => 0);
+  // Backstop for the WorkOS webhook (apps/api): people no longer in a shop
+  // lose their department places and own grants.
+  for (const { orgId } of await database.departmentMember.findMany({
+    distinct: ["orgId"],
+    select: { orgId: true },
+  })) {
+    await pruneDepartedMembers(orgId).catch(() => null);
+  }
   await removeOldFiltered(now.getTime()).catch(() => 0);
   const [reports, broken, renames] = await Promise.all([
     database.erpReport.findMany({

@@ -1,4 +1,3 @@
-import { auth } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
 import { Button } from "@repo/design-system/components/ui/button";
 import { cn } from "@repo/design-system/lib/utils";
@@ -11,16 +10,22 @@ import {
   listConversations,
   loadMessages,
 } from "@/lib/agent/conversations";
+import { redactHistory } from "@/lib/agent/redact";
 import { buildStarters } from "@/lib/agent/starters";
 import { canTranscribe } from "@/lib/facts/transcribe";
+import { usableSourceIds } from "@/lib/library/ai-access";
+import { resolveViewer, type Viewer } from "@/lib/library/viewer";
 import { Header } from "../components/header";
 import { Chat } from "./chat";
 
 export const metadata: Metadata = { title: "Ask Takumo · Takumo" };
 
-// Example questions for the start screen, using the shop's own records.
-const loadStarters = async (orgId: string) => {
+// Example questions for the start screen, using the shop's own records and
+// only documents this person may ask about.
+const loadStarters = async (viewer: Viewer) => {
+  const { orgId } = viewer;
   const db = forOrg(database, orgId);
+  const usable = [...(await usableSourceIds(viewer, "search"))];
   const [parts, orders, machines, customers, quotes, documents] =
     await Promise.all([
       db.part.findMany({
@@ -57,7 +62,12 @@ const loadStarters = async (orgId: string) => {
         select: { quoteNo: true },
       }),
       db.source.findMany({
-        where: { profile: "document" },
+        where: {
+          id: { in: usable },
+          profile: "document",
+          deletedAt: null,
+          currentVersionId: { not: null },
+        },
         orderBy: { createdAt: "desc" },
         take: 5,
         select: { name: true },
@@ -83,19 +93,24 @@ const AskPage = async ({
 }: {
   searchParams: Promise<{ c?: string; q?: string }>;
 }) => {
-  const { orgId, userId } = await auth();
-  if (!(orgId && userId)) {
+  const viewer = await resolveViewer();
+  if (!viewer?.userId) {
     notFound();
   }
+  const { orgId, userId } = viewer;
   const { c, q } = await searchParams;
   const conversation = c ? await findConversation(orgId, userId, c) : null;
   if (c && !conversation) {
     notFound();
   }
   const [messages, recent, starters] = await Promise.all([
-    conversation ? loadMessages(conversation.id) : Promise.resolve([]),
+    conversation
+      ? loadMessages(conversation.id).then((m) =>
+          redactHistory(viewer, conversation.id, m)
+        )
+      : Promise.resolve([]),
     listConversations(orgId, userId, 15),
-    conversation || q ? Promise.resolve(null) : loadStarters(orgId),
+    conversation || q ? Promise.resolve(null) : loadStarters(viewer),
   ]);
   const id = conversation?.id ?? crypto.randomUUID();
 

@@ -7,6 +7,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { DOC_TYPE_LABEL } from "@/lib/knowledge/understand";
+import { visibleSourceIds } from "@/lib/library/access";
+import { libraryEnabled } from "@/lib/library/stage";
+import { resolveViewer } from "@/lib/library/viewer";
 import { Header } from "../components/header";
 import { EmptyState } from "../shop/components/format";
 import { DeleteDocument, ReadAgain, UploadDocuments } from "./upload";
@@ -41,28 +44,40 @@ const understood = (card: CardMeta | undefined) => {
 
 const KnowledgePage = async () => {
   const { orgId, canEditKnowledge, canShareKnowledge } = await getAccess();
-  if (!orgId) {
+  const viewer = await resolveViewer();
+  if (!(orgId && viewer && viewer.orgId === orgId)) {
     notFound();
   }
+  // Documents in the Trash aren't listed, nor any this person may not view.
+  const viewable = await visibleSourceIds(viewer);
   const sources = await forOrg(database, orgId).source.findMany({
-    where: { profile: "document" },
+    where: { id: { in: viewable }, profile: "document", deletedAt: null },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
       name: true,
       summary: true,
       createdAt: true,
+      currentVersionId: true,
       _count: { select: { chunks: true } },
     },
   });
-  // What Takumo understood about each document, when it has read it.
+  const current = new Set(sources.map((s) => s.currentVersionId));
+  // What Takumo understood about each document (its current version), when
+  // it has read it.
   const cards = new Map(
     (
       await forOrg(database, orgId).docChunk.findMany({
-        where: { meta: { path: ["kind"], equals: "card" } },
-        select: { sourceId: true, meta: true },
+        where: {
+          sourceId: { in: viewable },
+          meta: { path: ["kind"], equals: "card" },
+          source: { deletedAt: null },
+        },
+        select: { sourceId: true, versionId: true, meta: true },
       })
-    ).map((c) => [c.sourceId, c.meta as CardMeta])
+    )
+      .filter((c) => current.has(c.versionId))
+      .map((c) => [c.sourceId, c.meta as CardMeta])
   );
 
   return (
@@ -77,6 +92,15 @@ const KnowledgePage = async () => {
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
+        {(await libraryEnabled(orgId)) && (
+          <p className="max-w-3xl rounded-lg border bg-muted/40 p-3 text-sm">
+            Your company's documents now live in{" "}
+            <Link className="font-medium underline" href="/library">
+              Company Knowledge
+            </Link>
+            , with folders, versions and the original files.
+          </p>
+        )}
         <p className="max-w-3xl text-muted-foreground text-sm">
           Documents Ask Takumo can search and cite: how jobs are set up, quality
           rules, customer requirements, company policies. Anyone in the company

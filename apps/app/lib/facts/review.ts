@@ -3,6 +3,8 @@
 import "server-only";
 
 import { database, forOrg, Prisma } from "@repo/database";
+import { serialized } from "../library/access-lock";
+import { trustedViewer, type Viewer } from "../library/viewer";
 import {
   attributeDef,
   changesModel,
@@ -11,6 +13,20 @@ import {
   parseValue,
 } from "./attributes";
 import { currentValue, type Result } from "./subjects";
+import {
+  companyVisible,
+  markPublished,
+  NO_FACT,
+  publishProblem,
+  visibleFact,
+} from "./visibility";
+
+/**
+ * A restricted fact that would change a company record: approving it would
+ * show its value to everyone, so it has to be published at the same time.
+ */
+export const NEEDS_PUBLISHING =
+  "This fact comes from documents not everyone may open. Approving it changes a record everyone sees, so it must be published to the company at the same time.";
 
 export type Tx = Prisma.TransactionClient;
 
@@ -110,115 +126,177 @@ export const applyValue = async (
   }
 };
 
-/**
- * Approve a pending fact (optionally with a corrected value). A model
- * parameter is written to its record; the fact it replaces is kept as
- * superseded, so the history stays.
- */
-export const approveFact = async (
-  orgId: string,
-  factId: string,
-  reviewer: string,
-  options: { value?: unknown; note?: string | null } = {}
-): Promise<Result<{ label: string }>> => {
-  const db = forOrg(database, orgId);
-  const fact = await db.fact.findFirst({ where: { id: factId } });
-  if (!fact) {
-    return { ok: false, error: "That fact no longer exists." };
+/** Throws why the approval can't publish the fact now, if it must and can't. */
+const refusePublishing = async (
+  publishes: boolean,
+  viewer: Viewer,
+  fact: { id: string; provenance: string },
+  publish: boolean | undefined
+) => {
+  if (!publishes) {
+    return;
   }
-  if (fact.status !== "pending") {
-    return {
-      ok: false,
-      error: `${factLabel(fact.number)} is already ${fact.status}.`,
-    };
+  const problem = publish
+    ? await publishProblem(viewer, fact)
+    : NEEDS_PUBLISHING;
+  if (problem) {
+    throw new Error(problem);
   }
-  const def = attributeDef(fact.subjectType, fact.attribute);
-  if (!def) {
-    return { ok: false, error: "This fact's attribute isn't supported." };
-  }
-  let value = fact.value as FactValue;
-  if (options.value !== undefined) {
-    const parsed = parseValue(def, options.value);
-    if (!parsed.ok) {
-      return parsed;
-    }
-    value = parsed.value;
-  }
-  const previous = await currentValue(
-    orgId,
-    fact.subjectType,
-    fact.subjectId,
-    fact.attribute
-  );
-  const now = new Date();
-  try {
-    await database.$transaction(async (tx) => {
-      // Claim it first: two reviewers can't both approve (or approve and reject).
-      const claimed = await tx.fact.updateMany({
-        where: { id: fact.id, orgId, status: "pending" },
-        data: { status: "approved" },
-      });
-      if (claimed.count === 0) {
-        throw new Error(`${factLabel(fact.number)} has already been reviewed.`);
-      }
-      const replaced = await tx.fact.findMany({
-        where: {
-          orgId,
-          status: "approved",
-          subjectType: fact.subjectType,
-          subjectId: fact.subjectId,
-          attribute: fact.attribute,
-          validTo: null,
-        },
-        orderBy: { validFrom: "desc" },
-        select: { id: true },
-      });
-      // A note adds to what's known; a parameter replaces the old value.
-      if (changesModel(fact.attribute)) {
-        await applyValue(tx, orgId, fact, value);
-        if (replaced.length) {
-          await tx.fact.updateMany({
-            where: { id: { in: replaced.map((r) => r.id) } },
-            data: { status: "superseded", validTo: now },
-          });
-        }
-      }
-      await tx.fact.update({
-        where: { id: fact.id },
-        data: {
-          status: "approved",
-          value,
-          previousValue: previous ?? Prisma.DbNull,
-          supersedesFactId: changesModel(fact.attribute)
-            ? (replaced[0]?.id ?? null)
-            : null,
-          reviewedBy: reviewer,
-          reviewedAt: now,
-          reviewNote: options.note?.trim() || null,
-          validFrom: now,
-        },
-      });
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      error:
-        error instanceof Error ? error.message : "Couldn't apply the fact.",
-    };
-  }
-  return { ok: true, label: factLabel(fact.number) };
 };
 
+/**
+ * Approve a pending fact the reviewer may see (optionally with a corrected
+ * value). A model parameter is written to its record, which everyone sees:
+ * the fact becomes company knowledge (published). A restricted fact can
+ * only do that with `publish` from someone who may publish it; a restricted
+ * note stays restricted when approved. The fact it replaces is kept as
+ * superseded, so the history stays.
+ */
+export const approveFact = serialized(
+  async (
+    viewer: Viewer,
+    factId: string,
+    options: { value?: unknown; note?: string | null; publish?: boolean } = {}
+  ): Promise<Result<{ label: string }>> => {
+    const { orgId, userId } = trustedViewer(viewer);
+    if (!userId) {
+      return { ok: false, error: "Only a person can review facts." };
+    }
+    const reviewer = userId;
+    const fact = await visibleFact(viewer, factId);
+    if (!fact) {
+      return { ok: false, error: NO_FACT };
+    }
+    if (fact.status !== "pending") {
+      return {
+        ok: false,
+        error: `${factLabel(fact.number)} is already ${fact.status}.`,
+      };
+    }
+    const def = attributeDef(fact.subjectType, fact.attribute);
+    if (!def) {
+      return { ok: false, error: "This fact's attribute isn't supported." };
+    }
+    let value = fact.value as FactValue;
+    if (options.value !== undefined) {
+      const parsed = parseValue(def, options.value);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      value = parsed.value;
+    }
+    // Writing the value into a record shows it to everyone.
+    const needsPublishing = async () =>
+      changesModel(fact.attribute) &&
+      !fact.publishedAt &&
+      !(await companyVisible(orgId, fact.id));
+    let publishes = await needsPublishing();
+    if (publishes) {
+      if (!options.publish) {
+        return { ok: false, error: NEEDS_PUBLISHING };
+      }
+      const problem = await publishProblem(viewer, fact);
+      if (problem) {
+        return { ok: false, error: problem };
+      }
+    }
+    const previous = await currentValue(
+      orgId,
+      fact.subjectType,
+      fact.subjectId,
+      fact.attribute
+    );
+    const now = new Date();
+    try {
+      await database.$transaction(async (tx) => {
+        // Claim it first: two reviewers can't both approve (or approve and reject).
+        const claimed = await tx.fact.updateMany({
+          where: { id: fact.id, orgId, status: "pending" },
+          data: { status: "approved" },
+        });
+        if (claimed.count === 0) {
+          throw new Error(
+            `${factLabel(fact.number)} has already been reviewed.`
+          );
+        }
+        // Decided again now it's claimed: a document may have been linked to
+        // it, or the reviewer's access changed, since the check above (audit,
+        // approval race).
+        publishes = await needsPublishing();
+        await refusePublishing(publishes, viewer, fact, options.publish);
+        const replaced = await tx.fact.findMany({
+          where: {
+            orgId,
+            status: "approved",
+            subjectType: fact.subjectType,
+            subjectId: fact.subjectId,
+            attribute: fact.attribute,
+            validTo: null,
+          },
+          orderBy: { validFrom: "desc" },
+          select: { id: true },
+        });
+        // A note adds to what's known; a parameter replaces the old value.
+        if (changesModel(fact.attribute)) {
+          await applyValue(tx, orgId, fact, value);
+          if (replaced.length) {
+            await tx.fact.updateMany({
+              where: { id: { in: replaced.map((r) => r.id) } },
+              data: { status: "superseded", validTo: now },
+            });
+          }
+        }
+        await tx.fact.update({
+          where: { id: fact.id },
+          data: {
+            status: "approved",
+            value,
+            previousValue: previous ?? Prisma.DbNull,
+            supersedesFactId: changesModel(fact.attribute)
+              ? (replaced[0]?.id ?? null)
+              : null,
+            reviewedBy: reviewer,
+            reviewedAt: now,
+            reviewNote: options.note?.trim() || null,
+            validFrom: now,
+            // In a record everyone sees: company knowledge from now on, whatever
+            // happens to the documents it came from (their quotes stay hidden
+            // from those who can't open them).
+            ...(changesModel(fact.attribute) && !fact.publishedAt
+              ? { publishedAt: now, publishedBy: reviewer }
+              : {}),
+          },
+        });
+        if (publishes) {
+          await markPublished(tx, viewer, fact, "approve_and_publish");
+        }
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error ? error.message : "Couldn't apply the fact.",
+      };
+    }
+    return { ok: true, label: factLabel(fact.number) };
+  }
+);
+
+/** Reject a pending fact the reviewer may see. */
 export const rejectFact = async (
-  orgId: string,
+  viewer: Viewer,
   factId: string,
-  reviewer: string,
   note: string | null
 ): Promise<Result<{ label: string }>> => {
+  const { orgId, userId } = trustedViewer(viewer);
+  if (!userId) {
+    return { ok: false, error: "Only a person can review facts." };
+  }
+  const reviewer = userId;
   const db = forOrg(database, orgId);
-  const fact = await db.fact.findFirst({ where: { id: factId } });
+  const fact = await visibleFact(viewer, factId);
   if (!fact) {
-    return { ok: false, error: "That fact no longer exists." };
+    return { ok: false, error: NO_FACT };
   }
   if (fact.status !== "pending") {
     return {

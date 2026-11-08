@@ -6,6 +6,8 @@ import { database, forOrg } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { factLabel } from "@/lib/facts/attributes";
 import { approveFact, rejectFact } from "@/lib/facts/facts";
+import { visibleFact } from "@/lib/facts/visibility";
+import { viewerForMember } from "@/lib/library/viewer";
 import { recordOutcome } from "@/lib/quotes/approve";
 import type { QuotedBreak } from "@/lib/quotes/types";
 import { isoDay } from "@/lib/schedule/request";
@@ -103,7 +105,9 @@ export const describeAction = async (
   const db = forOrg(database, payload.o);
   const a = payload.a;
   if (a.kind === "fact") {
-    const fact = await db.fact.findFirst({ where: { id: a.factId } });
+    // Only a fact the person the link was sent to may see now.
+    const viewer = await viewerForMember(payload.o, payload.u);
+    const fact = viewer ? await visibleFact(viewer, a.factId) : null;
     if (!fact) {
       return { ok: false, error: "That fact no longer exists." };
     }
@@ -192,10 +196,15 @@ const run = async (
   now: Date
 ): Promise<ActResult> => {
   if (a.kind === "fact") {
+    const viewer = await viewerForMember(orgId, userId);
+    if (!viewer) {
+      return { ok: false, error: "You're no longer in this shop." };
+    }
+    // Never publishes: a fact that has become restricted needs the app.
     const done =
       a.decision === "approve"
-        ? await approveFact(orgId, a.factId, userId)
-        : await rejectFact(orgId, a.factId, userId, null);
+        ? await approveFact(viewer, a.factId)
+        : await rejectFact(viewer, a.factId, null);
     return done.ok
       ? {
           ok: true,

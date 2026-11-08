@@ -5,6 +5,12 @@ import { canEmbed, embeddingOptions, models } from "@repo/ai/lib/models";
 import { database, forOrg } from "@repo/database";
 import { log } from "@repo/observability/log";
 import {
+  type AiUse,
+  usableSourcesArgs,
+  usableSourcesSql,
+} from "../library/ai-access";
+import { trustedViewer, type Viewer } from "../library/viewer";
+import {
   chunkPages,
   cleanSnippet,
   type PageText,
@@ -27,6 +33,51 @@ export const cleanName = (fileName: string) =>
 
 const vectorLiteral = (values: number[]) => `[${values.join(",")}]`;
 
+/**
+ * A document's card: Takumo's summary passage, not the document's own text.
+ * Checked in code: in SQL, "not a card" would also drop every passage whose
+ * meta has no "kind" (NULL), which is nearly all of them.
+ */
+export const isCard = (meta: unknown) =>
+  (meta as { kind?: unknown } | null)?.kind === "card";
+
+// Uploaded documents, as opposed to spreadsheet imports or ERP reports.
+export const DOCUMENT = { type: "upload", profile: "document" } as const;
+
+/**
+ * The live document (not in the Trash) a file of this name would clash with,
+ * if any. Matches by the cleaned name, so "SOP.pdf" and "SOP.docx" both find
+ * "SOP".
+ */
+export const documentNamed = (
+  orgId: string,
+  fileName: string,
+  folderId: string | null = null
+) =>
+  forOrg(database, orgId).source.findFirst({
+    where: {
+      name: cleanName(fileName),
+      folderId,
+      deletedAt: null,
+      ...DOCUMENT,
+    },
+    select: { id: true, name: true },
+  });
+
+/**
+ * Thrown when a live document already has this name. Uploading never
+ * replaces a document: a new version is its own, explicit action. The
+ * message is written for people.
+ */
+export class DocumentExistsError extends Error {
+  constructor(name: string) {
+    super(
+      `There's already a document called ${name}. Rename your file and upload it again.`
+    );
+    this.name = "DocumentExistsError";
+  }
+}
+
 /** Store a document's chunks. Re-uploading a file with the same name replaces it. */
 interface StoredChunk {
   content: string;
@@ -38,77 +89,158 @@ interface StoredChunk {
   page: number | null;
 }
 
+/** Vectors for the passages, or null when there's no embedding model or it fails. */
+const embedChunks = async (chunks: StoredChunk[]) => {
+  if (!canEmbed) {
+    return null;
+  }
+  try {
+    const { embeddings } = await embedMany({
+      model: models.embeddings,
+      // The context sentence goes into the vector too.
+      values: chunks.map((c) =>
+        c.context ? `${c.context}\n\n${c.content}` : c.content
+      ),
+      ...embeddingOptions("document"),
+    });
+    return embeddings.map(vectorLiteral);
+  } catch (error) {
+    // Keyword search still works without vectors.
+    log.warn("Embedding failed; document is keyword-searchable only", {
+      error: String(error),
+    });
+    return null;
+  }
+};
+
+// One statement for every passage's vector (in order), so the transaction
+// stays short.
+const SET_VERSION_EMBEDDINGS_SQL = `
+  update "DocChunk" c set embedding = v.embedding::vector
+  from unnest($2::text[]) with ordinality as v(embedding, n)
+  where c."versionId" = $1 and c.ordinal = v.n - 1 and c."orgId" = $3`;
+
+// Holds other stores of the same document name in this shop until this one
+// commits, so two uploads can't both pass the name check. The lock key and
+// the lookup use the same shop and the same cleaned name (callers pass
+// cleanName's result or a stored name), so "SOP.pdf" and "SOP.docx" queue on
+// one lock. A unique index on live names backs it up.
+export const LOCK_NAME_SQL =
+  "select pg_advisory_xact_lock(hashtextextended($1, 0))";
+export const nameLock = (orgId: string, name: string) =>
+  `knowledge-document:${orgId}:${name}`;
+
+// Long enough for a few hundred passages; nothing slow runs inside it.
+const STORE_TIMEOUT_MS = 30_000;
+
 /**
- * Replace a document (same name) with these passages and make them
- * searchable: keywords at once, meaning when an embedding model is set up.
+ * Store a whole document at once, as a new version that is current straight
+ * away: for text Takumo writes itself (the demo shop, evaluations), which
+ * needs no reading. Uploads go through the library's processing instead.
+ *
+ * Everything is written in one transaction, so the document is never seen
+ * half-written. With `mayReplace` (Takumo's own sample documents only) an
+ * existing document of this name gets the new version and keeps its id;
+ * without it DocumentExistsError is thrown. When embedding fails the
+ * document is still stored, searchable by keyword.
  */
 export const storeDocument = async (
   orgId: string,
   name: string,
   summary: string,
-  chunks: StoredChunk[]
+  chunks: StoredChunk[],
+  { mayReplace }: { mayReplace: boolean }
 ) => {
-  const db = forOrg(database, orgId);
-  await db.source.deleteMany({
-    where: { name, type: "upload", profile: "document" },
-  });
-  const source = await db.source.create({
-    data: {
-      orgId,
-      name,
-      type: "upload",
-      profile: "document",
-      status: "ready",
-      summary,
-    },
-  });
-  const rows = chunks.map((c) => ({
-    id: crypto.randomUUID(),
-    orgId,
-    sourceId: source.id,
-    content: c.content,
-    page: c.page,
-    meta: {
-      ...(c.heading ? { heading: c.heading } : {}),
-      ...(c.context ? { context: c.context } : {}),
-      ...c.meta,
-    },
-  }));
-  await db.docChunk.createMany({ data: rows });
+  // Before the transaction: it calls the embedding model.
+  const vectors = await embedChunks(chunks);
+  const versionId = crypto.randomUUID();
 
-  let embedded = false;
-  if (canEmbed) {
-    try {
-      const { embeddings } = await embedMany({
-        model: models.embeddings,
-        // The context sentence goes into the vector too.
-        values: chunks.map((c) =>
-          c.context ? `${c.context}\n\n${c.content}` : c.content
-        ),
-        ...embeddingOptions("document"),
+  const sourceId = await forOrg(database, orgId).$transaction(
+    async (tx) => {
+      await tx.$executeRawUnsafe(LOCK_NAME_SQL, nameLock(orgId, name));
+      const existing = await tx.source.findFirst({
+        where: { orgId, name, folderId: null, deletedAt: null, ...DOCUMENT },
+        select: { id: true },
       });
-      await database.$transaction(
-        rows.map((row, i) =>
-          database.$executeRawUnsafe(
-            `update "DocChunk" set embedding = $1::vector where id = $2 and "orgId" = $3`,
-            vectorLiteral(embeddings[i]),
-            row.id,
-            orgId
-          )
-        )
+      if (existing && !mayReplace) {
+        throw new DocumentExistsError(name);
+      }
+      const id = existing?.id ?? crypto.randomUUID();
+      if (!existing) {
+        await tx.source.create({
+          data: { id, orgId, name, ...DOCUMENT, status: "processing" },
+        });
+      }
+      const [{ number }] = await tx.$queryRawUnsafe<{ number: number }[]>(
+        `update "Source" set "versionSeq" = "versionSeq" + 1 where id = $1
+         returning "versionSeq" as number`,
+        id
       );
-      embedded = true;
-    } catch (error) {
-      // Keyword search still works without vectors.
-      log.warn("Embedding failed; document is keyword-searchable only", {
-        error: String(error),
+      await tx.documentVersion.create({
+        data: {
+          id: versionId,
+          orgId,
+          sourceId: id,
+          number,
+          name,
+          status: "ready",
+          stage: "done",
+          activatedAt: new Date(),
+        },
       });
-    }
-  }
-  return { sourceId: source.id, name, chunks: rows.length, embedded };
+      await tx.docChunk.createMany({
+        data: chunks.map((c, ordinal) => ({
+          id: crypto.randomUUID(),
+          orgId,
+          sourceId: id,
+          versionId,
+          ordinal,
+          content: c.content,
+          page: c.page,
+          meta: {
+            ...(c.heading ? { heading: c.heading } : {}),
+            ...(c.context ? { context: c.context } : {}),
+            ...c.meta,
+          },
+        })),
+      });
+      if (vectors) {
+        await tx.$executeRawUnsafe(
+          SET_VERSION_EMBEDDINGS_SQL,
+          versionId,
+          vectors,
+          orgId
+        );
+      }
+      await tx.source.update({
+        where: { id },
+        data: { currentVersionId: versionId, status: "ready", summary },
+      });
+      // Earlier versions' passages are never searched again.
+      await tx.docChunk.deleteMany({
+        where: {
+          orgId,
+          sourceId: id,
+          OR: [{ versionId: null }, { NOT: { versionId } }],
+        },
+      });
+      return id;
+    },
+    { timeout: STORE_TIMEOUT_MS }
+  );
+  return {
+    sourceId,
+    versionId,
+    name,
+    chunks: chunks.length,
+    embedded: vectors !== null,
+  };
 };
 
-/** Store plain text as a document, without reading it (evals, imports). */
+/**
+ * Store plain text as a document, without reading it (the demo shop, evals).
+ * Replaces a document with the same name, as before.
+ */
 export const saveDocument = (
   orgId: string,
   rawName: string,
@@ -124,8 +256,32 @@ export const saveDocument = (
     orgId,
     cleanName(rawName),
     plainSummary(chunks[0].content),
-    chunks
+    chunks,
+    { mayReplace: true }
   );
+};
+
+const ANY_USABLE_SQL = `select exists (${usableSourcesSql(2, 3, 4)}) as any`;
+const COUNT_USABLE_SQL = `select count(*)::int as n from (${usableSourcesSql(2, 3, 4)}) d`;
+
+/** Whether any document may be used this far by the viewer. */
+const anyUsable = async (viewer: Viewer, use: AiUse) => {
+  const [row] = await database.$queryRawUnsafe<{ any: boolean }[]>(
+    ANY_USABLE_SQL,
+    trustedViewer(viewer).orgId,
+    ...usableSourcesArgs(viewer, use)
+  );
+  return Boolean(row?.any);
+};
+
+/** How many documents the viewer's questions may draw on. */
+export const usableDocumentCount = async (viewer: Viewer) => {
+  const [row] = await database.$queryRawUnsafe<{ n: number }[]>(
+    COUNT_USABLE_SQL,
+    trustedViewer(viewer).orgId,
+    ...usableSourcesArgs(viewer, "search")
+  );
+  return row?.n ?? 0;
 };
 
 interface DocHit {
@@ -148,13 +304,24 @@ interface Row {
   sourceId: string;
 }
 
+// Only the current version of a document that isn't in the Trash is ever
+// searched: a version still being read, a failed one and an older one are
+// not. And only documents the person asking may use, decided in the same
+// query ($4–$6: their user, role and how far the AI setting must allow), so
+// nothing else is ever read, let alone sent to the model.
+const LIVE = `s."deletedAt" is null and c."versionId" = s."currentVersionId"`;
+const USABLE = `c."sourceId" in (${usableSourcesSql(4, 5, 6)})`;
+// The library's own search box: documents the person may view, whatever
+// their AI setting (it never reaches an AI service).
+const VIEWABLE = `c."sourceId" in (select library.visible_source_ids($1, $4, $5))`;
+
 // What keyword search reads: the passage with its context sentence.
 const SEARCHED = `coalesce(c.meta ->> 'context', '') || ' ' || c.content`;
 
 // English stemming finds "deburring" for "deburr"; the 'simple' dictionary,
 // used only for words with a digit, keeps codes whole, so "P-2001" or
 // "AMS-2700" match exactly.
-const KEYWORD_SQL = `
+const keywordSql = (allowed: string) => `
   with q as (
     -- Stop words are empty in English but not in 'simple': skip empties
     -- per dictionary, or the joined query wouldn't parse.
@@ -175,6 +342,8 @@ const KEYWORD_SQL = `
   join "Source" s on s.id = c."sourceId"
   cross join q
   where c."orgId" = $1
+    and ${LIVE}
+    and ${allowed}
     and (to_tsvector('english', ${SEARCHED}) @@ q.query
       or to_tsvector('simple', ${SEARCHED}) @@ q.exact)
   order by rank desc
@@ -187,30 +356,74 @@ const VECTOR_SQL = `
   from "DocChunk" c
   join "Source" s on s.id = c."sourceId"
   where c."orgId" = $1 and c.embedding is not null
+    and ${LIVE}
+    and ${USABLE}
   order by c.embedding <=> $2::vector
   limit $3`;
 
+const KEYWORD_SQL = keywordSql(USABLE);
+const LIBRARY_KEYWORD_SQL = keywordSql(VIEWABLE);
+
 /**
- * Hybrid search: keyword ranking always; vector similarity too when an
- * embeddings key is set. Results are merged by reciprocal rank.
+ * Keyword search only, with no AI call (the library's search box): the best
+ * passages of current versions of documents not in the Trash that the
+ * viewer may view, with a highlighted snippet.
+ */
+export const keywordPassages = async (
+  viewer: Viewer,
+  query: string,
+  limit = 30
+) => {
+  const { orgId, userId, role } = trustedViewer(viewer);
+  const terms = searchTerms(query);
+  if (terms.length === 0) {
+    return [];
+  }
+  const rows = await database.$queryRawUnsafe<Row[]>(
+    LIBRARY_KEYWORD_SQL,
+    orgId,
+    terms,
+    limit,
+    userId,
+    role
+  );
+  return rows.map((row) => ({
+    sourceId: row.sourceId,
+    page: row.page,
+    snippet: cleanSnippet(row.snippet),
+    rank: Number(row.rank),
+  }));
+};
+
+/** The search's parameters after the query and limit: who asks, and the use. */
+const asking = (viewer: Viewer, use: AiUse) => usableSourcesArgs(viewer, use);
+
+/**
+ * Hybrid search for Ask: keyword ranking always; vector similarity too when
+ * an embeddings key is set. Results are merged by reciprocal rank. Only
+ * documents the viewer may use are read: their AI setting must allow
+ * "search" for keyword passages and "full" for vectors.
  */
 export const searchDocuments = async (
-  orgId: string,
+  viewer: Viewer,
   query: string,
   limit = 6
 ): Promise<DocHit[]> => {
+  const { orgId } = trustedViewer(viewer);
   const terms = searchTerms(query);
   const keyword = terms.length
     ? await database.$queryRawUnsafe<Row[]>(
         KEYWORD_SQL,
         orgId,
         terms,
-        limit * 2
+        limit * 2,
+        ...asking(viewer, "search")
       )
     : [];
 
   let vector: Row[] = [];
-  if (canEmbed) {
+  // Only worth embedding the question when some document allows vectors.
+  if (canEmbed && (await anyUsable(viewer, "full"))) {
     try {
       const { embedding } = await embed({
         model: models.embeddings,
@@ -221,7 +434,8 @@ export const searchDocuments = async (
         VECTOR_SQL,
         orgId,
         vectorLiteral(embedding),
-        limit * 2
+        limit * 2,
+        ...asking(viewer, "full")
       );
     } catch (error) {
       log.warn("Vector search failed; using keywords only", {

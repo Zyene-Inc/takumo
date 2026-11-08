@@ -166,6 +166,32 @@ Last updated 2026-11-04. The plan itself is [PRODUCT-PLAN.md](PRODUCT-PLAN.md); 
 - **Migration** `20261113090000_knowledge_channels`: `PhoneNumber` and `PhoneMessage` tables (with row-level security) and `Note.channel`, `Note.senderName`.
 - **Tests:** Twilio signature, phone numbers, codes and replies; the docs address and its reply; on a database, registering and confirming a phone, unknown and unconfirmed numbers ignored, one shop per phone, retries read once, and a member's emailed document read and answered while an outsider is bounced.
 
+## Company Knowledge Hub (in development, not live)
+
+Branches `feat/knowledge-hub-*`. Built so far: ownership, folders, departments and access checks (phase 1); original files in private storage, versions, recoverable processing, provenance, Trash and permanent delete (phase 2); the Company Knowledge library at `/library` (phase 3), shown only to shops whose `libraryStage` is `library` (Takumo staff switch it on per shop in `/admin`); access-aware AI memory (phase 4, below). Restricted and confidential documents stay off in code (`CONFIDENTIAL_READY = false` in `apps/app/lib/library/stage.ts`) until the release gate below is passed.
+
+**Phase 4 (secure memory), built and tested locally only**
+- Every AI path reads as the person asking (`lib/library/ai-access.ts`, SQL `library.ai_source_ids` and `library.fact_access`, migration `20261116090000_knowledge_hub_secure_memory`): Ask's document search (keyword and vector, filtered inside the query), `get_record`'s facts, `propose_fact`, starter questions, the Brain, the facts pages, the home page count, exports and email Ask. The SQL reader (`query_data`) sees only facts everyone may see, and quotes from documents only when every one of them is company-wide.
+- Fact visibility: published to the company on purpose (audited), typed or spoken (no document), or read from documents and seen only by people who may use every one of them (live, viewable, AI "full"). Facts of unknown origin are company-wide only while the shop restricts nothing; once it does, the owner sees them until someone publishes them. Approving a restricted fact doesn't publish it; a restricted number that would change a record must be published at the same time, by the owner or a reviewer who manages all its documents.
+- Fixed: facts from documents in the Trash. A trashed document's facts leave Ask, `get_record`, the SQL reader, fact review, the brief and the Brain, for the owner too, until it's restored. Facts published to the company (including every number approved into a record from now on) stay, without the trashed document's quotes. Permanently deleting one of several documents leaves the fact owner-only ("source_deleted") until it's published again: it never becomes more visible.
+- Conversation history: answers that drew on a document the person can't use now (restricted, moved, in the Trash, AI turned off) are hidden from the screen and from the model, and come back if access does. Answers saved before sources were recorded are hidden once the shop restricts documents, except from the owner. An answer whose documents went out of reach while it was written is saved hidden.
+- Folder AI settings (off, search, full), most restrictive on the path: off and search send nothing while reading (no recognising of scans, understanding, context, vectors or facts); search lets Ask use keyword passages. Lowering a setting removes vectors, context sentences, cards, summaries and unreviewed facts in the same transaction, and runs already going can't write them back (row lock and re-check).
+- Moves and restores never widen access (owner needed to leave a confidential folder; otherwise the item keeps a copy of its access); a folder with documents in the Trash can't be deleted once access can be restricted. Departments page (`/settings/departments`), access dialog on folders and documents, confidential and AI settings, the owner's one-way "turn on restricted access" (creates HR, Finance, Receipts and Contracts with AI off). Drop boxes never reveal a hidden document's name.
+
+**Release blockers**
+1. The staging checks for phases 2 to 4: the private bucket and its signed links (Open in a new tab, Download), pooled-connection transactions, the library sweep cron, the in-page previews (PDFs and images up to 4 MB are sent by Takumo itself, `/api/library/documents/[id]/file?preview=1`; larger ones open in a new tab; docs/DEPLOY.md), and the new SQL functions and `ask.facts` view against Supabase with the `takumo_reader` login.
+2. Before `CONFIDENTIAL_READY` may be switched on (gate G3): an independent security review of phase 4, the penetration checklist (guessed ids, direct server-action calls, grant escalation, moves, admin self-promotion), an AI evaluation with restricted documents and prompt-injection attempts on the real model, and the staging tests above.
+
+**Known limits (phase 4)**
+- What was already streamed or emailed can't be taken back when access changes mid-answer; it's only not saved or reused. Text already sent to an AI service when a folder's AI setting is lowered can't be recalled; nothing more is sent and nothing it returns is kept.
+- A person removed in WorkOS loses access at once (their role is gone); their department places are removed by the WorkOS webhook (apps/api) and, as a backstop, daily (erp-health cron) and when the departments page opens.
+- A fact whose source document is permanently deleted stays owner-only until published; documents outside any folder keep company-wide reading (as before folders).
+- RFQ and PO folders stay company-wide, the same as the Quotes and Orders pages.
+
+**Known from browser QA (local, mocked Storage and AI)**
+- Several uploads at once: past the per-shop limit the rest are queued for the library sweep, which reads about 3 per run. With the 5-minute cron, 40 queued documents take over an hour; the library shows them as Queued meanwhile.
+- If the server stops while reading a document, it shows as Processing until its lease (5 min) runs out and the next sweep resumes it, so up to about 10 minutes.
+
 ## Pending
 
 **Owner actions (needed before real use)**

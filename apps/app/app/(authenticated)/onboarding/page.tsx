@@ -58,7 +58,7 @@ const OnboardingPage = async ({
       db.order.count(),
       db.quote.count(),
       db.source.findMany({
-        where: { type: "upload" },
+        where: { type: "upload", deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 8,
       }),

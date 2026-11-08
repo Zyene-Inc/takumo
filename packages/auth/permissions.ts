@@ -10,7 +10,8 @@ export type Permission =
   | "knowledge:review"
   | "floor:write"
   | "billing:manage"
-  | "connectors:manage";
+  | "connectors:manage"
+  | "departments:manage";
 
 const GRANTS: Readonly<Record<Permission, readonly string[]>> = {
   // Machines, parts, routings, orders, customers, materials.
@@ -37,6 +38,9 @@ const GRANTS: Readonly<Record<Permission, readonly string[]>> = {
   "billing:manage": ["owner", "admin"],
   // Connect or disconnect QuickBooks and Gmail.
   "connectors:manage": ["owner", "admin"],
+  // Create departments and choose who is in them. Departments that can open
+  // confidential documents also need "manage" on those (lib/library).
+  "departments:manage": ["owner", "admin"],
 };
 
 export const can = (role: string | null | undefined, permission: Permission) =>

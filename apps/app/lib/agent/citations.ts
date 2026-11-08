@@ -36,6 +36,15 @@ export interface Source {
 
 const enc = encodeURIComponent;
 
+/** A document citation's link; the id after it is the document's (Source) id. */
+export const DOC_HREF = "/knowledge#source-";
+
+/** The document a citation points to, or null for any other kind. */
+export const citedDocumentId = (source: Source) =>
+  source.kind === "doc" && source.href?.startsWith(DOC_HREF)
+    ? source.href.slice(DOC_HREF.length) || null
+    : null;
+
 export const cite = {
   order: (orderNo: string): Source => ({
     id: `order ${orderNo}`,
@@ -88,7 +97,7 @@ export const cite = {
     id: page ? `doc ${sourceName} p.${page}` : `doc ${sourceName}`,
     kind: "doc",
     label: page ? `${sourceName}, p. ${page}` : sourceName,
-    href: `/knowledge#source-${sourceId}`,
+    href: `${DOC_HREF}${sourceId}`,
     detail: snippet,
   }),
   plan: (): Source => ({

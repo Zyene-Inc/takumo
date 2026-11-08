@@ -13,6 +13,9 @@ const database = vi.hoisted(() => ({
     upsert: vi.fn(),
     deleteMany: vi.fn(),
   },
+  departmentMember: { deleteMany: vi.fn() },
+  accessGrant: { deleteMany: vi.fn() },
+  $transaction: vi.fn(),
 }));
 
 // The real WorkOS client, so signature verification is exercised. Imported
@@ -135,7 +138,7 @@ describe("WorkOS webhook", () => {
     );
   });
 
-  test("organization_membership.deleted removes the Member row", async () => {
+  test("organization_membership.deleted removes the Member row, departments and personal grants together", async () => {
     const response = await POST(
       signedRequest({
         id: "event_4",
@@ -157,5 +160,14 @@ describe("WorkOS webhook", () => {
     expect(database.member.deleteMany).toHaveBeenCalledWith({
       where: { orgId: "org_123", userId: "user_1" },
     });
+    expect(database.departmentMember.deleteMany).toHaveBeenCalledWith({
+      where: { orgId: "org_123", userId: "user_1" },
+    });
+    expect(database.accessGrant.deleteMany).toHaveBeenCalledWith({
+      where: { orgId: "org_123", principalType: "user", principalId: "user_1" },
+    });
+    // All three in one transaction.
+    expect(database.$transaction).toHaveBeenCalledTimes(1);
+    expect(database.$transaction.mock.calls[0]?.[0]).toHaveLength(3);
   });
 });

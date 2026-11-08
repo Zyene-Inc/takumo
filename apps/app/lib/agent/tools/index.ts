@@ -7,20 +7,26 @@ import { knowledgeTools } from "./knowledge";
 import { quoteTools } from "./quote";
 import { scenarioTools } from "./scenario";
 import { scheduleTools } from "./schedule";
-import { type AgentContext, artifactSchema, type Counters } from "./shared";
+import {
+  type AgentContext,
+  artifactSchema,
+  type Counters,
+  checkedContext,
+} from "./shared";
 
 export type { AgentContext, Artifact, Counters } from "./shared";
-export { artifactSchema } from "./shared";
+export { agentContext, artifactSchema } from "./shared";
 
 /** The agent's tools. Results carry `sources` so answers can cite them. */
 export const createTools = (
-  ctx: AgentContext,
+  given: AgentContext,
   counters: Counters = {
     queries: 0,
     scenarios: 0,
     estimates: 0,
   }
 ) => {
+  const ctx = checkedContext(given);
   // Shared by the tools that count their calls (citation numbers, limits).
   const tally = { ...counters };
 

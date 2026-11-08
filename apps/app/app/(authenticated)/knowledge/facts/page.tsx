@@ -12,6 +12,8 @@ import {
   parseFactLabel,
 } from "@/lib/facts/attributes";
 import { currentValue, subjectOptions } from "@/lib/facts/facts";
+import { factAccess } from "@/lib/library/ai-access";
+import { resolveViewer, systemViewer } from "@/lib/library/viewer";
 import { Header } from "../../components/header";
 import { EmptyState } from "../../shop/components/format";
 import { AddFact } from "./add-fact";
@@ -40,13 +42,24 @@ const FactsPage = async ({
   searchParams: Promise<{ tab?: string; f?: string }>;
 }) => {
   const { orgId, canReviewFacts } = await getAccess();
-  if (!orgId) {
+  const viewer = await resolveViewer();
+  if (!(orgId && viewer && viewer.orgId === orgId)) {
     notFound();
   }
   const { tab: tabKey, f } = await searchParams;
   const only = f ? parseFactLabel(f) : null;
   const db = forOrg(database, orgId);
-  const counts = await db.fact.groupBy({ by: ["status"], _count: true });
+  // Only facts this person may see; quotes only from documents they may use.
+  const [visible, company] = await Promise.all([
+    factAccess(viewer),
+    factAccess(systemViewer(orgId)),
+  ]);
+  const visibleIds = [...visible.keys()];
+  const counts = await db.fact.groupBy({
+    by: ["status"],
+    where: { id: { in: visibleIds } },
+    _count: true,
+  });
   const countOf = (statuses: readonly string[]) =>
     counts
       .filter((c) => statuses.includes(c.status))
@@ -56,7 +69,10 @@ const FactsPage = async ({
     (countOf(["pending"]) ? TABS[0] : TABS[1]);
   const [facts, options] = await Promise.all([
     db.fact.findMany({
-      where: only ? { number: only } : { status: { in: [...tab.statuses] } },
+      where: {
+        id: { in: visibleIds },
+        ...(only ? { number: only } : { status: { in: [...tab.statuses] } }),
+      },
       orderBy: { createdAt: tab.key === "pending" ? "asc" : "desc" },
       take: 200,
       include: { note: { select: { kind: true, text: true } } },
@@ -98,7 +114,9 @@ const FactsPage = async ({
             : formatValue(def, fact.previousValue),
         source: fact.source,
         byTakumo: fact.statedBy === null,
-        evidence: fact.evidence,
+        evidence: visible.get(fact.id)?.evidence ? fact.evidence : null,
+        restricted: !company.has(fact.id),
+        published: fact.publishedAt !== null,
         note: fact.note ? { kind: fact.note.kind, text: fact.note.text } : null,
         createdAt: fact.createdAt.toISOString(),
         reviewedAt: fact.reviewedAt?.toISOString() ?? null,

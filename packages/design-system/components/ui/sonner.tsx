@@ -38,3 +38,6 @@ const Toaster = ({ ...props }: ToasterProps) => {
 }
 
 export { Toaster }
+
+// The app raises notifications through the design system, not sonner itself.
+export { toast } from "sonner"

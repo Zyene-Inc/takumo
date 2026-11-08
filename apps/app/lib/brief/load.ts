@@ -4,6 +4,8 @@ import { database, forOrg } from "@repo/database";
 import { PROVIDER_NAME, type Provider } from "@/lib/connectors/config";
 import { healthLines, lateReports } from "@/lib/erp/health";
 import { attributeDef, factLabel, formatValue } from "@/lib/facts/attributes";
+import { visibleFactIds } from "@/lib/library/ai-access";
+import { systemViewer } from "@/lib/library/viewer";
 import { rfqLabel } from "@/lib/quotes/types";
 import { latestPlan, orderMaterial } from "@/lib/schedule/plan";
 import type { SectionKey, ShopBrief } from "./content";
@@ -159,12 +161,15 @@ export const factText = (f: {
   return `${factLabel(f.number)}: ${f.subjectLabel} ${(def?.label ?? f.attribute).toLowerCase()} ${was}${formatValue(def ?? null, f.value)}`;
 };
 
+// The brief is emailed and can't be taken back: it only lists facts everyone
+// in the shop may see.
 const facts = async (orgId: string) => {
   const db = forOrg(database, orgId);
+  const company = await visibleFactIds(systemViewer(orgId));
   const [count, top] = await Promise.all([
-    db.fact.count({ where: { status: "pending" } }),
+    db.fact.count({ where: { id: { in: company }, status: "pending" } }),
     db.fact.findMany({
-      where: { status: "pending" },
+      where: { id: { in: company }, status: "pending" },
       orderBy: { createdAt: "asc" },
       take: 3,
       select: {

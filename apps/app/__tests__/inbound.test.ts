@@ -107,9 +107,24 @@ describe("inbound email: signed delivery from services/mail", () => {
   test("a forged From fails; DMARC, aligned DKIM or aligned SPF pass", () => {
     const none = parseAuth(null);
     expect(none).toMatchObject({ spf: "none", dkim: "none", dmarc: "none" });
+    // DMARC vouches only for the From domain the mail service read (M3).
+    expect(
+      authenticated(
+        parseAuth('{"dmarc":"pass","from":"Al <a@acme.com>"}'),
+        "a@acme.com",
+        ""
+      )
+    ).toBe(true);
     expect(authenticated(parseAuth('{"dmarc":"pass"}'), "a@acme.com", "")).toBe(
-      true
+      false
     );
+    expect(
+      authenticated(
+        parseAuth('{"dmarc":"pass","from":"x@evil.test"}'),
+        "a@acme.com",
+        ""
+      )
+    ).toBe(false);
     expect(
       authenticated(
         parseAuth('{"dkim":"pass","dkimDomains":["acme.com"]}'),

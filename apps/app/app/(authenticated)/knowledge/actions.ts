@@ -1,21 +1,123 @@
 "use server";
 
-import { database, forOrg } from "@repo/database";
+import { can } from "@repo/auth/permissions";
+import { database } from "@repo/database";
 import { revalidatePath } from "next/cache";
 import { authorize } from "@/lib/access";
+import { authorizeDocument, authorizeFolder } from "@/lib/library/guard";
+import { scheduleHandOff } from "@/lib/library/handoff";
+import { requeueVersion } from "@/lib/library/lease";
+import {
+  purgeDocument as purge,
+  restoreDocument as restore,
+  trashDocument,
+} from "@/lib/library/lifecycle";
+import { resolveViewer } from "@/lib/library/viewer";
 import { keepUploadPart } from "@/lib/quotes/upload-parts";
 
-export const deleteDocument = async (
-  sourceId: string
-): Promise<{ ok: true } | { ok: false; error: string }> => {
-  const access = await authorize("knowledge:write");
-  if (!access.ok) {
-    return access;
+type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
+
+const NO_VIEWER = { ok: false, error: "That document doesn't exist." } as const;
+
+const plain = <T extends object>(
+  outcome: ({ ok: true } & T) | { ok: false; error: string; status: number }
+): Result<T> => (outcome.ok ? outcome : { ok: false, error: outcome.error });
+
+/**
+ * Delete a document: it goes to the Trash, gone at once from the library,
+ * search and Ask, and can be restored. (It used to be erased on the spot.)
+ */
+export const deleteDocument = async (sourceId: string): Promise<Result> => {
+  const viewer = await resolveViewer();
+  if (!viewer) {
+    return NO_VIEWER;
   }
-  await forOrg(database, access.orgId).source.deleteMany({
-    where: { id: sourceId },
-  });
+  const result = plain(await trashDocument(viewer, sourceId));
   revalidatePath("/knowledge");
+  return result;
+};
+
+/** Bring a document back from the Trash. */
+export const restoreDocument = async (
+  sourceId: string
+): Promise<Result<{ name: string }>> => {
+  const viewer = await resolveViewer();
+  if (!viewer) {
+    return NO_VIEWER;
+  }
+  const result = plain(await restore(viewer, sourceId));
+  revalidatePath("/knowledge");
+  return result;
+};
+
+/**
+ * Delete a document for good (from the Trash). `complete` is false while its
+ * stored files are still being deleted.
+ */
+export const purgeDocument = async (
+  sourceId: string
+): Promise<Result<{ complete: boolean }>> => {
+  const viewer = await resolveViewer();
+  if (!viewer) {
+    return NO_VIEWER;
+  }
+  const result = plain(await purge(viewer, sourceId));
+  revalidatePath("/knowledge");
+  return result;
+};
+
+/**
+ * Try a failed version again: whoever uploaded it, or anyone who may edit
+ * the document.
+ */
+export const retryVersion = async (
+  sourceId: string,
+  versionId: string
+): Promise<Result> => {
+  const viewer = await resolveViewer();
+  if (!viewer) {
+    return NO_VIEWER;
+  }
+  const visible = await authorizeDocument(viewer, sourceId, "view", {
+    trashed: true,
+  });
+  if (!visible.ok) {
+    return plain(visible);
+  }
+  const version = await database.documentVersion.findFirst({
+    where: { id: versionId, sourceId, orgId: viewer.orgId },
+    select: { uploadedBy: true },
+  });
+  const own = Boolean(viewer.userId && version?.uploadedBy === viewer.userId);
+  // Retrying can make the version current: someone's own upload only while
+  // they may still add documents where it is (as uploading checks), anything
+  // else needs edit. A former editor can't (security audit L7).
+  const folderId = own
+    ? (
+        await database.source.findFirst({
+          where: { id: sourceId, orgId: viewer.orgId },
+          select: { folderId: true },
+        })
+      )?.folderId
+    : null;
+  let mayAdd = false;
+  if (own) {
+    mayAdd = folderId
+      ? (await authorizeFolder(viewer, folderId, "upload")).ok
+      : can(viewer.role ?? "", "knowledge:share");
+  }
+  if (!mayAdd) {
+    const editable = await authorizeDocument(viewer, sourceId, "edit", {
+      trashed: true,
+    });
+    if (!editable.ok) {
+      return plain(editable);
+    }
+  }
+  if (!(await requeueVersion(viewer.orgId, sourceId, versionId))) {
+    return { ok: false, error: "That version isn't waiting to be retried." };
+  }
+  scheduleHandOff(versionId);
   return { ok: true };
 };
 

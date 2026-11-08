@@ -52,6 +52,17 @@ export const env = createEnv({
     TWILIO_WEBHOOK_URL: z.url().optional(),
     // Takumo staff (WorkOS user ids, comma separated) who can see /admin.
     ADMIN_USER_IDS: z.string().optional(),
+    // Private storage for original documents (Knowledge Hub). Server-only:
+    // never NEXT_PUBLIC. The service-role key bypasses Storage policies, so
+    // it is only used after Takumo has checked who may see the file. Without
+    // these, documents are still read and searchable but no original is kept.
+    SUPABASE_URL: z.url().optional(),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
+    // A private bucket (no public access); see docs/DEPLOY.md.
+    KNOWLEDGE_BUCKET: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/)
+      .optional(),
     // Claude spend cap per shop per month, in USD (unset = no cap).
     AI_MONTHLY_BUDGET_USD: z
       .string()
@@ -79,5 +90,8 @@ export const env = createEnv({
     TWILIO_WEBHOOK_URL: process.env.TWILIO_WEBHOOK_URL,
     ADMIN_USER_IDS: process.env.ADMIN_USER_IDS,
     AI_MONTHLY_BUDGET_USD: process.env.AI_MONTHLY_BUDGET_USD,
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    KNOWLEDGE_BUCKET: process.env.KNOWLEDGE_BUCKET,
   },
 });

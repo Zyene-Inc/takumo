@@ -36,3 +36,37 @@ export const extendTrial = async (
   revalidatePath("/admin");
   return { ok: true };
 };
+
+/**
+ * Turn a shop's Company Knowledge Library on or off. Never sets
+ * "confidential" (restricted access isn't available yet), and a shop that is
+ * already confidential can't be switched back here, so restricted documents
+ * can't become visible by accident.
+ */
+export const setLibrary = async (
+  orgId: string,
+  on: boolean
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+  if (!(await requireAdmin())) {
+    return { ok: false, error: "Not allowed." };
+  }
+  const org = await database.org.findUnique({
+    where: { id: orgId },
+    select: { libraryStage: true },
+  });
+  if (!org) {
+    return { ok: false, error: "No such shop." };
+  }
+  if (org.libraryStage === "confidential") {
+    return {
+      ok: false,
+      error: "This shop restricts documents; change it by hand.",
+    };
+  }
+  await database.org.update({
+    where: { id: orgId },
+    data: { libraryStage: on ? "library" : "off" },
+  });
+  revalidatePath("/admin");
+  return { ok: true };
+};

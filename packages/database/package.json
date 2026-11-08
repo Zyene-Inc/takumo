@@ -12,6 +12,7 @@
     "test:db": "vitest run --no-file-parallelism __tests__/reader.db.test.ts __tests__/reader-isolation.db.test.ts __tests__/reader-wrapper.db.test.ts",
     "generate-demo": "tsx scripts/generate-demo.ts",
     "check:ask-sql": "tsx scripts/check-ask-sql.ts",
+    "check:db-access": "tsx scripts/check-db-access.ts",
     "test": "vitest run __tests__/demo.test.ts __tests__/sql-allow.test.ts"
   },
   "dependencies": {

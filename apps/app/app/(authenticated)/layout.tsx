@@ -1,4 +1,4 @@
-import { listUserOrganizations, withAuth } from "@repo/auth/server";
+import { auth, listUserOrganizations, withAuth } from "@repo/auth/server";
 import { database } from "@repo/database";
 import { SidebarProvider } from "@repo/design-system/components/ui/sidebar";
 import { secure } from "@repo/security";
@@ -18,7 +18,9 @@ const AppLayout = async ({ children }: AppLayoutProperties) => {
     await secure(["CATEGORY:PREVIEW"]);
   }
 
-  const { user, organizationId } = await withAuth({ ensureSignedIn: true });
+  const { user } = await withAuth({ ensureSignedIn: true });
+  // The shop from auth(), not the session: only while still a member of it.
+  const { orgId: organizationId } = await auth();
 
   // Every page in the app works inside one shop (WorkOS organization).
   if (!organizationId) {
@@ -29,7 +31,7 @@ const AppLayout = async ({ children }: AppLayoutProperties) => {
     listUserOrganizations(user.id),
     database.org.findUnique({
       where: { id: organizationId },
-      select: { name: true, plan: true },
+      select: { name: true, plan: true, libraryStage: true },
     }),
   ]);
   const name =
@@ -39,6 +41,7 @@ const AppLayout = async ({ children }: AppLayoutProperties) => {
     <SidebarProvider>
       <GlobalSidebar
         currentOrganizationId={organizationId}
+        libraryEnabled={Boolean(shop && shop.libraryStage !== "off")}
         organizations={organizations}
         user={{
           name,

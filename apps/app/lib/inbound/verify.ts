@@ -161,7 +161,8 @@ const aligned = (a: string | null, b: string | null) =>
   Boolean(a && b && (a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`)));
 
 /**
- * Whether the From address is really the sender's: DMARC passed, or DKIM
+ * Whether the From address is really the sender's: DMARC passed for its
+ * domain (as the mail service read the From header), or DKIM
  * passed for the From domain, or SPF passed for an envelope sender in the
  * From domain. A forged From fails all three.
  */
@@ -174,7 +175,12 @@ export const authenticated = (
   if (!fromDomain) {
     return false;
   }
-  if (auth.dmarc === "pass") {
+  // DMARC is judged on the From domain the mail service read: it only
+  // vouches for this sender when that is this domain (security audit M3).
+  if (
+    auth.dmarc === "pass" &&
+    domainOf(emailAddress(auth.from) ?? "") === fromDomain
+  ) {
     return true;
   }
   if (

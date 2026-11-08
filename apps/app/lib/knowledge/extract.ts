@@ -16,7 +16,10 @@ export const extractPages = async (
   const ext = extension(name);
   if (ext === ".pdf") {
     const { extractText, getDocumentProxy } = await import("unpdf");
-    const pdf = await getDocumentProxy(bytes);
+    // pdf.js takes over (detaches) the buffer it's given: hand it a copy so
+    // the caller's bytes stay usable (lib/knowledge/read.ts cuts scanned
+    // pages from them next, to be read by AI).
+    const pdf = await getDocumentProxy(new Uint8Array(bytes));
     const { text } = await extractText(pdf, { mergePages: false });
     return text.map((t, i) => ({ page: i + 1, text: t }));
   }

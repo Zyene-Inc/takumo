@@ -7,7 +7,9 @@ import { database, forOrg } from "@repo/database";
 import type { ScheduleResponse } from "@repo/engine-client/types";
 import { afterAll, beforeAll, describe, test } from "vitest";
 import { agentSettings } from "@/lib/agent/agent";
+import { agentContext } from "@/lib/agent/tools";
 import { saveDocument } from "@/lib/knowledge/documents";
+import { systemViewer } from "@/lib/library/viewer";
 import { estimateForPart } from "@/lib/quotes/estimate";
 import { CAPACITY_CHECK, PLAN, replan } from "@/lib/schedule/plan";
 import { EVAL_TODAY, type EvalContext, GOLDEN, QUOTE_CASES } from "./golden";
@@ -132,11 +134,10 @@ describe("Ask Takumo golden questions", () => {
     golden,
   ], { expect }) => {
     const begin = Date.now();
-    const settings = await agentSettings({
-      orgId: ORG_ID,
-      userId: null,
-      today: EVAL_TODAY,
-    });
+    // Background work: sees what everyone in the shop may.
+    const settings = await agentSettings(
+      agentContext(systemViewer(ORG_ID), EVAL_TODAY)
+    );
     const result = await generateText({
       ...settings,
       ...(EVAL_MODEL ? { model: EVAL_MODEL } : {}),

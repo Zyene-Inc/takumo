@@ -2,6 +2,8 @@ import "server-only";
 
 import { database, forOrg, Prisma } from "@repo/database";
 import { track } from "../analytics";
+import { factAccess } from "../library/ai-access";
+import type { Viewer } from "../library/viewer";
 import { normalizeName } from "../quotes/match";
 import {
   attributeDef,
@@ -25,14 +27,34 @@ export { approveFact, rejectFact } from "./review";
 export type { FactSource } from "./subjects";
 export { currentValue, findSubject } from "./subjects";
 
+/** A document a fact was read from, with the words it used. */
+export interface FactDocument {
+  quote: string | null;
+  sourceId: string;
+  versionId: string | null;
+}
+
 interface Proposal {
   attribute: string;
+  /**
+   * Documents the fact came from (FactSource). Given: the fact's provenance
+   * is "documents". Not given: "none" for what people say or measure, and
+   * "unknown" for chat, where the conversation's documents are added when
+   * the answer is saved (lib/library/provenance.ts).
+   */
+  documents?: FactDocument[];
   evidence: string | null;
   noteId?: string | null;
   source: FactSource;
   statedBy: string | null;
   subject: Subject;
   value: unknown;
+  /**
+   * Who is proposing it, when it's a person (Ask Takumo): an identical fact
+   * already waiting is only reused if they may see it, so proposing never
+   * reveals a fact they can't.
+   */
+  viewer?: Viewer;
 }
 
 type ProposeResult = Result<{
@@ -40,6 +62,65 @@ type ProposeResult = Result<{
   existing: boolean;
   fact: { id: string; label: string; number: number };
 }>;
+
+const provenanceOf = (proposal: Proposal) => {
+  if (proposal.documents?.length) {
+    return "documents";
+  }
+  return proposal.source === "chat" ? "unknown" : "none";
+};
+
+const sourceRows = (orgId: string, documents: FactDocument[]) =>
+  documents.map((d) => ({
+    orgId,
+    sourceId: d.sourceId,
+    versionId: d.versionId,
+    quote: d.quote?.slice(0, 2000) ?? null,
+  }));
+
+/** Link a fact to the documents it was read from; a link already there is kept. */
+const linkDocuments = async (
+  orgId: string,
+  factId: string,
+  documents: FactDocument[] | undefined
+) => {
+  if (!documents?.length) {
+    return;
+  }
+  await database.factSource.createMany({
+    data: sourceRows(orgId, documents).map((row) => ({ ...row, factId })),
+    skipDuplicates: true,
+  });
+};
+
+/** The fact's sources, created with it. */
+const sourcesOf = (orgId: string, proposal: Proposal) =>
+  proposal.documents?.length
+    ? { sources: { create: sourceRows(orgId, proposal.documents) } }
+    : {};
+
+/**
+ * An identical fact already waiting for review: for a person proposing it,
+ * only one they may see (never revealing one they can't). A fact read from
+ * documents only joins one that also came from documents: a document's
+ * source and quote never attach to a fact a person typed, which everyone
+ * sees (security audit H2).
+ */
+const samePending = async (orgId: string, proposal: Proposal, value: unknown) =>
+  forOrg(database, orgId).fact.findFirst({
+    where: {
+      ...(proposal.viewer
+        ? { id: { in: [...(await factAccess(proposal.viewer)).keys()] } }
+        : {}),
+      ...(proposal.documents?.length ? { provenance: "documents" } : {}),
+      status: "pending",
+      subjectType: proposal.subject.type,
+      subjectId: proposal.subject.id,
+      attribute: proposal.attribute,
+      value: { equals: value as Prisma.InputJsonValue },
+    },
+    select: { id: true, number: true },
+  });
 
 /**
  * Record a fact as pending. Checks the value, skips a change that wouldn't
@@ -84,17 +165,10 @@ export const proposeFact = async (
       error: `${proposal.subject.label} already has ${def.label.toLowerCase()} ${formatValue(def, value)}.`,
     };
   }
-  const same = await db.fact.findFirst({
-    where: {
-      status: "pending",
-      subjectType: proposal.subject.type,
-      subjectId: proposal.subject.id,
-      attribute: proposal.attribute,
-      value: { equals: value },
-    },
-    select: { id: true, number: true },
-  });
+  const same = await samePending(orgId, proposal, value);
   if (same) {
+    // Another document stating the same fact is another source for it.
+    await linkDocuments(orgId, same.id, proposal.documents);
     return {
       ok: true,
       existing: true,
@@ -121,6 +195,8 @@ export const proposeFact = async (
           statedBy: proposal.statedBy,
           evidence: proposal.evidence?.trim().slice(0, 2000) || null,
           noteId: proposal.noteId ?? null,
+          provenance: provenanceOf(proposal),
+          ...sourcesOf(orgId, proposal),
         },
         select: { id: true, number: true },
       });
@@ -149,10 +225,19 @@ export const proposeFact = async (
   }
 };
 
-/** Facts about one record, newest first (for get_record and record pages). */
-export const factsAbout = (orgId: string, type: SubjectType, ids: string[]) =>
-  forOrg(database, orgId).fact.findMany({
+/**
+ * Facts about one record that the viewer may see, newest first (for
+ * get_record). Quotes from documents they may not use are left out.
+ */
+export const factsAbout = async (
+  viewer: Viewer,
+  type: SubjectType,
+  ids: string[]
+) => {
+  const visible = await factAccess(viewer);
+  const facts = await forOrg(database, viewer.orgId).fact.findMany({
     where: {
+      id: { in: [...visible.keys()] },
       subjectType: type,
       subjectId: { in: ids },
       status: { in: ["approved", "pending"] },
@@ -160,6 +245,7 @@ export const factsAbout = (orgId: string, type: SubjectType, ids: string[]) =>
     orderBy: { createdAt: "desc" },
     take: 50,
     select: {
+      id: true,
       number: true,
       subjectLabel: true,
       attribute: true,
@@ -172,6 +258,11 @@ export const factsAbout = (orgId: string, type: SubjectType, ids: string[]) =>
       reviewedAt: true,
     },
   });
+  return facts.map(({ id, evidence, ...fact }) => ({
+    ...fact,
+    evidence: visible.get(id)?.evidence ? evidence : null,
+  }));
+};
 
 /** Every subject a fact can be about, for pickers. */
 export const subjectOptions = async (orgId: string) => {

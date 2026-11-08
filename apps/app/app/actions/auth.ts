@@ -17,6 +17,7 @@ import { trialEndsAt } from "@repo/payments/plans";
 import { env } from "@/env";
 import { track } from "@/lib/analytics";
 import { saveDocument } from "@/lib/knowledge/documents";
+import { recordShopOwner } from "@/lib/library/ownership";
 
 const MAX_SHOP_NAME_LENGTH = 80;
 
@@ -38,6 +39,8 @@ export const createShop = async (formData: FormData) => {
     create: { id: organization.id, name, trialEndsAt: trialEndsAt() },
     update: { name },
   });
+  // WorkOS makes the creator an admin; ownership is recorded here.
+  await recordShopOwner(organization.id, user.id);
   await database.member.upsert({
     where: { orgId_userId: { orgId: organization.id, userId: user.id } },
     create: { orgId: organization.id, userId: user.id, role: "owner" },
@@ -65,6 +68,7 @@ export const createDemoShop = async () => {
     },
     update: {},
   });
+  await recordShopOwner(organization.id, user.id);
   await database.member.upsert({
     where: { orgId_userId: { orgId: organization.id, userId: user.id } },
     create: { orgId: organization.id, userId: user.id, role: "owner" },

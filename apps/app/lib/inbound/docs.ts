@@ -9,11 +9,14 @@ import { log } from "@repo/observability/log";
 import { env } from "@/env";
 import { track } from "../analytics";
 import { featureProblem } from "../billing";
+import { DocumentExistsError, documentNamed } from "../knowledge/documents";
 import { ingestDocument } from "../knowledge/ingest";
+import { authorizeDocument } from "../library/guard";
+import { DocumentProblem } from "../library/problems";
+import { viewerForMember } from "../library/viewer";
 import { parseEmail } from "../quotes/email";
 import { replySubject, threadHeaders } from "./ask-email";
 import { type DocOutcome, docsReply, pickDocuments } from "./docs-email";
-import { emailAddress } from "./verify";
 
 // Documents emailed to the shop's docs-…@ address (F6.2-R1): someone in the
 // shop sends a setup sheet, SOP or spec; each attachment goes through the
@@ -45,55 +48,72 @@ const send = async (
   return true;
 };
 
+const EXISTS =
+  "there's already a document with this name. Rename the file and send it again.";
+
+const failureText = (error: unknown) => {
+  if (error instanceof DocumentExistsError) {
+    return EXISTS;
+  }
+  if (error instanceof DocumentProblem) {
+    return error.message;
+  }
+  return error instanceof Error && error.message.startsWith("No text found")
+    ? "no text found in it."
+    : "Takumo couldn't read it just now. Upload it on the Knowledge page instead.";
+};
+
 /** Read one document; never throws. */
 const readOne = async (
   orgId: string,
   userId: string,
-  file: { name: string; bytes: Uint8Array },
-  mayReplace: boolean
+  file: { name: string; bytes: Uint8Array }
 ): Promise<DocOutcome> => {
-  if (!mayReplace) {
-    // Like an upload: only people who can remove documents replace one.
-    const existing = await forOrg(database, orgId).source.findFirst({
-      where: { name: file.name, type: "upload", profile: "document" },
-      select: { id: true },
-    });
-    if (existing) {
-      return {
-        ok: false,
-        name: file.name,
-        error:
-          "there's already a document with this name. Rename the file, or ask an admin to replace it.",
-      };
+  // Like an upload: an email never replaces a document. Checked again when
+  // the document is created, in case one arrived in the meantime. A
+  // document the sender can't see is never revealed: theirs is stored as
+  // "Name (2)" instead.
+  const existing = await documentNamed(orgId, file.name);
+  let hidden = false;
+  if (existing) {
+    const viewer = await viewerForMember(orgId, userId);
+    const visible = viewer
+      ? (await authorizeDocument(viewer, existing.id, "view")).ok
+      : false;
+    if (visible) {
+      return { ok: false, name: file.name, error: EXISTS };
     }
+    hidden = true;
   }
   const steps: string[] = [];
   let done: Extract<DocOutcome, { ok: true }> | null = null;
   try {
-    await ingestDocument(orgId, userId, file, (event) => {
-      if (event.type === "step") {
-        steps.push(event.text);
-      } else if (event.type === "done") {
-        done = {
-          ok: true,
-          name: event.name,
-          facts: event.facts,
-          linked: event.linked,
-          passages: event.passages,
-          steps,
-        };
-      }
-    });
+    await ingestDocument(
+      orgId,
+      userId,
+      file,
+      (event) => {
+        if (event.type === "step") {
+          steps.push(event.text);
+        } else if (event.type === "done") {
+          done = {
+            ok: true,
+            name: event.name,
+            facts: event.facts,
+            linked: event.linked,
+            passages: event.passages,
+            steps,
+          };
+        }
+      },
+      { via: "email", hidden }
+    );
   } catch (error) {
     log.warn("Reading an emailed document failed", {
       orgId,
       error: String(error),
     });
-    const message =
-      error instanceof Error && error.message.startsWith("No text found")
-        ? "no text found in it."
-        : "Takumo couldn't read it just now. Upload it on the Knowledge page instead.";
-    return { ok: false, name: file.name, error: message };
+    return { ok: false, name: file.name, error: failureText(error) };
   }
   return (
     done ?? {
@@ -111,7 +131,16 @@ export const processDocs = async (
   raw: Uint8Array
 ) => {
   const email = parseEmail(new TextDecoder().decode(raw));
-  const sender = emailAddress(email.from);
+  // Who sent it, as checked when it arrived (receiveMessage: the From header
+  // as sent, its domain authenticated), never re-read from the decoded
+  // header (security audit M3).
+  const sender =
+    (
+      await database.inboundMessage.findFirst({
+        where: { id: messageId, orgId },
+        select: { fromAddress: true },
+      })
+    )?.fromAddress ?? null;
   const subject = replySubject(email.subject);
   const headers = threadHeaders(email.headers);
   try {
@@ -131,10 +160,10 @@ export const processDocs = async (
       return;
     }
     const { read, left } = pickDocuments(email.attachments);
-    const mayReplace = can(member.role, "knowledge:write");
     const outcomes: DocOutcome[] = [];
     for (const file of read) {
-      outcomes.push(await readOne(orgId, member.userId, file, mayReplace));
+      // The uploader is the shop member the sender's address belongs to.
+      outcomes.push(await readOne(orgId, member.userId, file));
     }
     const emailed = await send(
       sender,

@@ -3,11 +3,14 @@
 import "server-only";
 
 import { tool } from "@repo/ai";
-import { database, forOrg } from "@repo/database";
+import { database } from "@repo/database";
 import { askQuery, QueryError } from "@repo/database/reader";
 import { log } from "@repo/observability/log";
 import { z } from "zod";
-import { searchDocuments } from "@/lib/knowledge/documents";
+import {
+  searchDocuments,
+  usableDocumentCount,
+} from "@/lib/knowledge/documents";
 import { cite, sourcesFromRows } from "../citations";
 import { getRecordWithKnowledge, RECORD_TYPES } from "../records";
 import { describeViews } from "../schema";
@@ -96,17 +99,16 @@ Allowed: these views only (no system tables); aggregates and window functions (c
       query: z.string().describe("What to look for, in plain words."),
     }),
     execute: async ({ query }) => {
-      const hits = await searchDocuments(ctx.orgId, query, 6);
+      // Only documents this person may use are searched (in the query).
+      const hits = await searchDocuments(ctx.viewer, query, 6);
       if (hits.length === 0) {
-        const count = await forOrg(database, ctx.orgId).source.count({
-          where: { profile: "document" },
-        });
+        const count = await usableDocumentCount(ctx.viewer);
         return {
           results: [],
           note:
             count === 0
-              ? "No documents have been uploaded yet (Knowledge → Sources)."
-              : `None of the ${count} uploaded documents mention this.`,
+              ? "There are no documents to search that this person may use."
+              : `None of the ${count} documents this person may use mention this.`,
           sources: [],
         };
       }
@@ -138,7 +140,7 @@ Allowed: these views only (no system tables); aggregates and window functions (c
         ),
     }),
     execute: async ({ type, key }) => {
-      const found = await getRecordWithKnowledge(ctx.orgId, type, key);
+      const found = await getRecordWithKnowledge(ctx.viewer, type, key);
       return "error" in found ? { ...found, sources: [] } : found;
     },
   }),

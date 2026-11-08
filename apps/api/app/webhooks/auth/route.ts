@@ -98,9 +98,23 @@ const handleEvent = async (event: WebhookEvent) => {
     }
     case "organization_membership.deleted": {
       const membership = event.data;
-      await database.member.deleteMany({
-        where: { orgId: membership.organizationId, userId: membership.userId },
-      });
+      const who = {
+        orgId: membership.organizationId,
+        userId: membership.userId,
+      };
+      // Someone who leaves loses their departments and personal grants
+      // together, so rejoining later doesn't bring old access back.
+      await database.$transaction([
+        database.member.deleteMany({ where: who }),
+        database.departmentMember.deleteMany({ where: who }),
+        database.accessGrant.deleteMany({
+          where: {
+            orgId: who.orgId,
+            principalType: "user",
+            principalId: who.userId,
+          },
+        }),
+      ]);
       analytics?.capture({
         event: "Organization Member Deleted",
         distinctId: membership.userId,

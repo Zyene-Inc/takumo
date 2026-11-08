@@ -20,6 +20,8 @@ import {
   loadFinishedJobs,
   RECALIBRATION,
 } from "@/lib/facts/recalibrate";
+import { visibleFactIds } from "@/lib/library/ai-access";
+import { resolveViewer } from "@/lib/library/viewer";
 import { Header } from "../../components/header";
 import { EmptyState } from "../../shop/components/format";
 import { ErrorChart } from "./error-chart";
@@ -65,10 +67,13 @@ const OpStatus = ({
 };
 
 const CalibrationPage = async () => {
-  const { orgId, canReviewFacts } = await getAccess();
-  if (!orgId) {
+  const { canReviewFacts } = await getAccess();
+  // The same session as getAccess: only facts this person may see.
+  const viewer = await resolveViewer();
+  if (!viewer) {
     notFound();
   }
+  const { orgId } = viewer;
   const now = new Date();
   const db = forOrg(database, orgId);
   const [jobs, stats, lastRun, pending] = await Promise.all([
@@ -81,6 +86,7 @@ const CalibrationPage = async () => {
     }),
     db.fact.findMany({
       where: {
+        id: { in: await visibleFactIds(viewer) },
         status: "pending",
         subjectType: "routing",
         attribute: { in: ["setupMin", "runMinPerUnit"] },

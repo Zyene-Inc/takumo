@@ -36,8 +36,12 @@ describe("role permissions", () => {
     expect(can("member", "floor:write")).toBe(false);
   });
 
-  test("owners and admins manage billing and connectors", () => {
-    for (const permission of ["billing:manage", "connectors:manage"] as const) {
+  test("owners and admins manage billing, connectors and departments", () => {
+    for (const permission of [
+      "billing:manage",
+      "connectors:manage",
+      "departments:manage",
+    ] as const) {
       expect(can("owner", permission)).toBe(true);
       expect(can("admin", permission)).toBe(true);
       expect(can("planner", permission)).toBe(false);
