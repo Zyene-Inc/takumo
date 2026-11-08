@@ -117,6 +117,23 @@ export const redactHistory = async <
  * was already streamed can't be taken back, but nothing newly out of reach
  * is saved or sent again.
  */
+/**
+ * Which of an answer's documents must still be open to its asker when it's
+ * saved: those its own tools and facts used, and earlier answers' documents
+ * the asker could use when they asked. An earlier answer whose document was
+ * already out of reach was hidden before the question reached the model, so
+ * the new answer can't repeat it. The new answer stays linked to that
+ * document (MessageSource): hidden while it's out of reach and shown again if
+ * access comes back, instead of being saved as a notice for good.
+ */
+export const documentsToRecheck = (
+  rows: { direct: boolean; sourceId: string }[],
+  usableWhenAsked: Set<string>
+) =>
+  rows
+    .filter((r) => r.direct || usableWhenAsked.has(r.sourceId))
+    .map((r) => r.sourceId);
+
 export const stillAllowed = async (viewer: Viewer, documentIds: string[]) => {
   if (documentIds.length === 0) {
     return true;

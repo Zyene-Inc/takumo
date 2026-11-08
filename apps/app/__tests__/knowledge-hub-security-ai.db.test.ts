@@ -945,5 +945,31 @@ describe.skipIf(!TEST_DATABASE_URL)("knowledge hub security (database)", () => {
       expect(await redact.stillAllowed(eng, [doc.eng])).toBe(true);
       expect(await redact.stillAllowed(eng, [doc.eng, doc.hr])).toBe(false);
     });
+
+    test("a follow-up to an answer already hidden when asked is kept, not saved as a notice", async () => {
+      const eng = await as(A, "user_eng");
+      const { usableSourceIds } = await import("../lib/library/ai-access");
+      const whenAsked = await usableSourceIds(eng, "search");
+      expect(whenAsked.has(doc.hr)).toBe(false);
+      // Its own document, and one inherited from an earlier answer that was
+      // hidden (so never sent to the model) when the follow-up was asked.
+      const rows = [
+        { sourceId: doc.eng, direct: true },
+        { sourceId: doc.hr, direct: false },
+      ];
+      const recheck = redact.documentsToRecheck(rows, whenAsked);
+      expect(recheck).toEqual([doc.eng]);
+      expect(await redact.stillAllowed(eng, recheck)).toBe(true);
+      // Inherited documents the model was shown, and the answer's own, count.
+      expect(
+        redact.documentsToRecheck(rows, new Set([doc.eng, doc.hr]))
+      ).toEqual([doc.eng, doc.hr]);
+      expect(
+        redact.documentsToRecheck(
+          [{ sourceId: doc.hr, direct: true }],
+          whenAsked
+        )
+      ).toEqual([doc.hr]);
+    });
   });
 });

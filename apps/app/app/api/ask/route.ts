@@ -28,11 +28,17 @@ import {
   compactHistory,
 } from "@/lib/agent/history";
 import { chooseMode } from "@/lib/agent/mode";
-import { HIDDEN_ANSWER, redactHistory, stillAllowed } from "@/lib/agent/redact";
+import {
+  documentsToRecheck,
+  HIDDEN_ANSWER,
+  redactHistory,
+  stillAllowed,
+} from "@/lib/agent/redact";
 import { agentContext } from "@/lib/agent/tools";
 import { recordUsage } from "@/lib/ai-usage";
 import { track } from "@/lib/analytics";
 import { featureProblem } from "@/lib/billing";
+import { usableSourceIds } from "@/lib/library/ai-access";
 import {
   answerProvenance,
   linkProposedFacts,
@@ -134,7 +140,11 @@ export const POST = async (request: Request) => {
 
   // Retrying a question replaces its old answer. Answers that drew on
   // documents this person can't use now never reach the model again.
-  let history = await redactHistory(viewer, id, await loadMessages(id));
+  const [loaded, usableWhenAsked] = await Promise.all([
+    loadMessages(id),
+    usableSourceIds(viewer, "search"),
+  ]);
+  let history = await redactHistory(viewer, id, loaded);
   const retryAt = history.findIndex((m) => m.id === message.id);
   if (retryAt >= 0) {
     await database.message.deleteMany({
@@ -231,7 +241,11 @@ export const POST = async (request: Request) => {
       // longer see isn't kept (and so never reaches the model again).
       const now = await viewerForMember(orgId, userId);
       const allowed = Boolean(
-        now && (await stillAllowed(now, worked.documentIds))
+        now &&
+          (await stillAllowed(
+            now,
+            documentsToRecheck(worked.rows, usableWhenAsked)
+          ))
       );
       await database.$transaction(async (tx) => {
         const found = await settleSources(tx, orgId, worked);
