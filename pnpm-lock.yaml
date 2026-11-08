@@ -179,6 +179,9 @@ importers:
       import-in-the-middle:
         specifier: ^3.0.0
         version: 3.5.3
+      libpg-query:
+        specifier: 17.7.4
+        version: 17.7.4
       lucide-react:
         specifier: ^1.65.0
         version: 1.65.0(@types/react@19.2.14)(react@19.2.4)
@@ -500,6 +503,9 @@ importers:
       '@t3-oss/env-nextjs':
         specifier: ^0.13.10
         version: 0.13.11(typescript@5.9.3)(valibot@1.4.2(typescript@5.9.3))(zod@4.6.7)
+      libpg-query:
+        specifier: 17.7.4
+        version: 17.7.4
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -1793,6 +1799,9 @@ packages:
 
   '@pdf-lib/upng@1.0.1':
     resolution: {integrity: sha512-dQK2FUMQtowVP00mtIksrlZhdFXQZPC+taih1q4CvPZ5vqdxR/LKBaFg0oAfzd1GlHZXXSPdQfzQnt+ViGvEIQ==}
+
+  '@pgsql/types@17.6.2':
+    resolution: {integrity: sha512-1UtbELdbqNdyOShhrVfSz3a1gDi0s9XXiQemx+6QqtsrXe62a6zOGU+vjb2GRfG5jeEokI1zBBcfD42enRv0Rw==}
 
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
@@ -4616,6 +4625,9 @@ packages:
   leac@0.7.0:
     resolution: {integrity: sha512-qMrZeyEekgdRQ9o6a4NAB2EQZrv827GJdn1vnapwSJ90hWRB4TzUSunvacPkxQ2TnNqHNI1/zSt0hlo0crG8Jw==}
 
+  libpg-query@17.7.4:
+    resolution: {integrity: sha512-hTV3LvacQgJhc6GHpu5GYZMQBOAEpJ/LF1JjkixZ8YLh2TtbuN8y0JlNiPTe8PBTV9ChFkKcZMWSYKyhJfkYaQ==}
+
   lie@3.3.0:
     resolution: {integrity: sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ==}
 
@@ -7042,6 +7054,8 @@ snapshots:
   '@pdf-lib/upng@1.0.1':
     dependencies:
       pako: 1.0.11
+
+  '@pgsql/types@17.6.2': {}
 
   '@polka/url@1.0.0-next.29': {}
 
@@ -9896,6 +9910,10 @@ snapshots:
   leac@0.6.0: {}
 
   leac@0.7.0: {}
+
+  libpg-query@17.7.4:
+    dependencies:
+      '@pgsql/types': 17.6.2
 
   lie@3.3.0:
     dependencies:

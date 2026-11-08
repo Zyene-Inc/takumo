@@ -124,6 +124,15 @@ export const SERVICES = {
         why: "document vector search, audio-file transcription",
         skip: usesVertex,
       },
+      // Off unless exactly "true"; set it only after the checks in
+      // docs/DEPLOY.md step 1.3 pass on that environment's database.
+      ASK_SQL_ENABLED: {
+        why: "Ask Takumo's SQL tool (off until docs/DEPLOY.md step 1.3 passes)",
+        check: (v) =>
+          v === "true" || v === "false"
+            ? null
+            : 'must be "true" or "false" (anything else keeps it off)',
+      },
     },
   },
   api: {

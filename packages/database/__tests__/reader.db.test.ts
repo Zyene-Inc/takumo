@@ -12,6 +12,8 @@ const ADMIN = process.env.TEST_DATABASE_URL;
 const READER = process.env.TEST_ASK_DATABASE_URL;
 process.env.ASK_DATABASE_URL = READER;
 process.env.SKIP_ENV_VALIDATION = "true";
+// The SQL tool is off by default (security hotfix); these tests use it on.
+process.env.ASK_SQL_ENABLED = "true";
 
 const { askQuery, QueryError } = await import("../reader");
 

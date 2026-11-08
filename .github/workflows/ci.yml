@@ -75,16 +75,75 @@ jobs:
       - name: Import tests against the database
         working-directory: packages/ingest
         run: pnpm test:db
-      - name: App tests against the database
-        working-directory: apps/app
-        run: pnpm exec vitest run __tests__/*.db.test.ts
       # Ask Takumo's read-only login (set per environment, see docs/DEPLOY.md).
+      # Before the app tests: ask-sql-isolation.db.test.ts queries through it.
       - name: Give the reader a password
         working-directory: packages/database
         run: echo "alter role takumo_reader password 'ci-reader';" | pnpm exec prisma db execute --stdin
+      - name: App tests against the database
+        working-directory: apps/app
+        run: pnpm exec vitest run __tests__/*.db.test.ts
       - name: Ask Takumo reader isolation tests
         working-directory: packages/database
         run: pnpm test:db
+
+  # As on Supabase: the migrations' role isn't a superuser, so the first
+  # hotfix migration can't turn track_activities off for the reader, and the
+  # reader's sessions publish their statement text. The wrapper must keep the
+  # agent's SQL out of it (reader-wrapper.db.test.ts). Own Postgres: roles are
+  # cluster-wide, and the reader must be created by this owner.
+  database-supabase-like:
+    name: Ask Takumo reader, migrated by a non-superuser (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: takumo
+          POSTGRES_PASSWORD: takumo
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U takumo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SKIP_ENV_VALIDATION: "true"
+      DATABASE_URL: postgresql://migrator:migrator@localhost:5432/app
+      DIRECT_URL: postgresql://migrator:migrator@localhost:5432/app
+      TEST_DATABASE_URL: postgresql://migrator:migrator@localhost:5432/app
+      TEST_ASK_DATABASE_URL: postgresql://takumo_reader:ci-reader@localhost:5432/app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: A database owned by a role that isn't a superuser
+        run: |
+          psql "postgresql://takumo:takumo@localhost:5432/postgres" -v ON_ERROR_STOP=1 \
+            -c "create role migrator login password 'migrator' createrole" \
+            -c "create database app owner migrator"
+          psql "postgresql://takumo:takumo@localhost:5432/app" -v ON_ERROR_STOP=1 \
+            -c "create extension vector"
+      - name: Apply migrations as that role
+        run: pnpm migrate:deploy
+      - name: Give the reader a password
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "alter role takumo_reader password 'ci-reader'"
+      - name: The app's own database check passes
+        working-directory: packages/database
+        env:
+          ASK_DATABASE_URL: postgresql://takumo_reader:ci-reader@localhost:5432/app
+        run: pnpm check:ask-sql
+      - name: Ask Takumo reader tests
+        working-directory: packages/database
+        run: pnpm test:db
+      - name: Ask Takumo end to end (web and email)
+        working-directory: apps/app
+        run: pnpm exec vitest run __tests__/ask-sql-isolation.db.test.ts
 
   engine:
     name: Lint and test scheduling engine (Python)
