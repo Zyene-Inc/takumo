@@ -5,6 +5,12 @@ import { canEmbed, embeddingOptions, models } from "@repo/ai/lib/models";
 import { database, forOrg } from "@repo/database";
 import { log } from "@repo/observability/log";
 import {
+  type AiUse,
+  usableSourcesArgs,
+  usableSourcesSql,
+} from "../library/ai-access";
+import { trustedViewer, type Viewer } from "../library/viewer";
+import {
   chunkPages,
   cleanSnippet,
   type PageText,
@@ -255,6 +261,29 @@ export const saveDocument = (
   );
 };
 
+const ANY_USABLE_SQL = `select exists (${usableSourcesSql(2, 3, 4)}) as any`;
+const COUNT_USABLE_SQL = `select count(*)::int as n from (${usableSourcesSql(2, 3, 4)}) d`;
+
+/** Whether any document may be used this far by the viewer. */
+const anyUsable = async (viewer: Viewer, use: AiUse) => {
+  const [row] = await database.$queryRawUnsafe<{ any: boolean }[]>(
+    ANY_USABLE_SQL,
+    trustedViewer(viewer).orgId,
+    ...usableSourcesArgs(viewer, use)
+  );
+  return Boolean(row?.any);
+};
+
+/** How many documents the viewer's questions may draw on. */
+export const usableDocumentCount = async (viewer: Viewer) => {
+  const [row] = await database.$queryRawUnsafe<{ n: number }[]>(
+    COUNT_USABLE_SQL,
+    trustedViewer(viewer).orgId,
+    ...usableSourcesArgs(viewer, "search")
+  );
+  return row?.n ?? 0;
+};
+
 interface DocHit {
   chunkId: string;
   heading: string | null;
@@ -277,8 +306,14 @@ interface Row {
 
 // Only the current version of a document that isn't in the Trash is ever
 // searched: a version still being read, a failed one and an older one are
-// not.
+// not. And only documents the person asking may use, decided in the same
+// query ($4–$6: their user, role and how far the AI setting must allow), so
+// nothing else is ever read, let alone sent to the model.
 const LIVE = `s."deletedAt" is null and c."versionId" = s."currentVersionId"`;
+const USABLE = `c."sourceId" in (${usableSourcesSql(4, 5, 6)})`;
+// The library's own search box: documents the person may view, whatever
+// their AI setting (it never reaches an AI service).
+const VIEWABLE = `c."sourceId" in (select library.visible_source_ids($1, $4, $5))`;
 
 // What keyword search reads: the passage with its context sentence.
 const SEARCHED = `coalesce(c.meta ->> 'context', '') || ' ' || c.content`;
@@ -286,7 +321,7 @@ const SEARCHED = `coalesce(c.meta ->> 'context', '') || ' ' || c.content`;
 // English stemming finds "deburring" for "deburr"; the 'simple' dictionary,
 // used only for words with a digit, keeps codes whole, so "P-2001" or
 // "AMS-2700" match exactly.
-const KEYWORD_SQL = `
+const keywordSql = (allowed: string) => `
   with q as (
     -- Stop words are empty in English but not in 'simple': skip empties
     -- per dictionary, or the joined query wouldn't parse.
@@ -308,6 +343,7 @@ const KEYWORD_SQL = `
   cross join q
   where c."orgId" = $1
     and ${LIVE}
+    and ${allowed}
     and (to_tsvector('english', ${SEARCHED}) @@ q.query
       or to_tsvector('simple', ${SEARCHED}) @@ q.exact)
   order by rank desc
@@ -321,28 +357,35 @@ const VECTOR_SQL = `
   join "Source" s on s.id = c."sourceId"
   where c."orgId" = $1 and c.embedding is not null
     and ${LIVE}
+    and ${USABLE}
   order by c.embedding <=> $2::vector
   limit $3`;
 
+const KEYWORD_SQL = keywordSql(USABLE);
+const LIBRARY_KEYWORD_SQL = keywordSql(VIEWABLE);
+
 /**
  * Keyword search only, with no AI call (the library's search box): the best
- * passages of current versions of documents not in the Trash, with a
- * highlighted snippet.
+ * passages of current versions of documents not in the Trash that the
+ * viewer may view, with a highlighted snippet.
  */
 export const keywordPassages = async (
-  orgId: string,
+  viewer: Viewer,
   query: string,
   limit = 30
 ) => {
+  const { orgId, userId, role } = trustedViewer(viewer);
   const terms = searchTerms(query);
   if (terms.length === 0) {
     return [];
   }
   const rows = await database.$queryRawUnsafe<Row[]>(
-    KEYWORD_SQL,
+    LIBRARY_KEYWORD_SQL,
     orgId,
     terms,
-    limit
+    limit,
+    userId,
+    role
   );
   return rows.map((row) => ({
     sourceId: row.sourceId,
@@ -352,27 +395,35 @@ export const keywordPassages = async (
   }));
 };
 
+/** The search's parameters after the query and limit: who asks, and the use. */
+const asking = (viewer: Viewer, use: AiUse) => usableSourcesArgs(viewer, use);
+
 /**
- * Hybrid search: keyword ranking always; vector similarity too when an
- * embeddings key is set. Results are merged by reciprocal rank.
+ * Hybrid search for Ask: keyword ranking always; vector similarity too when
+ * an embeddings key is set. Results are merged by reciprocal rank. Only
+ * documents the viewer may use are read: their AI setting must allow
+ * "search" for keyword passages and "full" for vectors.
  */
 export const searchDocuments = async (
-  orgId: string,
+  viewer: Viewer,
   query: string,
   limit = 6
 ): Promise<DocHit[]> => {
+  const { orgId } = trustedViewer(viewer);
   const terms = searchTerms(query);
   const keyword = terms.length
     ? await database.$queryRawUnsafe<Row[]>(
         KEYWORD_SQL,
         orgId,
         terms,
-        limit * 2
+        limit * 2,
+        ...asking(viewer, "search")
       )
     : [];
 
   let vector: Row[] = [];
-  if (canEmbed) {
+  // Only worth embedding the question when some document allows vectors.
+  if (canEmbed && (await anyUsable(viewer, "full"))) {
     try {
       const { embedding } = await embed({
         model: models.embeddings,
@@ -383,7 +434,8 @@ export const searchDocuments = async (
         VECTOR_SQL,
         orgId,
         vectorLiteral(embedding),
-        limit * 2
+        limit * 2,
+        ...asking(viewer, "full")
       );
     } catch (error) {
       log.warn("Vector search failed; using keywords only", {

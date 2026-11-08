@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { accessView } from "@/lib/library/access-view";
 import { folderView } from "@/lib/library/browse";
 import { EmptyState } from "../../../shop/components/format";
+import { AccessBadges, AccessDialog } from "../../components/access-dialog";
 import { DocumentTable } from "../../components/document-table";
 import { FolderMenu, NewFolderButton } from "../../components/folder-dialogs";
 import { FolderGrid } from "../../components/folder-grid";
@@ -18,7 +20,10 @@ const FolderPage = async ({
 }) => {
   const { folderId } = await params;
   const { viewer, folders, choices } = await libraryFrame();
-  const view = await folderView(viewer, folderId);
+  const [view, access] = await Promise.all([
+    folderView(viewer, folderId),
+    accessView(viewer, { folderId }),
+  ]);
   if (!view?.folder) {
     notFound();
   }
@@ -32,6 +37,13 @@ const FolderPage = async ({
             <LibraryUpload folderId={folder.id} folderName={folder.name} />
           )}
           {view.canManage && <NewFolderButton parentId={folder.id} />}
+          {access?.restricting && (
+            <AccessDialog
+              initial={access}
+              name={folder.name}
+              target={{ folderId: folder.id }}
+            />
+          )}
           {view.canManage && folder.kind === "normal" && (
             <FolderMenu
               choices={choices}
@@ -54,6 +66,7 @@ const FolderPage = async ({
       folders={folders}
       title={folder.name}
     >
+      {access && <AccessBadges view={access} />}
       {view.folders.length > 0 && (
         <FolderGrid
           canManage={view.canManage}

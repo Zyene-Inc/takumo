@@ -9,7 +9,17 @@ interface EmailAttachment {
 interface ParsedEmail {
   attachments: EmailAttachment[];
   body: string;
+  /** The From header for display (encoded words decoded). */
   from: string | null;
+  /** How many From headers the message has. */
+  fromCount: number;
+  /**
+   * The From header as sent, never decoded: who the sender is. Encoded words
+   * are only allowed in the display name, and decoding first could make one
+   * look like a member's address (security audit M3). Null when there is
+   * more than one From header.
+   */
+  fromHeader: string | null;
   /** The top-level headers, lower-cased names (the first of each). */
   headers: ReadonlyMap<string, string>;
   subject: string | null;
@@ -30,6 +40,7 @@ const BLOCK_TAGS = /<\/(p|div|tr|li|h\d)>|<br\s*\/?>/gi;
 const SPACE_RUNS = /[ \t]+/g;
 const EXTRA_BLANKS = /\n{3,}/g;
 const LINE_BREAK = /\r?\n/;
+const FROM_LINE = /^from\s*:/i;
 const LEADING_BREAK = /^\r?\n/;
 const UTF8_PREFIX = /^utf-8''/i;
 
@@ -174,9 +185,16 @@ export const parseEmail = (raw: string): ParsedEmail => {
   walk(top, found);
   const subject = top.headers.get("subject");
   const from = top.headers.get("from");
+  const headerBlock = HEADER_END.exec(raw);
+  const fromCount = (headerBlock ? raw.slice(0, headerBlock.index) : raw)
+    .replace(FOLDED, " ")
+    .split(LINE_BREAK)
+    .filter((line) => FROM_LINE.test(line)).length;
   return {
     subject: subject ? decodeWords(subject) : null,
     from: from ? decodeWords(from) : null,
+    fromHeader: fromCount === 1 && from ? from : null,
+    fromCount,
     body: (found.plain.length ? found.plain : found.html).join("\n\n").trim(),
     attachments: found.attachments,
     headers: top.headers,

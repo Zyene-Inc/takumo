@@ -3,6 +3,7 @@
 import "server-only";
 import type { ScheduleResponse } from "@repo/engine-client";
 import { z } from "zod";
+import { trustedViewer, type Viewer } from "@/lib/library/viewer";
 
 /** Numbering for [query n], [scenario n] and [estimate n] within a conversation. */
 export interface Counters {
@@ -16,7 +17,32 @@ export interface AgentContext {
   /** Local date (YYYY-MM-DD) the user is asking on. */
   today: string;
   userId: string | null;
+  /**
+   * Who is asking, made on the server. Every tool reads documents and facts
+   * as this person (lib/library/ai-access.ts); orgId and userId are theirs.
+   */
+  viewer: Viewer;
 }
+
+/** The agent's context for a viewer made on the server. */
+export const agentContext = (viewer: Viewer, today: string): AgentContext => {
+  const trusted = trustedViewer(viewer);
+  return {
+    orgId: trusted.orgId,
+    userId: trusted.userId,
+    viewer: trusted,
+    today,
+  };
+};
+
+/** The context, when its shop and user are its viewer's; throws otherwise. */
+export const checkedContext = (ctx: AgentContext): AgentContext => {
+  const viewer = trustedViewer(ctx.viewer);
+  if (viewer.orgId !== ctx.orgId || viewer.userId !== ctx.userId) {
+    throw new Error("The agent's context doesn't match who is asking.");
+  }
+  return ctx;
+};
 
 export const ISO = /^\d{4}-\d{2}-\d{2}$/;
 export const ROUTING_OP = /^(.+) op (\d+)$/;

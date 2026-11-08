@@ -1,6 +1,8 @@
 import "server-only";
 
 import { database, forOrg } from "@repo/database";
+import { factAccess } from "../library/ai-access";
+import { trustedViewer, type Viewer } from "../library/viewer";
 import { entityCsv, plainCsv, zipFiles } from "./csv";
 
 const num = (value: { toString(): string } | null) =>
@@ -22,8 +24,14 @@ rfqs.csv     requests for quote received and what happened to them
 `;
 
 /** Everything a shop has put into Takumo, as a zip of CSV files. */
-export const exportShop = async (orgId: string) => {
+/**
+ * Every record of the viewer's shop, as they may see it: facts only when
+ * they may see them, with quotes only from documents they may use.
+ */
+export const exportShop = async (viewer: Viewer) => {
+  const { orgId } = trustedViewer(viewer);
   const db = forOrg(database, orgId);
+  const visible = await factAccess(viewer);
   const [
     workCenters,
     customers,
@@ -80,7 +88,10 @@ export const exportShop = async (orgId: string) => {
         },
       },
     }),
-    db.fact.findMany({ orderBy: { number: "asc" } }),
+    db.fact.findMany({
+      where: { id: { in: [...visible.keys()] } },
+      orderBy: { number: "asc" },
+    }),
     db.note.findMany({ orderBy: { createdAt: "asc" } }),
     db.rfq.findMany({
       orderBy: { number: "asc" },
@@ -216,7 +227,7 @@ export const exportShop = async (orgId: string) => {
           f.previousValue === null ? null : JSON.stringify(f.previousValue),
         status: f.status,
         source: f.source,
-        evidence: f.evidence,
+        evidence: visible.get(f.id)?.evidence ? f.evidence : null,
         stated_on: day(f.createdAt),
         reviewed_on: day(f.reviewedAt),
         valid_to: day(f.validTo),

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { database } from "@repo/database";
+import { documentAiMode } from "./ai-mode";
 import { audit } from "./audit";
 
 // Who is processing a version. A run claims a version with one atomic update
@@ -58,6 +59,14 @@ const CLAIM_SQL = `
       (v.status = 'queued' and (v."nextAttemptAt" is null or v."nextAttemptAt" <= now()))
       or (v.status = 'processing' and v."leaseUntil" < now() and v.attempts + 1 < $5)
       or (v.status = 'failed' and v."nextAttemptAt" <= now() and v.attempts < $5)
+    )
+    -- A document someone put in the Trash isn't processed (security audit
+    -- L9): its version waits, and is picked up again once it's restored.
+    -- (One Takumo moved there itself, deletedBy null, because it couldn't
+    -- be read, can be retried.)
+    and not exists (
+      select 1 from "Source" s where s.id = v."sourceId" and s."deletedAt" is not null
+        and s."deletedBy" is not null
     )
     and (
       select count(*) from "DocumentVersion" o
@@ -119,26 +128,55 @@ export const renewLease = async (lease: Lease) => {
   }
 };
 
-/** Save that a stage finished (and renew); throws LeaseLost when it isn't ours. */
+/** What a checkpoint holds from AI services (cleared when AI is lowered). */
+const AI_CHECKPOINT_KEYS = ["understanding", "facts", "factsDone", "tally"];
+
+/**
+ * Save that a stage finished (and renew); throws LeaseLost when it isn't
+ * ours. Under the document's row lock (as writeIfFull), a checkpoint keeps
+ * what AI services returned only while its setting is "full": a run can't
+ * write back what lowering just cleared (security audit L10).
+ */
 export const saveProgress = async (
   lease: Lease,
   data: { checkpoint?: object; pageCount?: number; stage: string }
 ) => {
-  const { count } = await database.documentVersion.updateMany({
-    where: HELD(lease),
-    data: {
-      stage: data.stage,
-      ...(data.checkpoint ? { checkpoint: data.checkpoint } : {}),
-      ...(data.pageCount === undefined ? {} : { pageCount: data.pageCount }),
-    },
+  const { count, checkpoint } = await database.$transaction(async (tx) => {
+    let saved = data.checkpoint;
+    if (saved) {
+      await tx.$queryRawUnsafe(
+        `select id from "Source" where id = $1 and "orgId" = $2 for share`,
+        lease.version.sourceId,
+        lease.version.orgId
+      );
+      const mode = await documentAiMode(
+        lease.version.orgId,
+        lease.version.sourceId,
+        tx
+      );
+      if (mode !== "full") {
+        saved = Object.fromEntries(
+          Object.entries(saved).filter(([k]) => !AI_CHECKPOINT_KEYS.includes(k))
+        );
+      }
+    }
+    const result = await tx.documentVersion.updateMany({
+      where: HELD(lease),
+      data: {
+        stage: data.stage,
+        ...(saved ? { checkpoint: saved } : {}),
+        ...(data.pageCount === undefined ? {} : { pageCount: data.pageCount }),
+      },
+    });
+    return { count: result.count, checkpoint: saved };
   });
   if (count === 0) {
     throw new LeaseLost();
   }
   await renewLease(lease);
   lease.version.stage = data.stage;
-  if (data.checkpoint) {
-    lease.version.checkpoint = data.checkpoint;
+  if (checkpoint) {
+    lease.version.checkpoint = checkpoint;
   }
 };
 

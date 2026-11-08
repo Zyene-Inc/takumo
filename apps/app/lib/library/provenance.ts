@@ -1,20 +1,25 @@
 import "server-only";
 
 import { database, Prisma } from "@repo/database";
-import { citedDocumentId, collectSources } from "../agent/citations";
+import {
+  citedDocumentId,
+  collectSources,
+  type Source,
+} from "../agent/citations";
 import { parseFactLabel } from "../facts/attributes";
 
-// Which documents fed each saved answer (MessageSource), recorded now so the
-// Knowledge Hub's later permission checks (phase 4) can hide an answer from
-// someone who loses access to a document, and so a permanent delete finds
-// every answer to rewrite. Nothing is hidden or redacted yet.
+// Which documents fed each saved answer (MessageSource), so an answer is
+// hidden from someone who can't use one of them any more
+// (lib/agent/redact.ts), and so a permanent delete finds every answer to
+// rewrite.
 //
 // An answer's documents are the ones its tools returned (search results),
 // the documents behind facts it read, and every document behind earlier
 // answers in the same conversation, since a later answer can repeat what an
-// earlier one said. Anything that can't be attributed (an answer saved
-// before this was recorded, a fact of unknown origin, facts read in bulk by
-// a query) marks the answer "partial": never assumed safe.
+// earlier one said. A query over the facts view reads facts in bulk: every
+// document behind a fact that view can show counts. Anything that can't be
+// attributed (an answer saved before this was recorded, a fact of unknown
+// origin) marks the answer "partial": never assumed safe.
 
 export interface ToolUse {
   input: unknown;
@@ -55,14 +60,51 @@ export const removedAnswer = () => ({
 });
 
 const FACTS_VIEW = /\bfacts\b/i;
+// U&"…" spells an identifier with Unicode escapes, so it can name the facts
+// view without the word appearing (security audit L8): treated as reading it.
+const UNICODE_IDENTIFIER = /u&\s*["']/i;
 
 /** A query over the facts view reads facts in bulk: their documents can't all be known. */
 const readsFactsInBulk = (tools: ToolUse[]) =>
   tools.some(
     (t) =>
       t.tool === "query_data" &&
-      FACTS_VIEW.test(String((t.input as { sql?: unknown })?.sql ?? ""))
+      [FACTS_VIEW, UNICODE_IDENTIFIER].some((pattern) =>
+        pattern.test(String((t.input as { sql?: unknown })?.sql ?? ""))
+      )
   );
+
+// The documents behind every fact the SQL reader's facts view can show
+// (library.fact_access for the whole shop): published facts are company
+// knowledge on purpose, so only unpublished facts read from documents
+// count. Facts of unknown origin it can show make the answer partial.
+const BULK_FACT_SOURCES_SQL = `
+  select distinct fs."sourceId", fs."versionId"
+  from library.fact_access($1, null, null) a
+  join "Fact" f on f.id = a.fact_id
+  join "FactSource" fs on fs."factId" = f.id and fs."orgId" = $1
+  where f."publishedAt" is null and f.provenance = 'documents'`;
+
+const BULK_UNTRACED_SQL = `
+  select exists (
+    select 1 from library.fact_access($1, null, null) a
+    join "Fact" f on f.id = a.fact_id
+    where f."publishedAt" is null and f.provenance <> 'documents' and f.provenance <> 'none'
+  ) as untraced`;
+
+const bulkFactSources = async (orgId: string, tools: ToolUse[]) => {
+  if (!readsFactsInBulk(tools)) {
+    return { rows: [], untraced: false };
+  }
+  const [rows, [flag]] = await Promise.all([
+    database.$queryRawUnsafe<{ sourceId: string; versionId: string | null }[]>(
+      BULK_FACT_SOURCES_SQL,
+      orgId
+    ),
+    database.$queryRawUnsafe<{ untraced: boolean }[]>(BULK_UNTRACED_SQL, orgId),
+  ]);
+  return { rows, untraced: Boolean(flag?.untraced) };
+};
 
 export const answerProvenance = async (
   orgId: string,
@@ -70,15 +112,25 @@ export const answerProvenance = async (
   tools: ToolUse[]
 ): Promise<AnswerProvenance> => {
   const cited = [...collectSources(tools.map((t) => t.output)).values()];
+  // Every document any tool returned, read from each result rather than from
+  // the citation registry: that keeps one source per citation id, and two
+  // documents with the same name (and page) share an id, so one of them was
+  // lost and its answer escaped redaction (security audit M1).
   const documentIds = new Set(
-    cited.map(citedDocumentId).filter((id): id is string => Boolean(id))
+    tools
+      .flatMap((t) => {
+        const sources = (t.output as { sources?: unknown })?.sources;
+        return Array.isArray(sources) ? (sources as Source[]) : [];
+      })
+      .map((s) => (s && typeof s === "object" ? citedDocumentId(s) : null))
+      .filter((id): id is string => Boolean(id))
   );
   const factNumbers = cited
     .filter((s) => s.kind === "fact")
     .map((s) => parseFactLabel(s.label))
     .filter((n): n is number => n !== null);
 
-  const [documents, facts, earlier, unattributed] = await Promise.all([
+  const [documents, facts, earlier, unattributed, bulk] = await Promise.all([
     database.source.findMany({
       where: { orgId, id: { in: [...documentIds] } },
       select: { id: true, currentVersionId: true },
@@ -87,6 +139,7 @@ export const answerProvenance = async (
       where: { orgId, number: { in: factNumbers } },
       select: {
         provenance: true,
+        publishedAt: true,
         sources: { select: { sourceId: true, versionId: true } },
       },
     }),
@@ -102,6 +155,7 @@ export const answerProvenance = async (
         provenance: { in: ["legacy", "partial"] },
       },
     }),
+    bulkFactSources(orgId, tools),
   ]);
 
   const rows = new Map<string, SourceRow>();
@@ -113,11 +167,16 @@ export const answerProvenance = async (
       via: "document",
     });
   }
-  for (const fact of facts) {
-    for (const s of fact.sources) {
-      if (!rows.has(s.sourceId)) {
-        rows.set(s.sourceId, { ...s, direct: true, via: "fact" });
-      }
+  // A published fact is company knowledge on purpose: its documents don't
+  // restrict the answer (their quotes aren't shown to those who can't open
+  // them).
+  const factSources = [
+    ...facts.filter((f) => !f.publishedAt).flatMap((f) => f.sources),
+    ...bulk.rows,
+  ];
+  for (const s of factSources) {
+    if (!rows.has(s.sourceId)) {
+      rows.set(s.sourceId, { ...s, direct: true, via: "fact" });
     }
   }
   for (const s of earlier) {
@@ -127,8 +186,12 @@ export const answerProvenance = async (
   }
   const partial =
     unattributed > 0 ||
-    readsFactsInBulk(tools) ||
-    facts.some((f) => f.provenance === "unknown") ||
+    bulk.untraced ||
+    facts.some(
+      (f) =>
+        !f.publishedAt &&
+        (f.provenance === "unknown" || f.provenance === "source_deleted")
+    ) ||
     // A fact cited by number that isn't in this shop: can't be attributed.
     facts.length < new Set(factNumbers).size;
   const gone = documents.length < documentIds.size;

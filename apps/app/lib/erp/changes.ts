@@ -9,6 +9,8 @@ import {
   SUBJECT_LABEL,
   type SubjectType,
 } from "../facts/attributes";
+import { factAccess } from "../library/ai-access";
+import { systemViewer } from "../library/viewer";
 
 // Approved facts change Takumo's numbers at once; when the record came from
 // the ERP, the next nightly report would put the old number back. Until
@@ -56,9 +58,13 @@ const syncedIds = async (
   return new Set(rows.map((r) => r.id));
 };
 
+// Sent to the ERP by email: only facts everyone in the shop may see, and
+// their quotes only when every document behind them is company-wide.
 export const changesForErp = async (orgId: string): Promise<ErpChange[]> => {
+  const company = await factAccess(systemViewer(orgId));
   const facts = await forOrg(database, orgId).fact.findMany({
     where: {
+      id: { in: [...company.keys()] },
       status: "approved",
       reviewedAt: { gte: new Date(Date.now() - DAYS * 86_400_000) },
     },
@@ -90,7 +96,7 @@ export const changesForErp = async (orgId: string): Promise<ErpChange[]> => {
         field,
         was: formatValue(def, f.previousValue),
         now,
-        evidence: f.evidence,
+        evidence: company.get(f.id)?.evidence ? f.evidence : null,
         what: `${field}: ${now}`,
         reviewedAt: (f.reviewedAt ?? f.createdAt).toISOString(),
       };

@@ -2,7 +2,7 @@ import "server-only";
 
 import { can } from "@repo/auth/permissions";
 import { database } from "@repo/database";
-import { folderCapabilities } from "./access";
+import { folderCapabilities, visibleSourceIds } from "./access";
 import { DEFAULT_FOLDERS, ensureDefaultFolders } from "./folders";
 import { allows } from "./guard";
 import { type DocumentRow, documentRows } from "./rows";
@@ -83,14 +83,16 @@ const childFolders = async (viewer: Viewer, parentId: string | null) => {
       name: true,
       kind: true,
       systemKey: true,
-      _count: {
-        select: {
-          children: true,
-          sources: { where: { deletedAt: null, profile: "document" } },
-        },
+      children: { select: { id: true } },
+      sources: {
+        where: { deletedAt: null, profile: "document" },
+        select: { id: true },
       },
     },
   });
+  // Counts include only what the viewer may see: how many hidden folders
+  // or documents a folder holds isn't theirs to know (security audit L6).
+  const documents = new Set(await visibleSourceIds(viewer));
   return rows
     .filter((f) => sees(f.id))
     .sort(byDefaultThenName)
@@ -99,8 +101,8 @@ const childFolders = async (viewer: Viewer, parentId: string | null) => {
       name: f.name,
       kind: f.kind,
       systemKey: f.systemKey,
-      folders: f._count.children,
-      documents: f._count.sources,
+      folders: f.children.filter((c) => sees(c.id)).length,
+      documents: f.sources.filter((s) => documents.has(s.id)).length,
     }));
 };
 
@@ -142,10 +144,13 @@ export const folderView = async (
       select: { id: true, name: true },
     });
     const byId = new Map(ancestors.map((a) => [a.id, a]));
+    // Folders above that the viewer may not see aren't named (audit L6).
     trail = found.path
       .slice(0, -1)
       .flatMap((id) =>
-        byId.has(id) ? [byId.get(id) as (typeof ancestors)[0]] : []
+        byId.has(id) && access.sees(id)
+          ? [byId.get(id) as (typeof ancestors)[0]]
+          : []
       );
   }
   const [folders, documents] = await Promise.all([
@@ -178,7 +183,10 @@ export const folderChoices = async (viewer: Viewer) => {
     .filter((r) => access.may(r.id, "upload"))
     .map((r) => ({
       id: r.id,
-      label: r.path.map((id) => names.get(id) ?? "…").join(" / "),
+      // A folder above that the viewer may not see shows as "…" (audit L6).
+      label: r.path
+        .map((id) => (access.sees(id) ? (names.get(id) ?? "…") : "…"))
+        .join(" / "),
       path: r.path,
     }))
     .sort((a, b) => a.label.localeCompare(b.label));

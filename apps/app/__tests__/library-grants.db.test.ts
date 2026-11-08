@@ -345,11 +345,21 @@ describe.skipIf(!TEST_DATABASE_URL)(
         // Removing the copy is the deliberate step that restricts it.
         await database.accessGrant.delete({ where: { id: copied.id } });
         expect(await caps(eng, { folderId: folder.drawings })).toBe(0);
+        // Resuming gives access back to more people: it's confirmed first.
         expect(
           await grants.setInheritance(
             owner,
             { folderId: folder.drawings },
             true
+          )
+        ).toMatchObject({ ok: false, confirm: [expect.anything()] });
+        expect(await caps(eng, { folderId: folder.drawings })).toBe(0);
+        expect(
+          await grants.setInheritance(
+            owner,
+            { folderId: folder.drawings },
+            true,
+            { confirmed: true }
           )
         ).toEqual({
           ok: true,

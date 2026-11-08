@@ -64,8 +64,12 @@ const DUE_SQL = `
            row_number() over (
              partition by "orgId" order by coalesce("nextAttemptAt", "createdAt")
            ) as place
-    from "DocumentVersion"
-    where ((status = 'queued' and ("nextAttemptAt" is null or "nextAttemptAt" <= now()))
+    from "DocumentVersion" v
+    where not exists (
+        select 1 from "Source" s where s.id = v."sourceId" and s."deletedAt" is not null
+        and s."deletedBy" is not null
+      )
+      and ((status = 'queued' and ("nextAttemptAt" is null or "nextAttemptAt" <= now()))
        or (status = 'processing' and "leaseUntil" < now())
        or (status = 'failed' and "nextAttemptAt" <= now() and attempts < $1))
       and ($4::text[] is null or "orgId" = any($4))

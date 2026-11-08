@@ -72,9 +72,12 @@ describe("viewer", () => {
     expect(await resolveViewer()).toBe(null);
   });
 
-  test("the owner is the recorded user, whatever their WorkOS role", async () => {
-    session.value = { orgId: "org_1", userId: "user_owner", role: "planner" };
+  test("the owner is the recorded user while an admin (audit L3)", async () => {
+    session.value = { orgId: "org_1", userId: "user_owner", role: "admin" };
     expect((await resolveViewer())?.isOwner).toBe(true);
+    // Removed and invited back with a lesser role: not the owner.
+    session.value = { orgId: "org_1", userId: "user_owner", role: "planner" };
+    expect((await resolveViewer())?.isOwner).toBe(false);
     session.value = { orgId: "org_1", userId: "user_2", role: "admin" };
     expect((await resolveViewer())?.isOwner).toBe(false);
     db.org.findUnique.mockResolvedValue({ ownerUserId: null });

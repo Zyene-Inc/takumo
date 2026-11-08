@@ -7,7 +7,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { DOC_TYPE_LABEL } from "@/lib/knowledge/understand";
+import { visibleSourceIds } from "@/lib/library/access";
 import { libraryEnabled } from "@/lib/library/stage";
+import { resolveViewer } from "@/lib/library/viewer";
 import { Header } from "../components/header";
 import { EmptyState } from "../shop/components/format";
 import { DeleteDocument, ReadAgain, UploadDocuments } from "./upload";
@@ -42,12 +44,14 @@ const understood = (card: CardMeta | undefined) => {
 
 const KnowledgePage = async () => {
   const { orgId, canEditKnowledge, canShareKnowledge } = await getAccess();
-  if (!orgId) {
+  const viewer = await resolveViewer();
+  if (!(orgId && viewer && viewer.orgId === orgId)) {
     notFound();
   }
-  // Documents in the Trash aren't listed.
+  // Documents in the Trash aren't listed, nor any this person may not view.
+  const viewable = await visibleSourceIds(viewer);
   const sources = await forOrg(database, orgId).source.findMany({
-    where: { profile: "document", deletedAt: null },
+    where: { id: { in: viewable }, profile: "document", deletedAt: null },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -65,6 +69,7 @@ const KnowledgePage = async () => {
     (
       await forOrg(database, orgId).docChunk.findMany({
         where: {
+          sourceId: { in: viewable },
           meta: { path: ["kind"], equals: "card" },
           source: { deletedAt: null },
         },

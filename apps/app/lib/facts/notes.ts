@@ -6,6 +6,7 @@ import { database, forOrg } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { z } from "zod";
 import { recordFailedUsage, recordUsage } from "../ai-usage";
+import { viewerForMember } from "../library/viewer";
 import { ATTRIBUTES, SUBJECT_TYPES } from "./attributes";
 import { type FactSource, findSubject, proposeFact } from "./facts";
 
@@ -164,6 +165,11 @@ const readNote = async (
   const db = forOrg(database, orgId);
   const result: NoteResult = { noteId, proposed: [], skipped: [] };
   try {
+    // The note's author sees which facts it proposed: it may only join
+    // pending facts they may see (security audit M4).
+    const author = note.statedBy
+      ? await viewerForMember(orgId, note.statedBy)
+      : null;
     const facts = await extractFacts(orgId, note.text);
     for (const fact of facts) {
       const found = await findSubject(orgId, fact.subjectType, {
@@ -184,6 +190,7 @@ const readNote = async (
         source: note.source ?? (note.kind === "voice" ? "voice" : "note"),
         statedBy: note.statedBy,
         noteId,
+        ...(author ? { viewer: author } : {}),
       });
       if (made.ok) {
         result.proposed.push(made.fact.label);

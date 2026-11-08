@@ -129,6 +129,13 @@ const ACTION_TEXT: Record<AuditAction, string> = {
   folder_rename: "renamed a folder",
   folder_move: "moved a folder",
   folder_delete: "deleted a folder",
+  access_grant: "changed who has access",
+  access_revoke: "removed someone's access",
+  access_inherit: "changed whether it inherits access",
+  folder_confidential: "changed whether a folder is confidential",
+  folder_ai_mode: "changed a folder's AI setting",
+  department_change: "changed a department",
+  fact_publish: "published a fact to the company",
 };
 
 /** An audit entry as a sentence, without technical details. */

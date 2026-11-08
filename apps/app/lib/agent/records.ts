@@ -3,6 +3,7 @@ import "server-only";
 import { database, forOrg } from "@repo/database";
 import { attributeDef, factLabel, formatValue } from "@/lib/facts/attributes";
 import { factsAbout } from "@/lib/facts/facts";
+import type { Viewer } from "@/lib/library/viewer";
 import { latestPlan } from "@/lib/schedule/plan";
 import { cite, type Source } from "./citations";
 
@@ -464,9 +465,12 @@ const getMaterial = async (orgId: string, key: string): Promise<Found> => {
   };
 };
 
-/** Approved knowledge and pending corrections about a part, machine, customer or material. */
-const knowledgeFor = async (orgId: string, type: RecordType, key: string) => {
-  const db = forOrg(database, orgId);
+/**
+ * Approved knowledge and pending corrections about a part, machine,
+ * customer or material: only the facts the viewer may see.
+ */
+const knowledgeFor = async (viewer: Viewer, type: RecordType, key: string) => {
+  const db = forOrg(database, viewer.orgId);
   const where = { equals: key.trim(), mode: "insensitive" as const };
   let subjects: [Parameters<typeof factsAbout>[1], string[]][] = [];
   if (type === "part") {
@@ -502,7 +506,7 @@ const knowledgeFor = async (orgId: string, type: RecordType, key: string) => {
       subjects
         .filter(([, ids]) => ids.length)
         .map(([t, ids]) =>
-          factsAbout(orgId, t, ids).then((f) =>
+          factsAbout(viewer, t, ids).then((f) =>
             f.map((x) => ({ ...x, subjectType: t }))
           )
         )
@@ -529,17 +533,17 @@ const knowledgeFor = async (orgId: string, type: RecordType, key: string) => {
   });
 };
 
-/** A record plus what the shop's people know about it (facts). */
+/** A record plus what the shop's people know about it (facts the viewer may see). */
 export const getRecordWithKnowledge = async (
-  orgId: string,
+  viewer: Viewer,
   type: RecordType,
   key: string
 ): Promise<Found> => {
-  const found = await getRecord(orgId, type, key);
+  const found = await getRecord(viewer.orgId, type, key);
   if ("error" in found) {
     return found;
   }
-  const knowledge = await knowledgeFor(orgId, type, key);
+  const knowledge = await knowledgeFor(viewer, type, key);
   if (knowledge.length === 0) {
     return found;
   }

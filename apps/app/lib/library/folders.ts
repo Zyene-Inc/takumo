@@ -7,6 +7,8 @@ import { audit } from "./audit";
 import { PRESETS } from "./capabilities";
 import { authorizeDocument, authorizeFolder } from "./guard";
 import type { Outcome } from "./lifecycle";
+import { guardMove, modesOf, settleAiAfterMove } from "./moves";
+import { confidentialEnabled } from "./stage";
 import { trustedViewer, type Viewer } from "./viewer";
 
 // Folders of the Company Knowledge Library, and moving documents between
@@ -256,11 +258,19 @@ export const renameFolder = async (
   return { ok: true };
 };
 
-/** Move a folder (and everything in it) under `parentId`, or to the top. */
+/** A move the access rules refuse (moves.ts); its message is for people. */
+class MoveRefused extends Error {}
+
+/**
+ * Move a folder (and everything in it) under `parentId`, or to the top.
+ * It never becomes more visible: see moves.ts. `adopt`: take the
+ * destination's access instead (needs manage on both).
+ */
 export const moveFolder = async (
   viewer: Viewer,
   folderId: string,
-  parentId: string | null
+  parentId: string | null,
+  { adopt = false }: { adopt?: boolean } = {}
 ): Promise<Outcome> => {
   const { orgId, userId } = trustedViewer(viewer);
   const allowed = await authorizeFolder(viewer, folderId, "edit");
@@ -281,17 +291,37 @@ export const moveFolder = async (
   if (allowed.folder.parentId === parentId) {
     return { ok: true };
   }
+  const restricting = await confidentialEnabled(orgId);
   try {
     await database.$transaction(async (tx) => {
+      const target = { folderId };
+      const modes = await modesOf(tx, orgId, target);
+      const refused = await guardMove(tx, viewer, {
+        target,
+        from: allowed.folder.parentId,
+        to: parentId,
+        adopt,
+      });
+      if (refused) {
+        throw new MoveRefused(refused);
+      }
       await tx.folder.update({
         where: { id: folderId },
         data: { parentId },
       });
-      // At the top a folder no longer inherits: it keeps company-wide
-      // access with its own grant.
-      if (!(parentId || (await hasEveryoneGrant(tx, orgId, folderId)))) {
+      // At the top a folder no longer inherits: while the shop restricts
+      // nothing it keeps company-wide access with its own grant (once it
+      // does, guardMove has kept the folder's own access instead).
+      if (
+        !(
+          restricting ||
+          parentId ||
+          (await hasEveryoneGrant(tx, orgId, folderId))
+        )
+      ) {
         await grantCompanyWide(tx, orgId, folderId, userId);
       }
+      await settleAiAfterMove(tx, orgId, target, modes);
       await audit(
         {
           orgId,
@@ -304,6 +334,9 @@ export const moveFolder = async (
       );
     });
   } catch (error) {
+    if (error instanceof MoveRefused) {
+      return { ok: false, status: 403, error: error.message };
+    }
     const problem = treeProblem(error, allowed.folder.name);
     if (problem) {
       return { ok: false, status: 409, error: problem };
@@ -336,6 +369,7 @@ export const deleteFolder = async (
   if (allowed.folder.kind !== "normal") {
     return DEFAULT_FIXED;
   }
+  const restricting = await confidentialEnabled(orgId);
   const deleted = await database.$transaction(async (tx) => {
     // Locks the folder: an upload or new subfolder racing this waits, then
     // fails because the folder is gone.
@@ -350,6 +384,16 @@ export const deleteFolder = async (
     ]);
     if (children > 0 || documents > 0) {
       return false;
+    }
+    // Once access can be restricted, its documents in the Trash can't move
+    // to the top level (company-wide): they'd be seen by more people.
+    if (
+      restricting &&
+      (await tx.source.count({
+        where: { orgId, folderId, deletedAt: { not: null } },
+      })) > 0
+    ) {
+      return "trash" as const;
     }
     await tx.source.updateMany({
       where: { orgId, folderId, deletedAt: { not: null } },
@@ -368,6 +412,14 @@ export const deleteFolder = async (
     );
     return true;
   });
+  if (deleted === "trash") {
+    return {
+      ok: false,
+      status: 409,
+      error:
+        "Documents from this folder are in the Trash. Restore them or delete them permanently first.",
+    };
+  }
   return deleted ? { ok: true } : NOT_EMPTY;
 };
 
@@ -379,7 +431,8 @@ export const deleteFolder = async (
 export const moveDocument = async (
   viewer: Viewer,
   sourceId: string,
-  folderId: string | null
+  folderId: string | null,
+  { adopt = false }: { adopt?: boolean } = {}
 ): Promise<Outcome> => {
   const { orgId, userId } = trustedViewer(viewer);
   const allowed = await authorizeDocument(viewer, sourceId, "edit");
@@ -416,10 +469,22 @@ export const moveDocument = async (
       if (clash) {
         return false;
       }
+      const target = { sourceId };
+      const modes = await modesOf(tx, orgId, target);
+      const refused = await guardMove(tx, viewer, {
+        target,
+        from: source.folderId,
+        to: folderId,
+        adopt,
+      });
+      if (refused) {
+        throw new MoveRefused(refused);
+      }
       await tx.source.update({
         where: { id: sourceId },
         data: { folderId },
       });
+      await settleAiAfterMove(tx, orgId, target, modes);
       await audit(
         {
           orgId,
@@ -442,6 +507,9 @@ export const moveDocument = async (
       };
     }
   } catch (error) {
+    if (error instanceof MoveRefused) {
+      return { ok: false, status: 403, error: error.message };
+    }
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"

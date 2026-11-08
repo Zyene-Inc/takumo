@@ -4,13 +4,11 @@ import { embedMany } from "@repo/ai";
 import { canEmbed, embeddingOptions, models } from "@repo/ai/lib/models";
 import { database } from "@repo/database";
 import { log } from "@repo/observability/log";
-import { chunkPages } from "../knowledge/chunk";
+import { chunkPages, plainSummary } from "../knowledge/chunk";
 import { readDocument } from "../knowledge/read";
 import {
-  type DocumentFact,
   extractedLine,
   type FactTally,
-  type IngestEvent,
   mentionsIn,
   plural,
   proposeOne,
@@ -26,6 +24,14 @@ import {
   understandDocument,
 } from "../knowledge/understand";
 import {
+  documentAiMode,
+  dropIfLowered,
+  localPassages,
+  localUnderstanding,
+  NO_TEXT_AI_OFF,
+  writeIfFull,
+} from "./ai-mode";
+import {
   finishVersion,
   type Lease,
   LeaseLost,
@@ -33,6 +39,17 @@ import {
   saveProgress,
 } from "./lease";
 import { DocumentProblem } from "./problems";
+import {
+  type Checkpoint,
+  checkpointOf,
+  HandOff,
+  loadPages,
+  mayUseAi,
+  type Run,
+  savePages,
+  sourceName,
+  textOf,
+} from "./stage-run";
 import { objectStore } from "./storage";
 
 // The stages of processing one document version (run by process.ts), each
@@ -49,84 +66,21 @@ import { objectStore } from "./storage";
 // version, so a failed new version never hides a working one. Facts are
 // proposed after activation, so nothing from a version that never went live
 // reaches review.
+//
+// The folder's AI setting (ai-mode.ts) is read before every stage that
+// would send the text to an outside AI service, and what comes back is only
+// written while it is still "full" (writeIfFull). With "off" or "search" the
+// document is read, split and indexed locally: no recognising of scans, no
+// understanding, context sentences, vectors or facts.
 
-/** Out of time in this run: save and let another run continue. */
-export class HandOff extends Error {}
-
-interface Checkpoint {
-  facts?: DocumentFact[];
-  factsDone?: number;
-  factsError?: boolean;
-  recognized?: number;
-  tally?: FactTally;
-  understanding?: Understanding;
-}
-
-export interface RunOptions {
-  /** The file, when the run starts right after the upload (saves a download). */
-  bytes?: Uint8Array;
-  /** Stop and hand off at this time (ms since epoch). */
-  deadline?: number;
-  emit?: (event: IngestEvent) => void;
-}
+export { NO_TEXT_AI_OFF } from "./ai-mode";
+export { HandOff, type Run, type RunOptions } from "./stage-run";
 
 const EMBED_BATCH = 64;
 const NO_ORIGINAL =
   "The original file wasn't kept, so it can't be read again. Upload it again.";
 
 const vectorLiteral = (values: number[]) => `[${values.join(",")}]`;
-
-export interface Run {
-  checkTime: () => void;
-  emit: (event: IngestEvent) => void;
-  lease: Lease;
-  options: RunOptions;
-}
-
-const checkpointOf = (lease: Lease) =>
-  (lease.version.checkpoint ?? {}) as Checkpoint;
-
-const sourceName = async (lease: Lease) =>
-  (
-    await database.source.findUniqueOrThrow({
-      where: { id: lease.version.sourceId },
-      select: { name: true },
-    })
-  ).name;
-
-// Pages are saved as they're read; reading again overwrites them.
-const SAVE_PAGES_SQL = `
-  insert into "DocumentPage" ("orgId", "versionId", position, page, text, recognized)
-  select $1, $2, p.position, p.page, p.text, p.recognized
-  from unnest($3::int[], $4::int[], $5::text[], $6::boolean[])
-    as p(position, page, text, recognized)
-  on conflict ("versionId", position) do update
-    set page = excluded.page, text = excluded.text, recognized = excluded.recognized`;
-
-const savePages = async (
-  lease: Lease,
-  pages: { page: number | null; position: number; text: string }[],
-  scanned: Set<number>
-) => {
-  await renewLease(lease);
-  await database.$executeRawUnsafe(
-    SAVE_PAGES_SQL,
-    lease.version.orgId,
-    lease.version.id,
-    pages.map((p) => p.position),
-    pages.map((p) => p.page),
-    // Postgres can't store NUL characters in text.
-    pages.map((p) => p.text.replaceAll("\u0000", "")),
-    pages.map((p) => p.page !== null && scanned.has(p.page))
-  );
-};
-
-const loadPages = (lease: Lease) =>
-  database.documentPage.findMany({
-    where: { versionId: lease.version.id, orgId: lease.version.orgId },
-    orderBy: { position: "asc" },
-    select: { page: true, text: true, recognized: true },
-  });
 
 /** Stage "read": the file's text, page by page, saved as it's read. */
 export const read = async ({ lease, emit, options, checkTime }: Run) => {
@@ -149,14 +103,21 @@ export const read = async ({ lease, emit, options, checkTime }: Run) => {
   const scanned = new Set(known.keys());
   const resumable = Boolean(version.storageKey && objectStore());
   emit({ type: "step", text: `Reading ${version.name}` });
+  const mayRecognize = await mayUseAi(lease);
   const result = await readDocument(version.orgId, version.name, bytes, {
     known,
+    recognize: mayRecognize,
     onProgress: (done, total) =>
       emit({
         type: "step",
         text: `Recognising text: page ${done} of ${total}`,
       }),
     onRecognized: async (pages) => {
+      // AI turned off meanwhile: keep nothing it read, and start again
+      // without it.
+      if (!(await mayUseAi(lease))) {
+        throw new HandOff();
+      }
       for (const p of pages) {
         scanned.add(p.page ?? 1);
       }
@@ -179,38 +140,55 @@ export const read = async ({ lease, emit, options, checkTime }: Run) => {
   await saveProgress(lease, {
     stage: "understand",
     pageCount: result.pages.length,
-    checkpoint: { recognized: result.recognized },
+    checkpoint: { recognized: result.recognized, unread: result.unread ?? 0 },
   });
+  if (result.unread) {
+    emit({
+      type: "step",
+      text: `Left ${plural(result.unread, "scanned page")} unread: AI processing is off for this folder`,
+    });
+  }
 };
-
-const textOf = (pages: { text: string }[]) =>
-  pages
-    .map((p) => p.text)
-    .join("\n\n")
-    .trim();
 
 /** Stage "understand": what the document is and which records it's about. */
 export const understand = async ({ lease, emit }: Run) => {
   const pages = await loadPages(lease);
   const text = textOf(pages);
   if (!text) {
-    throw new DocumentProblem("No text found in that file.", {
-      permanent: true,
-    });
+    throw new DocumentProblem(
+      checkpointOf(lease).unread
+        ? NO_TEXT_AI_OFF
+        : "No text found in that file.",
+      { permanent: true }
+    );
   }
   emit({
     type: "step",
     text: extractedLine(pages.length, checkpointOf(lease).recognized ?? 0),
   });
   const name = await sourceName(lease);
-  const shop = await loadCatalog(lease.version.orgId);
-  const understanding = await understandDocument(
-    lease.version.orgId,
-    name,
-    text,
-    shop
-  );
-  reportUnderstanding(emit, understanding);
+  let understanding: Understanding;
+  if (await mayUseAi(lease)) {
+    const shop = await loadCatalog(lease.version.orgId);
+    understanding = await understandDocument(
+      lease.version.orgId,
+      name,
+      text,
+      shop
+    );
+    // Lowered while the AI service was answering: keep nothing it said
+    // (security audit M2).
+    if (!(await mayUseAi(lease))) {
+      understanding = localUnderstanding(name, text);
+    }
+    reportUnderstanding(emit, understanding);
+  } else {
+    understanding = localUnderstanding(name, text);
+    emit({
+      type: "step",
+      text: "AI processing is off for this folder: indexed for keyword search only",
+    });
+  }
   await saveProgress(lease, {
     stage: "chunk",
     checkpoint: { ...checkpointOf(lease), understanding },
@@ -222,12 +200,14 @@ export const chunk = async ({ lease, emit }: Run) => {
   const { version } = lease;
   const pages = await loadPages(lease);
   const text = textOf(pages);
-  const understanding = checkpointOf(lease).understanding;
-  if (!understanding) {
-    throw new Error("Chunking before the document was understood");
-  }
-  const { card, linked, unmatched } = understanding;
   const name = await sourceName(lease);
+  const full = await mayUseAi(lease);
+  const understood = checkpointOf(lease).understanding;
+  // What AI understood is only used while the setting still allows it, and
+  // lowering it clears it from the checkpoint (ai-mode.ts).
+  const understanding =
+    full && understood ? understood : localUnderstanding(name, text);
+  const { card, linked, unmatched } = understanding;
   const chunks = chunkPages(pages);
   const tables = chunks.filter((c) => c.content.includes("| --- |")).length;
   emit({
@@ -236,11 +216,19 @@ export const chunk = async ({ lease, emit }: Run) => {
       tables ? ` (${plural(tables, "table")} kept whole)` : ""
     }`,
   });
-  const contexts = await contextualize(
-    version.orgId,
-    { name, summary: card.summary, text },
-    chunks.map((c) => c.content)
-  );
+  let contexts: string[] = full
+    ? await contextualize(
+        version.orgId,
+        { name, summary: card.summary, text },
+        chunks.map((c) => c.content),
+        () => mayUseAi(lease)
+      )
+    : [];
+  // Lowered meanwhile: no context sentence from the AI service is kept
+  // (security audit M2).
+  if (full && !(await mayUseAi(lease))) {
+    contexts = [];
+  }
   const withContext = contexts.filter(Boolean).length;
   if (withContext) {
     emit({
@@ -286,8 +274,8 @@ export const chunk = async ({ lease, emit }: Run) => {
     })),
   ];
   await renewLease(lease);
-  await database.docChunk.createMany({
-    data: rows.map((r, ordinal) => ({
+  const data = (list: typeof rows) =>
+    list.map((r, ordinal) => ({
       orgId: version.orgId,
       sourceId: version.sourceId,
       versionId: version.id,
@@ -295,9 +283,19 @@ export const chunk = async ({ lease, emit }: Run) => {
       content: r.content.replaceAll("\u0000", ""),
       page: r.page,
       meta: r.meta,
-    })),
-    skipDuplicates: true,
-  });
+    }));
+  const wroteAi =
+    full &&
+    (await writeIfFull(version.orgId, version.sourceId, (tx) =>
+      tx.docChunk.createMany({ data: data(rows), skipDuplicates: true })
+    ));
+  if (!wroteAi) {
+    // AI off (or turned off while it ran): a plain card and the passages.
+    await database.docChunk.createMany({
+      data: data(localPassages(name, chunks) as typeof rows),
+      skipDuplicates: true,
+    });
+  }
   await saveProgress(lease, { stage: "embed" });
 };
 
@@ -313,7 +311,8 @@ const SET_EMBEDDINGS_SQL = `
  * Without an embedding model, keywords alone are used, as before.
  */
 export const embed = async ({ lease, checkTime }: Run) => {
-  if (canEmbed) {
+  const { orgId, sourceId } = lease.version;
+  if (canEmbed && (await mayUseAi(lease))) {
     for (;;) {
       // Vectors are an Unsupported column in Prisma: find the passages
       // still without one in SQL.
@@ -331,6 +330,10 @@ export const embed = async ({ lease, checkTime }: Run) => {
         orderBy: { ordinal: "asc" },
         select: { id: true, content: true, meta: true },
       });
+      // Checked before every batch: nothing more is sent once it's lowered.
+      if (!(await mayUseAi(lease))) {
+        break;
+      }
       const { embeddings } = await embedMany({
         model: models.embeddings,
         // The context sentence goes into the vector too.
@@ -341,12 +344,17 @@ export const embed = async ({ lease, checkTime }: Run) => {
         ...embeddingOptions("document"),
       });
       await renewLease(lease);
-      await database.$executeRawUnsafe(
-        SET_EMBEDDINGS_SQL,
-        batch.map((c) => c.id),
-        embeddings.map(vectorLiteral),
-        lease.version.id
+      const wrote = await writeIfFull(orgId, sourceId, (tx) =>
+        tx.$executeRawUnsafe(
+          SET_EMBEDDINGS_SQL,
+          batch.map((c) => c.id),
+          embeddings.map(vectorLiteral),
+          lease.version.id
+        )
       );
+      if (!wrote) {
+        break;
+      }
       checkTime();
     }
   }
@@ -365,7 +373,8 @@ const LOCK_SOURCE_SQL = `
 /** Stage "activate": make this version the document's current one, atomically. */
 export const activate = async ({ lease, emit }: Run) => {
   const { version } = lease;
-  const summary = checkpointOf(lease).understanding?.card.summary ?? null;
+  const understood = checkpointOf(lease).understanding?.card.summary ?? null;
+  const pageText = textOf(await loadPages(lease));
   const outcome = await database.$transaction(async (tx) => {
     const [source] = await tx.$queryRawUnsafe<
       { currentNumber: number | null; currentVersionId: string | null }[]
@@ -375,6 +384,11 @@ export const activate = async ({ lease, emit }: Run) => {
         permanent: true,
       });
     }
+    // The summary AI wrote only while the setting allows it (the row is
+    // locked, so this is the setting in force).
+    const full =
+      (await documentAiMode(version.orgId, version.sourceId, tx)) === "full";
+    const summary = full ? understood : plainSummary(pageText);
     const held = await tx.documentVersion.updateMany({
       where: { id: version.id, leaseOwner: lease.token, status: "processing" },
       data: { activatedAt: new Date(), stage: "facts" },
@@ -433,6 +447,36 @@ export const activate = async ({ lease, emit }: Run) => {
 };
 
 /**
+ * Read the facts the document states, once, into the checkpoint. Lowered
+ * while reading (security audit M2): nothing read is kept. A failure is
+ * recorded, not thrown; a hand-off (Trash) passes through.
+ */
+const readFactsOnce = async (
+  lease: Lease,
+  checkpoint: Checkpoint,
+  emit: Run["emit"]
+): Promise<Checkpoint> => {
+  try {
+    const text = textOf(await loadPages(lease));
+    const read = await readDocumentFacts(lease.version.orgId, text, () =>
+      mayUseAi(lease)
+    );
+    return read && (await mayUseAi(lease))
+      ? { ...checkpoint, facts: read, factsDone: 0 }
+      : { ...checkpoint, facts: [], factsDone: 0 };
+  } catch (error) {
+    if (error instanceof HandOff) {
+      throw error;
+    }
+    log.warn("Reading facts from a document failed", {
+      error: String(error),
+    });
+    emit({ type: "step", text: "Couldn't read facts from it this time" });
+    return { ...checkpoint, factsError: true };
+  }
+};
+
+/**
  * Stage "facts": read the facts the document states and propose them for
  * review, saving after each so none is proposed twice. A failure here
  * doesn't undo the document, as before: it's live, and facts can be read
@@ -456,28 +500,22 @@ export const facts = async ({ lease, emit, checkTime }: Run) => {
     confirmed: 0,
     skipped: 0,
   };
+  // Facts are read by an AI service: only while the setting allows it.
+  const full = await mayUseAi(lease);
   // A newer version went live meanwhile: its own facts are what count.
-  if (current && !checkpoint.facts && !checkpoint.factsError) {
-    try {
-      const text = textOf(await loadPages(lease));
-      checkpoint = {
-        ...checkpoint,
-        facts: await readDocumentFacts(version.orgId, text),
-        factsDone: 0,
-      };
-    } catch (error) {
-      log.warn("Reading facts from a document failed", {
-        error: String(error),
-      });
-      emit({ type: "step", text: "Couldn't read facts from it this time" });
-      checkpoint = { ...checkpoint, factsError: true };
-    }
+  if (current && full && !checkpoint.facts && !checkpoint.factsError) {
+    checkpoint = await readFactsOnce(lease, checkpoint, emit);
     await saveProgress(lease, { stage: "facts", checkpoint });
   }
-  const found = current ? (checkpoint.facts ?? []) : [];
+  const found = current && full ? (checkpoint.facts ?? []) : [];
   for (let i = checkpoint.factsDone ?? 0; i < found.length; i += 1) {
-    // A run that lost its lease proposes nothing more.
+    // A run that lost its lease proposes nothing more, nor one whose
+    // folder's AI setting was lowered meanwhile (any fact that slips
+    // through stays hidden: library.fact_access needs "full").
     await renewLease(lease);
+    if (!(await mayUseAi(lease))) {
+      break;
+    }
     await proposeOne(
       version.orgId,
       version.uploadedBy,
@@ -489,19 +527,26 @@ export const facts = async ({ lease, emit, checkTime }: Run) => {
       found[i],
       tally
     );
+    // Lowered while it was being proposed: lowering may have missed it, so
+    // it's dropped here (security audit L1).
+    if (await dropIfLowered(version.orgId, version.sourceId)) {
+      break;
+    }
     checkpoint = { ...checkpoint, factsDone: i + 1, tally };
     await saveProgress(lease, { stage: "facts", checkpoint });
     checkTime();
   }
-  reportFacts(emit, tally);
-  const linked = checkpoint.understanding?.linked ?? [];
+  const linked = full ? (checkpoint.understanding?.linked ?? []) : [];
   const name = current?.name ?? version.name;
-  emit({
-    type: "step",
-    text: linked.length
-      ? `Updated Brain: ${name} → ${plural(linked.length, "record")}`
-      : "Updated Brain",
-  });
+  if (full) {
+    reportFacts(emit, tally);
+    emit({
+      type: "step",
+      text: linked.length
+        ? `Updated Brain: ${name} → ${plural(linked.length, "record")}`
+        : "Updated Brain",
+    });
+  }
   await finishVersion(
     lease,
     "ready",

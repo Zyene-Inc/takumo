@@ -9,6 +9,8 @@ import type {
   QuoteResponse,
 } from "@repo/engine-client";
 import { recordFailedUsage, recordUsage } from "../ai-usage";
+import { visibleFactIds } from "../library/ai-access";
+import { systemViewer } from "../library/viewer";
 import { isoDay } from "../schedule/request";
 import { actualJobs, type loadQuoteHistory, num } from "./estimate-engine";
 import {
@@ -99,6 +101,8 @@ export const routingFacts = async (
   const facts = ops.length
     ? await db.fact.findMany({
         where: {
+          // Estimates cite only facts everyone in the shop may see.
+          id: { in: await visibleFactIds(systemViewer(orgId)) },
           subjectType: "routing",
           subjectId: { in: ops.map((o) => o.id) },
           status: "approved",

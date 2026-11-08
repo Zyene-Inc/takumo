@@ -132,12 +132,9 @@ export const fileLink = async (
   sourceId: string,
   request: FileRequest
 ): Promise<Outcome<{ url: string }>> => {
-  const found = await locate(
-    viewer,
-    sourceId,
-    request.download ? "download" : "view",
-    request.version
-  );
+  // Opening the original file hands over its bytes: that's downloading,
+  // whether or not the browser saves it (security audit L2).
+  const found = await locate(viewer, sourceId, "download", request.version);
   if (!found.ok) {
     return found;
   }
@@ -164,7 +161,8 @@ export const previewFile = async (
   viewer: Viewer,
   sourceId: string
 ): Promise<Outcome<{ bytes: Uint8Array; mimeType: string; name: string }>> => {
-  const found = await locate(viewer, sourceId, "view", undefined);
+  // The preview is the file itself, so it needs download too (audit L2).
+  const found = await locate(viewer, sourceId, "download", undefined);
   if (!found.ok) {
     return found;
   }

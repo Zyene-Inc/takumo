@@ -30,6 +30,8 @@ vi.mock("@repo/email/keys", () => ({
 }));
 vi.mock("@repo/auth/server", () => ({
   withAuth: async () => ({ user: null }),
+  // The same memberships, as the Knowledge Hub's viewers read them.
+  shopRole: async (userId: string) => roles.get(userId) ?? null,
   getWorkOS: () => ({
     userManagement: {
       listOrganizationMemberships: async ({ userId }: { userId: string }) => ({

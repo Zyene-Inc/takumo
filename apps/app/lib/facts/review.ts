@@ -3,6 +3,7 @@
 import "server-only";
 
 import { database, forOrg, Prisma } from "@repo/database";
+import { trustedViewer, type Viewer } from "../library/viewer";
 import {
   attributeDef,
   changesModel,
@@ -11,6 +12,20 @@ import {
   parseValue,
 } from "./attributes";
 import { currentValue, type Result } from "./subjects";
+import {
+  companyVisible,
+  markPublished,
+  NO_FACT,
+  publishProblem,
+  visibleFact,
+} from "./visibility";
+
+/**
+ * A restricted fact that would change a company record: approving it would
+ * show its value to everyone, so it has to be published at the same time.
+ */
+export const NEEDS_PUBLISHING =
+  "This fact comes from documents not everyone may open. Approving it changes a record everyone sees, so it must be published to the company at the same time.";
 
 export type Tx = Prisma.TransactionClient;
 
@@ -111,20 +126,26 @@ export const applyValue = async (
 };
 
 /**
- * Approve a pending fact (optionally with a corrected value). A model
- * parameter is written to its record; the fact it replaces is kept as
+ * Approve a pending fact the reviewer may see (optionally with a corrected
+ * value). A model parameter is written to its record, which everyone sees:
+ * the fact becomes company knowledge (published). A restricted fact can
+ * only do that with `publish` from someone who may publish it; a restricted
+ * note stays restricted when approved. The fact it replaces is kept as
  * superseded, so the history stays.
  */
 export const approveFact = async (
-  orgId: string,
+  viewer: Viewer,
   factId: string,
-  reviewer: string,
-  options: { value?: unknown; note?: string | null } = {}
+  options: { value?: unknown; note?: string | null; publish?: boolean } = {}
 ): Promise<Result<{ label: string }>> => {
-  const db = forOrg(database, orgId);
-  const fact = await db.fact.findFirst({ where: { id: factId } });
+  const { orgId, userId } = trustedViewer(viewer);
+  if (!userId) {
+    return { ok: false, error: "Only a person can review facts." };
+  }
+  const reviewer = userId;
+  const fact = await visibleFact(viewer, factId);
   if (!fact) {
-    return { ok: false, error: "That fact no longer exists." };
+    return { ok: false, error: NO_FACT };
   }
   if (fact.status !== "pending") {
     return {
@@ -143,6 +164,20 @@ export const approveFact = async (
       return parsed;
     }
     value = parsed.value;
+  }
+  // Writing the value into a record shows it to everyone.
+  const publishes =
+    changesModel(fact.attribute) &&
+    !fact.publishedAt &&
+    !(await companyVisible(orgId, fact.id));
+  if (publishes) {
+    if (!options.publish) {
+      return { ok: false, error: NEEDS_PUBLISHING };
+    }
+    const problem = await publishProblem(viewer, fact);
+    if (problem) {
+      return { ok: false, error: problem };
+    }
   }
   const previous = await currentValue(
     orgId,
@@ -196,8 +231,17 @@ export const approveFact = async (
           reviewedAt: now,
           reviewNote: options.note?.trim() || null,
           validFrom: now,
+          // In a record everyone sees: company knowledge from now on, whatever
+          // happens to the documents it came from (their quotes stay hidden
+          // from those who can't open them).
+          ...(changesModel(fact.attribute) && !fact.publishedAt
+            ? { publishedAt: now, publishedBy: reviewer }
+            : {}),
         },
       });
+      if (publishes) {
+        await markPublished(tx, viewer, fact, "approve_and_publish");
+      }
     });
   } catch (error) {
     return {
@@ -209,16 +253,21 @@ export const approveFact = async (
   return { ok: true, label: factLabel(fact.number) };
 };
 
+/** Reject a pending fact the reviewer may see. */
 export const rejectFact = async (
-  orgId: string,
+  viewer: Viewer,
   factId: string,
-  reviewer: string,
   note: string | null
 ): Promise<Result<{ label: string }>> => {
+  const { orgId, userId } = trustedViewer(viewer);
+  if (!userId) {
+    return { ok: false, error: "Only a person can review facts." };
+  }
+  const reviewer = userId;
   const db = forOrg(database, orgId);
-  const fact = await db.fact.findFirst({ where: { id: factId } });
+  const fact = await visibleFact(viewer, factId);
   if (!fact) {
-    return { ok: false, error: "That fact no longer exists." };
+    return { ok: false, error: NO_FACT };
   }
   if (fact.status !== "pending") {
     return {

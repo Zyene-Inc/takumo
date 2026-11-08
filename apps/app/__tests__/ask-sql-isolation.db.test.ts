@@ -38,7 +38,9 @@ vi.mock("@repo/observability/log", () => {
   return { log: { info: keep, warn: keep, error: keep, debug: keep } };
 });
 vi.mock("@repo/auth/server", () => ({
-  auth: async () => ({ orgId: seen.orgId, userId: seen.userId }),
+  auth: async () => ({ orgId: seen.orgId, userId: seen.userId, role: "admin" }),
+  shopRole: async (userId: string, orgId: string) =>
+    userId === seen.userId && orgId === seen.orgId ? "admin" : null,
   listShopMembers: async () => [
     {
       id: "m1",
@@ -304,7 +306,17 @@ describe.skipIf(!(ADMIN && READER))("Ask Takumo's SQL across shops", () => {
     const raw = new TextEncoder().encode(
       `From: Pat <pat@shop-a.example>\r\nTo: ask@x\r\nSubject: Machines\r\nMessage-ID: <m-${randomUUID()}@shop-a.example>\r\nContent-Type: text/plain\r\n\r\nWhich machines and customers are there?\r\n`
     );
-    await processAsk(shopA, randomUUID(), raw);
+    // As receiveMessage stores it: the sender checked when the mail arrived.
+    const message = await db.database.inboundMessage.create({
+      data: {
+        orgId: shopA,
+        kind: "ask",
+        sha256: randomUUID(),
+        fromAddress: "pat@shop-a.example",
+        subject: "Machines",
+      },
+    });
+    await processAsk(shopA, message.id, raw);
   };
 
   describe("switched on, after the migration", () => {

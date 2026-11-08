@@ -181,6 +181,10 @@ const data = {
           url: "/settings/team",
         },
         {
+          title: "Departments",
+          url: "/settings/departments",
+        },
+        {
           title: "Integrations",
           url: "/settings/integrations",
         },

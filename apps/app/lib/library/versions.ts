@@ -11,6 +11,7 @@ import {
   nameLock,
 } from "../knowledge/documents";
 import { audit } from "./audit";
+import { PRESETS } from "./capabilities";
 import { sha256Hex } from "./files";
 import { DocumentProblem, OriginalNotStoredError } from "./problems";
 import { objectStore, originalKey } from "./storage";
@@ -106,22 +107,45 @@ export const createDocument = async (
   file: IncomingFile,
   via: "upload" | "email",
   /** Checked by the caller (the viewer may add documents to it); null: the top. */
-  folderId: string | null = null
+  folderId: string | null = null,
+  {
+    hidden = false,
+  }: {
+    /**
+     * The uploader can't see the folder's documents (a drop box such as
+     * Receipts): the file is always stored as "Name (tag)", a random tag,
+     * so whether the name was taken is never revealed (security audit L5),
+     * and the uploader may view their own file.
+     */
+    hidden?: boolean;
+  } = {}
 ): Promise<NewVersion> => {
-  const name = cleanName(file.name);
+  let name = cleanName(file.name);
   const sha256 = sha256Hex(file.bytes);
   const sourceId = crypto.randomUUID();
   const versionId = crypto.randomUUID();
   const key = objectStore() ? originalKey(orgId, sourceId, 1, sha256) : null;
   try {
     await database.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(LOCK_NAME_SQL, nameLock(orgId, name));
-      const taken = await tx.source.findFirst({
-        where: { orgId, name, folderId, deletedAt: null, ...DOCUMENT },
-        select: { id: true },
-      });
-      if (taken) {
-        throw new DocumentExistsError(name);
+      const base = name;
+      const tagged = () =>
+        `${base.slice(0, 150)} (${crypto.randomUUID().slice(0, 6)})`;
+      if (hidden) {
+        name = tagged();
+      }
+      for (;;) {
+        await tx.$executeRawUnsafe(LOCK_NAME_SQL, nameLock(orgId, name));
+        const taken = await tx.source.findFirst({
+          where: { orgId, name, folderId, deletedAt: null, ...DOCUMENT },
+          select: { id: true },
+        });
+        if (!taken) {
+          break;
+        }
+        if (!hidden) {
+          throw new DocumentExistsError(name);
+        }
+        name = tagged();
       }
       await tx.source.create({
         data: {
@@ -149,6 +173,18 @@ export const createDocument = async (
           uploadedBy: userId,
         },
       });
+      if (hidden && userId) {
+        await tx.accessGrant.create({
+          data: {
+            orgId,
+            sourceId,
+            principalType: "user",
+            principalId: userId,
+            capabilities: PRESETS.viewer,
+            grantedBy: userId,
+          },
+        });
+      }
     });
   } catch (error) {
     // The unique index caught a clash the lock didn't (another path).

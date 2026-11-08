@@ -12,6 +12,9 @@ const CONFIDENTIAL_READY = false;
 
 export const NOT_YET = "Restricting who can see documents isn't available yet.";
 
+/** Whether restricted access may be turned on at all (the switch above). */
+export const restrictedAccessReady = () => CONFIDENTIAL_READY;
+
 /**
  * Whether the shop uses the Company Knowledge Library (/library): its
  * libraryStage is "library" (or "confidential", which can't be reached yet).

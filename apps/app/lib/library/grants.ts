@@ -1,7 +1,8 @@
 import "server-only";
 
-import { database, forOrg } from "@repo/database";
+import { database, forOrg, type Prisma } from "@repo/database";
 import { type Access, requireCapability, type Target } from "./access";
+import { audit } from "./audit";
 import {
   CAPABILITY,
   capabilitiesProblem,
@@ -21,6 +22,12 @@ export type Principal =
   | { type: "role" | "department" | "user"; id: string };
 
 type Result = { ok: true } | { ok: false; error: string };
+
+/** Where an access change is recorded in the audit log. */
+const auditTarget = (target: Target) =>
+  "folderId" in target
+    ? { folderId: target.folderId }
+    : { sourceId: target.sourceId };
 
 const NOT_FOUND = "That folder or document isn't there any more.";
 const NOT_MANAGER = "Only someone who manages it can change who has access.";
@@ -139,6 +146,17 @@ export const grantAccess = async (
     },
     update: { capabilities, grantedBy: viewer.userId },
   });
+  await audit({
+    orgId: viewer.orgId,
+    actorId: viewer.userId,
+    action: "access_grant",
+    ...auditTarget(target),
+    detail: {
+      principal: principal.type,
+      id: principalId(principal),
+      capabilities,
+    },
+  });
   return { ok: true };
 };
 
@@ -173,9 +191,18 @@ export const revokeAccess = async (
       error: "You can only remove access you have yourself.",
     };
   }
-  await forOrg(database, viewer.orgId).accessGrant.deleteMany({
+  const removed = await forOrg(database, viewer.orgId).accessGrant.deleteMany({
     where: { id: grantId },
   });
+  if (removed.count > 0) {
+    await audit({
+      orgId: viewer.orgId,
+      actorId: viewer.userId,
+      action: "access_revoke",
+      ...auditTarget(target),
+      detail: { capabilities: grant.capabilities },
+    });
+  }
   return { ok: true };
 };
 
@@ -187,7 +214,7 @@ const LEGACY_DOCUMENT_GRANT = {
   capabilities: PRESETS.viewer,
 };
 
-interface ChainGrant {
+export interface ChainGrant {
   capabilities: number;
   principal_id: string;
   principal_type: string;
@@ -213,13 +240,16 @@ const lockedParent = async (tx: RawTx, orgId: string, target: Target) => {
   return row?.parent ?? null;
 };
 
-/** What `target` inherits now, one row per principal. */
-const inheritedGrants = async (
+/**
+ * What an item would inherit with `parent` above it (null: top level), one
+ * row per principal.
+ */
+export const grantsUnder = (
   tx: RawTx,
   orgId: string,
-  target: Target
+  parent: string | null,
+  isDocument: boolean
 ): Promise<ChainGrant[]> => {
-  const parent = await lockedParent(tx, orgId, target);
   if (parent) {
     return tx.$queryRawUnsafe<ChainGrant[]>(
       "select * from library.chain_grants($1, $2)",
@@ -229,56 +259,181 @@ const inheritedGrants = async (
   }
   // A top-level folder inherits nothing; a document outside any folder
   // inherits the shop-wide reading every such document has had.
-  return "sourceId" in target ? [LEGACY_DOCUMENT_GRANT] : [];
+  return Promise.resolve(isDocument ? [LEGACY_DOCUMENT_GRANT] : []);
 };
+
+/**
+ * What `target` inherits now, one row per principal (its row locked). A
+ * confidential folder inherits nothing (library.folder_grants, audit H1).
+ */
+const inheritedGrants = async (
+  tx: RawTx,
+  orgId: string,
+  target: Target
+): Promise<ChainGrant[]> => {
+  const parent = await lockedParent(tx, orgId, target);
+  if ("folderId" in target) {
+    const [own] = await tx.$queryRawUnsafe<{ confidential: boolean }[]>(
+      `select confidential from "Folder" where id = $1 and "orgId" = $2`,
+      target.folderId,
+      orgId
+    );
+    if (own?.confidential) {
+      return [];
+    }
+  }
+  return grantsUnder(tx, orgId, parent, "sourceId" in target);
+};
+
+/** The same grants, as "principal → capabilities". */
+export const grantKey = (grants: ChainGrant[]) =>
+  grants
+    .map((g) => `${g.principal_type}:${g.principal_id}=${g.capabilities}`)
+    .sort()
+    .join("|");
+
+/**
+ * Stop `target` inheriting, copying `grants` (what it inherited) onto it
+ * first, so nobody loses access by surprise. Inside the caller's
+ * transaction.
+ */
+export const freezeAccess = async (
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  target: Target,
+  grants: ChainGrant[],
+  grantedBy: string | null
+) => {
+  for (const g of grants) {
+    const principal = { type: g.principal_type, id: g.principal_id };
+    const where = targetWhere(target, principal as Principal);
+    const existing = await tx.accessGrant.findUnique({
+      where,
+      select: { capabilities: true },
+    });
+    await tx.accessGrant.upsert({
+      where,
+      create: {
+        orgId,
+        ...target,
+        principalType: g.principal_type,
+        principalId: g.principal_id,
+        capabilities: g.capabilities,
+        grantedBy,
+      },
+      update: {
+        capabilities: combine(existing?.capabilities ?? 0, g.capabilities),
+      },
+    });
+  }
+  if ("folderId" in target) {
+    await tx.folder.updateMany({
+      where: { id: target.folderId, orgId },
+      data: { inheritAccess: false },
+    });
+  } else {
+    await tx.source.updateMany({
+      where: { id: target.sourceId, orgId },
+      data: { inheritAccess: false },
+    });
+  }
+};
+
+/** Who would gain access if `target` inherited from the folder above again. */
+export const inheritanceGain = async (
+  viewer: Viewer,
+  target: Target
+): Promise<ChainGrant[]> => {
+  const { orgId } = trustedViewer(viewer);
+  const [own, above] = await Promise.all([
+    database.accessGrant.findMany({
+      where: { orgId, ...target },
+      select: { principalType: true, principalId: true, capabilities: true },
+    }),
+    database.$transaction((tx) => inheritedGrants(tx, orgId, target)),
+  ]);
+  const held = new Map(
+    own.map((g) => [`${g.principalType}:${g.principalId}`, g.capabilities])
+  );
+  return above.filter(
+    (g) =>
+      !covers(
+        held.get(`${g.principal_type}:${g.principal_id}`) ?? 0,
+        g.capabilities
+      )
+  );
+};
+
+export type InheritanceResult =
+  | Result
+  /** Resuming would give access to more people: ask first (UI), then confirm. */
+  | { ok: false; confirm: ChainGrant[]; error: string };
 
 /**
  * Stop or resume inheriting access from the folder above. Stopping first
  * copies what it inherits onto it, so nobody loses access by surprise;
  * removing those grants afterwards is a deliberate, separate step.
+ * Resuming can give more people access: it needs `confirmed` when it does,
+ * and someone other than the owner can only pass on access they hold.
  */
 export const setInheritance = async (
   viewer: Viewer,
   target: Target,
-  inherit: boolean
-): Promise<Result> => {
+  inherit: boolean,
+  { confirmed = false }: { confirmed?: boolean } = {}
+): Promise<InheritanceResult> => {
   const check = await managing(viewer, target);
   if (!check.ok) {
     return check;
   }
-  await forOrg(database, viewer.orgId).$transaction(async (tx) => {
+  if (inherit) {
+    const gain = await inheritanceGain(viewer, target);
+    if (
+      !viewer.isOwner &&
+      gain.some((g) => !covers(check.access.capabilities, g.capabilities))
+    ) {
+      return {
+        ok: false,
+        error: "You can only give access you have yourself.",
+      };
+    }
+    if (gain.length > 0 && !confirmed) {
+      return {
+        ok: false,
+        confirm: gain,
+        error: "This gives more people access. Confirm to go ahead.",
+      };
+    }
+  }
+  await database.$transaction(async (tx) => {
+    await audit(
+      {
+        orgId: viewer.orgId,
+        actorId: viewer.userId,
+        action: "access_inherit",
+        ...auditTarget(target),
+        detail: { inherit },
+      },
+      tx
+    );
     if (!inherit) {
-      for (const g of await inheritedGrants(tx, viewer.orgId, target)) {
-        const principal = { type: g.principal_type, id: g.principal_id };
-        const where = targetWhere(target, principal as Principal);
-        const existing = await tx.accessGrant.findUnique({
-          where,
-          select: { capabilities: true },
-        });
-        await tx.accessGrant.upsert({
-          where,
-          create: {
-            orgId: viewer.orgId,
-            ...target,
-            principalType: g.principal_type,
-            principalId: g.principal_id,
-            capabilities: g.capabilities,
-            grantedBy: viewer.userId,
-          },
-          update: {
-            capabilities: combine(existing?.capabilities ?? 0, g.capabilities),
-          },
-        });
-      }
+      await freezeAccess(
+        tx,
+        viewer.orgId,
+        target,
+        await inheritedGrants(tx, viewer.orgId, target),
+        viewer.userId
+      );
+      return;
     }
     if ("folderId" in target) {
       await tx.folder.updateMany({
-        where: { id: target.folderId },
+        where: { id: target.folderId, orgId: viewer.orgId },
         data: { inheritAccess: inherit },
       });
     } else {
       await tx.source.updateMany({
-        where: { id: target.sourceId },
+        where: { id: target.sourceId, orgId: viewer.orgId },
         data: { inheritAccess: inherit },
       });
     }
@@ -305,9 +460,34 @@ export const setConfidential = async (
   if (!check.ok) {
     return check;
   }
-  await forOrg(database, viewer.orgId).folder.updateMany({
-    where: { id: folderId },
-    data: { confidential },
+  await database.$transaction(async (tx) => {
+    if (confidential) {
+      // A confidential folder stops inheriting (library.folder_grants, audit
+      // H1). Copy what it inherits now onto it first, so the people who can
+      // open it today still can, visibly, and grants given later on the
+      // folders above never reach it.
+      await freezeAccess(
+        tx,
+        viewer.orgId,
+        { folderId },
+        await inheritedGrants(tx, viewer.orgId, { folderId }),
+        viewer.userId
+      );
+    }
+    await tx.folder.updateMany({
+      where: { id: folderId, orgId: viewer.orgId },
+      data: { confidential },
+    });
+    await audit(
+      {
+        orgId: viewer.orgId,
+        actorId: viewer.userId,
+        action: "folder_confidential",
+        folderId,
+        detail: { confidential },
+      },
+      tx
+    );
   });
   return { ok: true };
 };

@@ -5,6 +5,7 @@ import { DocumentExistsError, documentNamed } from "@/lib/knowledge/documents";
 import { ingestDocument } from "@/lib/knowledge/ingest";
 import { streamSteps } from "@/lib/knowledge/stream";
 import { fileFrom } from "@/lib/knowledge/upload-file";
+import { requireCapability } from "@/lib/library/access";
 import { checkDocumentFile } from "@/lib/library/files";
 import { authorizeDocument, authorizeFolder } from "@/lib/library/guard";
 import { libraryEnabled } from "@/lib/library/stage";
@@ -109,13 +110,22 @@ export const POST = async (request: Request) => {
     file.name,
     target.folderId
   );
-  if (existing) {
+  // Someone who can't see this folder's documents (a drop box) is never
+  // told what's in it: a clash is stored as "Name (2)" instead.
+  const hidden = Boolean(
+    target.folderId &&
+      viewer &&
+      !(await requireCapability(viewer, { folderId: target.folderId }, "view"))
+        .ok
+  );
+  if (existing && !hidden) {
     return nameTaken(existing, viewer);
   }
   return streamSteps((emit) =>
     ingestDocument(access.orgId, userId ?? null, file, emit, {
       via: "upload",
       folderId: target.folderId,
+      hidden,
     })
   );
 };

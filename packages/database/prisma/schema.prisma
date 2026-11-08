@@ -823,6 +823,10 @@ model Folder {
   // Confidential folders (HR, Finance): admins get no automatic access, and
   // everyone/role grants may only allow uploading. Applies to subfolders.
   confidential  Boolean  @default(false)
+  // What may be sent to outside AI services for documents here: off |
+  // search | full. The most restrictive setting on the folder's path applies
+  // (library.folder_ai_modes); documents outside any folder are "full".
+  aiMode        String   @default("full")
   createdBy     String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -950,6 +954,12 @@ model Fact {
   // this was recorded, or not worked out: never assumed safe) |
   // source_deleted (its only document was permanently deleted).
   provenance       String     @default("unknown")
+  // Published to the whole company on purpose (audited): seen by every
+  // member whatever its documents' access. Quotes from restricted
+  // documents stay hidden. Null: visibility follows provenance
+  // (library.fact_access).
+  publishedAt      DateTime?
+  publishedBy      String?
 
   note    Note?        @relation(fields: [noteId], references: [id], onDelete: SetNull)
   sources FactSource[]

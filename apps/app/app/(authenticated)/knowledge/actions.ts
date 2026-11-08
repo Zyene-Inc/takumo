@@ -1,9 +1,10 @@
 "use server";
 
+import { can } from "@repo/auth/permissions";
 import { database } from "@repo/database";
 import { revalidatePath } from "next/cache";
 import { authorize } from "@/lib/access";
-import { authorizeDocument } from "@/lib/library/guard";
+import { authorizeDocument, authorizeFolder } from "@/lib/library/guard";
 import { scheduleHandOff } from "@/lib/library/handoff";
 import { requeueVersion } from "@/lib/library/lease";
 import {
@@ -88,7 +89,24 @@ export const retryVersion = async (
     select: { uploadedBy: true },
   });
   const own = Boolean(viewer.userId && version?.uploadedBy === viewer.userId);
-  if (!own) {
+  // Retrying can make the version current: someone's own upload only while
+  // they may still add documents where it is (as uploading checks), anything
+  // else needs edit. A former editor can't (security audit L7).
+  const folderId = own
+    ? (
+        await database.source.findFirst({
+          where: { id: sourceId, orgId: viewer.orgId },
+          select: { folderId: true },
+        })
+      )?.folderId
+    : null;
+  let mayAdd = false;
+  if (own) {
+    mayAdd = folderId
+      ? (await authorizeFolder(viewer, folderId, "upload")).ok
+      : can(viewer.role ?? "", "knowledge:share");
+  }
+  if (!mayAdd) {
     const editable = await authorizeDocument(viewer, sourceId, "edit", {
       trashed: true,
     });

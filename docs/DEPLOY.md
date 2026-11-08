@@ -86,8 +86,9 @@ Use a separate Supabase project for anything customers touch; the dev project is
    `ask_private.org_id()` (joined tables too), then end the migration with
    `select ask_private.record_trusted();` (it refuses views that aren't). Until then the
    app keeps the tool off. Update `ASK_VIEWS` in `packages/database/sql-allow.ts` for a new
-   view. `record_trusted()` trusts only the functions `org_id` and `run`: a new
-   `ask_private` function the reader can execute keeps the tool off until a reviewed
+   view. `record_trusted()` trusts only the functions `org_id`, `run` and (from the
+   Knowledge Hub migration `20261116090000`) `company_facts`, which `ask.facts` calls: a
+   new `ask_private` function the reader can execute keeps the tool off until a reviewed
    migration adds it to that list (or the view is written without it).
 
 4. **Original documents (Knowledge Hub): a private Storage bucket.** Not created by any

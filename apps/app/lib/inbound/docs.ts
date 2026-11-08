@@ -11,11 +11,12 @@ import { track } from "../analytics";
 import { featureProblem } from "../billing";
 import { DocumentExistsError, documentNamed } from "../knowledge/documents";
 import { ingestDocument } from "../knowledge/ingest";
+import { authorizeDocument } from "../library/guard";
 import { DocumentProblem } from "../library/problems";
+import { viewerForMember } from "../library/viewer";
 import { parseEmail } from "../quotes/email";
 import { replySubject, threadHeaders } from "./ask-email";
 import { type DocOutcome, docsReply, pickDocuments } from "./docs-email";
-import { emailAddress } from "./verify";
 
 // Documents emailed to the shop's docs-…@ address (F6.2-R1): someone in the
 // shop sends a setup sheet, SOP or spec; each attachment goes through the
@@ -69,9 +70,20 @@ const readOne = async (
   file: { name: string; bytes: Uint8Array }
 ): Promise<DocOutcome> => {
   // Like an upload: an email never replaces a document. Checked again when
-  // the document is created, in case one arrived in the meantime.
-  if (await documentNamed(orgId, file.name)) {
-    return { ok: false, name: file.name, error: EXISTS };
+  // the document is created, in case one arrived in the meantime. A
+  // document the sender can't see is never revealed: theirs is stored as
+  // "Name (2)" instead.
+  const existing = await documentNamed(orgId, file.name);
+  let hidden = false;
+  if (existing) {
+    const viewer = await viewerForMember(orgId, userId);
+    const visible = viewer
+      ? (await authorizeDocument(viewer, existing.id, "view")).ok
+      : false;
+    if (visible) {
+      return { ok: false, name: file.name, error: EXISTS };
+    }
+    hidden = true;
   }
   const steps: string[] = [];
   let done: Extract<DocOutcome, { ok: true }> | null = null;
@@ -94,7 +106,7 @@ const readOne = async (
           };
         }
       },
-      { via: "email" }
+      { via: "email", hidden }
     );
   } catch (error) {
     log.warn("Reading an emailed document failed", {
@@ -119,7 +131,16 @@ export const processDocs = async (
   raw: Uint8Array
 ) => {
   const email = parseEmail(new TextDecoder().decode(raw));
-  const sender = emailAddress(email.from);
+  // Who sent it, as checked when it arrived (receiveMessage: the From header
+  // as sent, its domain authenticated), never re-read from the decoded
+  // header (security audit M3).
+  const sender =
+    (
+      await database.inboundMessage.findFirst({
+        where: { id: messageId, orgId },
+        select: { fromAddress: true },
+      })
+    )?.fromAddress ?? null;
   const subject = replySubject(email.subject);
   const headers = threadHeaders(email.headers);
   try {

@@ -4,8 +4,9 @@ import { MessageSquareIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getAccess } from "@/lib/access";
 import { buildBrain } from "@/lib/knowledge/brain";
+import { usableSourceIds, visibleFactIds } from "@/lib/library/ai-access";
+import { resolveViewer } from "@/lib/library/viewer";
 import { Header } from "../../components/header";
 import { BrainView } from "./view";
 
@@ -15,11 +16,18 @@ export const metadata: Metadata = { title: "Brain · Takumo" };
 const RECENT = 200;
 
 const BrainPage = async () => {
-  const { orgId } = await getAccess();
-  if (!orgId) {
+  const viewer = await resolveViewer();
+  if (!viewer) {
     notFound();
   }
+  const { orgId } = viewer;
   const db = forOrg(database, orgId);
+  // Only documents and facts this person may use: documents whose AI
+  // setting is "full" (the Brain is made by reading them), not in the Trash.
+  const [usable, factIds] = await Promise.all([
+    usableSourceIds(viewer, "full").then((ids) => [...ids]),
+    visibleFactIds(viewer),
+  ]);
   const [
     org,
     customers,
@@ -93,7 +101,7 @@ const BrainPage = async () => {
     db.fact.findMany({
       orderBy: { number: "desc" },
       take: RECENT,
-      where: { status: "approved" },
+      where: { id: { in: factIds }, status: "approved" },
       select: {
         id: true,
         number: true,
@@ -106,12 +114,13 @@ const BrainPage = async () => {
     }),
     // Documents in the Trash, and versions still being read, aren't shown.
     db.source.findMany({
-      where: { profile: "document", deletedAt: null },
+      where: { id: { in: usable }, profile: "document", deletedAt: null },
       select: { id: true, name: true, summary: true },
     }),
     // Each read document's card lists the records it's about.
     db.docChunk.findMany({
       where: {
+        sourceId: { in: usable },
         meta: { path: ["kind"], equals: "card" },
         source: { deletedAt: null },
         version: { currentOf: { isNot: null } },

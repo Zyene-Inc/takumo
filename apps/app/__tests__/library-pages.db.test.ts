@@ -259,7 +259,7 @@ describe.skipIf(!TEST_DATABASE_URL)("library documents (database)", () => {
       expect((await h.events(response)).at(-1)?.type).toBe("done");
       expect(
         await database.source.findFirstOrThrow({
-          where: { name: "Mine" },
+          where: { name: "Mine", orgId: { in: [orgId, otherOrgId] } },
           select: { orgId: true, uploadedBy: true },
         })
       ).toEqual({ orgId, uploadedBy: "user_operator" });

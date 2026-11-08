@@ -16,6 +16,9 @@ vi.mock("@repo/observability/log", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@repo/auth/server", () => ({
+  // The same membership, as the Knowledge Hub's viewers read it.
+  shopRole: async (userId: string) =>
+    userId === "user_sam" ? "operator" : null,
   listShopMembers: async () => [
     {
       id: "m1",
@@ -162,7 +165,7 @@ describe.skipIf(!TEST_DATABASE_URL)("documents by email (database)", () => {
       "user_sam",
       expect.objectContaining({ name: "Setup P-1001.pdf" }),
       expect.any(Function),
-      { via: "email" }
+      { via: "email", hidden: false }
     );
     const reply = emails.at(-1);
     expect(reply).toMatchObject({

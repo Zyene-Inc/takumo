@@ -334,15 +334,34 @@ describe.skipIf(!TEST_DATABASE_URL)("provenance (database)", () => {
       });
       expect((await answer(legacyChat, [])).found.provenance).toBe("partial");
 
-      // Facts read in bulk by a query.
-      const bulk = await answer(await conversation(), [
-        {
-          tool: "query_data",
-          input: { sql: "select * from facts" },
-          output: { rows: [], sources: [] },
+      // Facts read in bulk by a query: the documents behind every fact the
+      // facts view can show are recorded with the answer.
+      const readFacts = {
+        tool: "query_data",
+        input: { sql: "select * from facts" },
+        output: { rows: [], sources: [] },
+      };
+      const behind = await add("Warm-up.txt", "Spindle warm-up is 10 minutes.");
+      await database.fact.create({
+        data: {
+          orgId,
+          number: 49,
+          subjectType: "shop",
+          subjectId: orgId,
+          subjectLabel: "Shop",
+          attribute: "note",
+          value: "Warm up the spindle for 10 minutes",
+          provenance: "documents",
+          sources: { create: [{ orgId, sourceId: behind }] },
         },
-      ]);
-      expect(bulk.found.provenance).toBe("partial");
+      });
+      const bulk = await answer(await conversation(), [readFacts]);
+      expect(bulk.found.provenance).toBe("recorded");
+      expect(bulk.found.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ sourceId: behind, via: "fact" }),
+        ])
+      );
 
       // A fact whose origin was never recorded.
       const unknown = await database.fact.create({
@@ -366,6 +385,9 @@ describe.skipIf(!TEST_DATABASE_URL)("provenance (database)", () => {
         },
       ]);
       expect(viaFact.found.provenance).toBe("partial");
+      // ...and, once the facts view can show it, so is a bulk read.
+      const bulkUnknown = await answer(await conversation(), [readFacts]);
+      expect(bulkUnknown.found.provenance).toBe("partial");
     });
 
     test("a fact proposed in chat after reading documents is linked to them", async () => {

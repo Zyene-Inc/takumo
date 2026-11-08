@@ -7,6 +7,8 @@ import { describe, expect, test, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 // No database in a unit test: the stream never stores anything.
 vi.mock("@repo/database", () => ({ database: {}, forOrg: vi.fn() }));
+// Document search checks who is asking (lib/library/viewer.ts); not used here.
+vi.mock("@repo/auth/server", () => ({ auth: vi.fn(), shopRole: vi.fn() }));
 vi.mock("@repo/observability/log", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));

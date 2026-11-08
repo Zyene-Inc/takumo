@@ -2,7 +2,7 @@ import "server-only";
 
 import { generateText } from "@repo/ai";
 import { listShopMembers } from "@repo/auth/server";
-import { database, forOrg } from "@repo/database";
+import { database, forOrg, Prisma } from "@repo/database";
 import { resend } from "@repo/email";
 import { keys as emailKeys } from "@repo/email/keys";
 import { log } from "@repo/observability/log";
@@ -10,6 +10,8 @@ import { env } from "@/env";
 import { agentSettings } from "../agent/agent";
 import { splitAnswer } from "../agent/answer";
 import { MAX_MESSAGE_CHARS, titleFrom } from "../agent/conversations";
+import { HIDDEN_ANSWER, stillAllowed } from "../agent/redact";
+import { agentContext } from "../agent/tools";
 import { budgetProblem, recordUsage } from "../ai-usage";
 import { track } from "../analytics";
 import { featureProblem } from "../billing";
@@ -20,6 +22,7 @@ import {
   removedAnswer,
   settleSources,
 } from "../library/provenance";
+import { viewerForMember } from "../library/viewer";
 import { parseEmail } from "../quotes/email";
 import {
   answerEmail,
@@ -27,7 +30,6 @@ import {
   replySubject,
   threadHeaders,
 } from "./ask-email";
-import { emailAddress } from "./verify";
 
 // "Can we ship 300 by Friday?" by email (docs/PRODUCT-PLAN.md F3.4): someone
 // in the shop forwards or writes a question to its ask-…@ address; Takumo
@@ -85,14 +87,27 @@ export const processAsk = async (
   raw: Uint8Array
 ) => {
   const email = parseEmail(new TextDecoder().decode(raw));
-  const sender = emailAddress(email.from);
+  // Who sent it, as checked when it arrived (receiveMessage: the From header
+  // as sent, its domain authenticated), never re-read from the decoded
+  // header (security audit M3).
+  const sender =
+    (
+      await database.inboundMessage.findFirst({
+        where: { id: messageId, orgId },
+        select: { fromAddress: true },
+      })
+    )?.fromAddress ?? null;
   const subject = replySubject(email.subject);
   const headers = threadHeaders(email.headers);
   try {
     const member = (await listShopMembers(orgId)).find(
       (m) => m.email?.toLowerCase() === sender
     );
-    if (!(member && sender)) {
+    // The answer reads documents and facts as this member, with their role
+    // read from WorkOS now (never from the email).
+    const viewer =
+      member && sender ? await viewerForMember(orgId, member.userId) : null;
+    if (!(member && sender && viewer)) {
       await finish(orgId, messageId, "rejected", {
         error: "Only people in the shop can ask by email.",
       });
@@ -127,7 +142,7 @@ export const processAsk = async (
     });
 
     const settings = await agentSettings(
-      { orgId, userId: member.userId, today: today() },
+      agentContext(viewer, today()),
       undefined,
       "thorough"
     );
@@ -138,8 +153,27 @@ export const processAsk = async (
       onStepEnd: ({ usage, response }) =>
         recordUsage(orgId, "ask", response.modelId, usage, member.userId),
     });
-    const answer = splitAnswer(result.text).body.trim();
-    const links = addToPlanLinks(result.steps);
+    const worked = await answerProvenance(
+      orgId,
+      conversation.id,
+      result.steps.flatMap((s) =>
+        s.toolResults.map((r) => ({
+          tool: r.toolName,
+          input: r.input,
+          output: r.output,
+        }))
+      )
+    );
+    // Access may have changed while answering: an answer they may no
+    // longer see is neither kept nor emailed.
+    const now = await viewerForMember(orgId, member.userId);
+    const allowed = Boolean(
+      now && (await stillAllowed(now, worked.documentIds))
+    );
+    const answer = allowed
+      ? splitAnswer(result.text).body.trim()
+      : HIDDEN_ANSWER;
+    const links = allowed ? addToPlanLinks(result.steps) : [];
     const tools = result.steps.flatMap((s) => s.toolCalls);
     // Which documents the answer drew on, saved with it (MessageSource).
     const used = result.steps.flatMap((s) =>
@@ -149,7 +183,6 @@ export const processAsk = async (
         output: r.output,
       }))
     );
-    const worked = await answerProvenance(orgId, conversation.id, used);
     await database.$transaction(async (tx) => {
       const found = await settleSources(tx, orgId, worked);
       const saved = await tx.message.create({
@@ -158,10 +191,12 @@ export const processAsk = async (
           role: "assistant",
           content: answer,
           parts: [{ type: "text", text: answer }],
-          toolCalls: tools.map((t) => ({
-            tool: t.toolName,
-            input: t.input,
-          })) as object,
+          toolCalls: allowed
+            ? (tools.map((t) => ({
+                tool: t.toolName,
+                input: t.input,
+              })) as object)
+            : Prisma.DbNull,
           provenance: found.provenance,
           // A document it used was permanently deleted meanwhile.
           ...(found.gone ? removedAnswer() : {}),

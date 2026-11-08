@@ -70,7 +70,9 @@ const memberViewer = async (orgId: string, userId: string, role: string) => {
     orgId,
     userId,
     role,
-    isOwner: org.ownerUserId === userId,
+    // The owner on record, while still an admin: an owner who was removed
+    // and invited back with a lesser role isn't the owner (security audit L3).
+    isOwner: org.ownerUserId === userId && ADMIN_ROLES.has(role),
     isAdmin: ADMIN_ROLES.has(role),
     isSystem: false,
   });

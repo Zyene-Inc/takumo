@@ -23,7 +23,14 @@ export type AuditAction =
   | "folder_create"
   | "folder_rename"
   | "folder_move"
-  | "folder_delete";
+  | "folder_delete"
+  | "access_grant"
+  | "access_revoke"
+  | "access_inherit"
+  | "folder_confidential"
+  | "folder_ai_mode"
+  | "department_change"
+  | "fact_publish";
 
 export interface AuditEntry {
   action: AuditAction;

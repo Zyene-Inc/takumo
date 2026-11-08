@@ -124,7 +124,12 @@ describe.skipIf(!TEST_DATABASE_URL)("documents and versions (database)", () => {
 
   /** Search results (keyword and vector) whose text contains the word. */
   const found = async (word: string) =>
-    (await documents.searchDocuments(orgId, word))
+    (
+      await documents.searchDocuments(
+        (await import("../lib/library/viewer")).systemViewer(orgId),
+        word
+      )
+    )
       .map((hit) => hit.snippet)
       .filter((snippet) => snippet.toLowerCase().includes(word.toLowerCase()));
 

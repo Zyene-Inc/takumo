@@ -13,6 +13,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
+import { accessView } from "@/lib/library/access-view";
 import { documentDetail, type VersionLabel } from "@/lib/library/detail";
 import {
   dateTime,
@@ -21,6 +22,7 @@ import {
   shortDate,
   trashNote,
 } from "@/lib/library/format";
+import { AccessBadges, AccessDialog } from "../../components/access-dialog";
 import { DocumentMenu } from "../../components/document-menu";
 import { Preview } from "../../components/preview";
 import { LibraryShell } from "../../components/shell";
@@ -56,6 +58,22 @@ const Detail = ({
   </div>
 );
 
+/** Who can open it, in one sentence. */
+const accessSummary = (
+  access: NonNullable<Awaited<ReturnType<typeof accessView>>>,
+  folder: string | null
+) => {
+  if (!access.restricting) {
+    return "Everyone in the shop can open it.";
+  }
+  if (access.inherits) {
+    return folder
+      ? `Who can open it comes from ${folder}${access.entries.length > 2 ? ", plus anyone added here" : ""}.`
+      : "Everyone in the shop can open it.";
+  }
+  return "Restricted: only the people listed under Access can open it.";
+};
+
 const DocumentPage = async ({
   params,
 }: {
@@ -63,7 +81,10 @@ const DocumentPage = async ({
 }) => {
   const { sourceId } = await params;
   const { viewer, folders, choices } = await libraryFrame();
-  const detail = await documentDetail(viewer, sourceId);
+  const [detail, access] = await Promise.all([
+    documentDetail(viewer, sourceId),
+    accessView(viewer, { sourceId }),
+  ]);
   if (!detail) {
     notFound();
   }
@@ -97,8 +118,8 @@ const DocumentPage = async ({
       <RefreshWhileBusy busy={busy} />
       {trashed && (
         <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
-          {trashNote(d)} It doesn't appear in the library, search or Ask
-          Takumo's document search.{" "}
+          {trashNote(d)} It doesn't appear in the library, search or Ask Takumo,
+          and facts read only from it aren't used.{" "}
           {d.canDelete ? "Restore it from the menu." : ""}
         </p>
       )}
@@ -177,6 +198,29 @@ const DocumentPage = async ({
               </div>
             )}
           </section>
+          {access && (
+            <section aria-labelledby="access" className="grid gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-medium" id="access">
+                  Access
+                </h2>
+                {access.restricting && (
+                  <AccessDialog
+                    initial={access}
+                    name={d.name}
+                    target={{ sourceId: d.id }}
+                  />
+                )}
+              </div>
+              <AccessBadges view={access} />
+              <p className="text-muted-foreground text-sm">
+                {accessSummary(access, d.folder?.name ?? null)}
+              </p>
+              <p className="text-sm">
+                You can: {access.yours.join(", ").toLowerCase()}.
+              </p>
+            </section>
+          )}
         </div>
       </div>
       <section aria-labelledby="versions" className="grid gap-2">

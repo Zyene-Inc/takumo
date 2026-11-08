@@ -6,8 +6,7 @@ import {
   toUIMessageStream,
   type UIMessage,
 } from "@repo/ai";
-import { auth } from "@repo/auth/server";
-import { database } from "@repo/database";
+import { database, Prisma } from "@repo/database";
 import { log } from "@repo/observability/log";
 import { z } from "zod";
 import { agentSettings } from "@/lib/agent/agent";
@@ -29,6 +28,8 @@ import {
   compactHistory,
 } from "@/lib/agent/history";
 import { chooseMode } from "@/lib/agent/mode";
+import { HIDDEN_ANSWER, redactHistory, stillAllowed } from "@/lib/agent/redact";
+import { agentContext } from "@/lib/agent/tools";
 import { recordUsage } from "@/lib/ai-usage";
 import { track } from "@/lib/analytics";
 import { featureProblem } from "@/lib/billing";
@@ -39,6 +40,7 @@ import {
   removedAnswer,
   settleSources,
 } from "@/lib/library/provenance";
+import { resolveViewer, viewerForMember } from "@/lib/library/viewer";
 import { checkToday } from "@/lib/schedule/request";
 
 // Several tool calls (and a capacity check) per answer.
@@ -60,16 +62,28 @@ const Body = z.object({
 const problem = (status: number, error: string) =>
   Response.json({ error }, { status });
 
+/** What an answer is saved as when its asker can't use what it drew on any more. */
+const hiddenAnswer = () => ({
+  content: HIDDEN_ANSWER,
+  parts: [{ type: "text", text: HIDDEN_ANSWER }],
+  citations: Prisma.DbNull,
+  toolCalls: Prisma.DbNull,
+});
+
 /**
  * Ask Takumo. The browser sends only the new user message; history, tool
  * results and citations come from the database, so a client can't put words
- * in the assistant's mouth.
+ * in the assistant's mouth. Everything is read as the signed-in person: the
+ * tools see only the documents and facts they may use, and earlier answers
+ * that drew on anything they can't use now are hidden, from the screen and
+ * from the model.
  */
 export const POST = async (request: Request) => {
-  const { orgId, userId } = await auth();
-  if (!(orgId && userId)) {
+  const viewer = await resolveViewer();
+  if (!(viewer?.userId && !viewer.isSystem)) {
     return problem(401, "Sign in and choose a shop first.");
   }
+  const { orgId, userId } = viewer;
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return problem(400, "That message couldn't be read. Reload and try again.");
@@ -118,8 +132,9 @@ export const POST = async (request: Request) => {
     });
   }
 
-  // Retrying a question replaces its old answer.
-  let history = await loadMessages(id);
+  // Retrying a question replaces its old answer. Answers that drew on
+  // documents this person can't use now never reach the model again.
+  let history = await redactHistory(viewer, id, await loadMessages(id));
   const retryAt = history.findIndex((m) => m.id === message.id);
   if (retryAt >= 0) {
     await database.message.deleteMany({
@@ -158,7 +173,7 @@ export const POST = async (request: Request) => {
         )
       : asked;
   const settings = await agentSettings(
-    { orgId, userId, today },
+    agentContext(viewer, today),
     {
       queries: prior.filter((t) => t.tool === "query_data").length,
       scenarios: prior.filter((t) => t.tool === "run_scenario").length,
@@ -211,6 +226,13 @@ export const POST = async (request: Request) => {
       });
       // Which documents the answer drew on, saved with it (MessageSource).
       const worked = await answerProvenance(orgId, id, tools);
+      // Access may have changed while the model was answering: what was
+      // streamed can't be taken back, but an answer the person may no
+      // longer see isn't kept (and so never reaches the model again).
+      const now = await viewerForMember(orgId, userId);
+      const allowed = Boolean(
+        now && (await stillAllowed(now, worked.documentIds))
+      );
       await database.$transaction(async (tx) => {
         const found = await settleSources(tx, orgId, worked);
         await tx.message.create({
@@ -233,6 +255,7 @@ export const POST = async (request: Request) => {
             })) as object,
             citations: sourcesIn([responseMessage]) as object,
             provenance: found.provenance,
+            ...(allowed ? {} : hiddenAnswer()),
             // A document it used was permanently deleted meanwhile.
             ...(found.gone ? removedAnswer() : {}),
           },

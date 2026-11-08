@@ -7,6 +7,7 @@ import { requireCapability } from "./access";
 import { audit } from "./audit";
 import { authorizeDocument } from "./guard";
 import { REMOVED_ANSWER } from "./provenance";
+import { confidentialEnabled } from "./stage";
 import { objectStore } from "./storage";
 import { trustedViewer, type Viewer } from "./viewer";
 
@@ -99,6 +100,16 @@ export const restoreDocument = async (
   if (folderId) {
     const mayUpload = await requireCapability(viewer, { folderId }, "upload");
     if (!mayUpload.ok) {
+      // Once access can be restricted, it never comes back anywhere more
+      // open than where it was.
+      if (await confidentialEnabled(orgId)) {
+        return {
+          ok: false,
+          status: 403,
+          error:
+            "Restoring it needs permission to add documents to its folder.",
+        };
+      }
       folderId = null;
     }
   }
@@ -152,7 +163,18 @@ const REWRITE_MESSAGES_SQL = `
   from hit
   where hit.id = m.id`;
 
-/** Facts that came from the document: dropped, or kept without its words. */
+/**
+ * Facts that came from the document. Removing a document must never make a
+ * fact more visible: whoever may open the documents left could be more
+ * people than could open this one. So, unless the fact was published to the
+ * company on purpose:
+ * - still stated by other documents: kept, seen by the owner only
+ *   ("source_deleted") until someone publishes it again;
+ * - from this document only: pending and rejected facts are deleted;
+ *   approved ones are kept (a supervisor accepted the value, and it may be
+ *   in the shop's records) but seen by the owner only.
+ * The deleted document's words always go.
+ */
 const reconcileFacts = async (
   tx: Prisma.TransactionClient,
   orgId: string,
@@ -160,29 +182,54 @@ const reconcileFacts = async (
 ) => {
   const links = await tx.factSource.findMany({
     where: { orgId, sourceId },
-    select: { factId: true, fact: { select: { status: true } } },
+    select: {
+      factId: true,
+      fact: { select: { status: true, publishedAt: true } },
+    },
   });
+  // Documents every member may use: only their words may become a fact's
+  // evidence, since a published or typed fact is shown to everyone (audit H2).
+  const companyWide =
+    links.length > 0
+      ? new Set(
+          (
+            await tx.$queryRawUnsafe<{ id: string }[]>(
+              "select id from library.ai_source_ids($1, null, null, 'full') as id",
+              orgId
+            )
+          ).map((r) => r.id)
+        )
+      : new Set<string>();
   for (const { factId, fact } of links) {
     const others = await tx.factSource.findMany({
       where: { orgId, factId, NOT: { sourceId } },
       orderBy: { createdAt: "asc" },
-      select: { quote: true, source: { select: { name: true } } },
+      select: {
+        quote: true,
+        sourceId: true,
+        source: { select: { name: true } },
+      },
     });
+    const published = fact.publishedAt !== null;
     if (others.length > 0) {
-      // Still stated by another document: its words become the evidence.
-      const [next] = others;
+      // Still stated by another document: its words become the evidence,
+      // if everyone may read that document.
+      const next = others.find((o) => o.quote && companyWide.has(o.sourceId));
       await tx.fact.update({
         where: { id: factId },
         data: {
-          evidence: next.quote ? `"${next.quote}" (${next.source.name})` : null,
+          evidence: next ? `"${next.quote}" (${next.source.name})` : null,
+          ...(published ? {} : { provenance: "source_deleted" }),
         },
       });
-    } else if (fact.status === "pending" || fact.status === "rejected") {
+    } else if (
+      !published &&
+      (fact.status === "pending" || fact.status === "rejected")
+    ) {
       await tx.fact.delete({ where: { id: factId } });
     } else {
-      // Approved (or since replaced): a supervisor accepted the value and it
-      // may already be in the shop's records. The value stays; the words
-      // from the deleted document go.
+      // Approved (or since replaced), or published: the value stays; the
+      // words from the deleted document go.
       await tx.fact.update({
         where: { id: factId },
         data: { evidence: null, provenance: "source_deleted" },

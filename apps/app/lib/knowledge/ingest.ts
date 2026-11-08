@@ -95,10 +95,13 @@ export const ingestDocument = async (
   {
     via,
     folderId = null,
+    hidden = false,
   }: {
     via: "upload" | "email";
     /** Checked by the caller; null: outside any folder. */
     folderId?: string | null;
+    /** The uploader can't see the folder's documents (createDocument). */
+    hidden?: boolean;
   }
 ) => {
   const made = await createDocument(
@@ -106,7 +109,8 @@ export const ingestDocument = async (
     userId,
     checked(file),
     via,
-    folderId
+    folderId,
+    { hidden }
   );
   return runNow(made, file.bytes, emit);
 };

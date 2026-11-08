@@ -107,9 +107,12 @@ describe.skipIf(!TEST_DATABASE_URL)(
     };
 
     const found = async (word: string) =>
-      (await documents.searchDocuments(orgId, word)).filter((hit) =>
-        hit.snippet.toLowerCase().includes(word.toLowerCase())
-      );
+      (
+        await documents.searchDocuments(
+          (await import("../lib/library/viewer")).systemViewer(orgId),
+          word
+        )
+      ).filter((hit) => hit.snippet.toLowerCase().includes(word.toLowerCase()));
 
     const actions = async (sourceId: string) =>
       (

@@ -143,11 +143,22 @@ export const proposeOne = async (
   }
 };
 
-/** Read the facts a document states (the slow, AI part). */
-export const readDocumentFacts = async (orgId: string, text: string) => {
+/**
+ * Read the facts a document states (the slow, AI part). `allowed` is asked
+ * before every window: once it says no (the AI setting was lowered), nothing
+ * more is sent and the result is null (security audit M2).
+ */
+export const readDocumentFacts = async (
+  orgId: string,
+  text: string,
+  allowed: () => Promise<boolean> = async () => true
+): Promise<DocumentFact[] | null> => {
   const context = await shopContext(orgId);
   const facts: DocumentFact[] = [];
   for (const window of windows(text)) {
+    if (!(await allowed())) {
+      return null;
+    }
     facts.push(
       ...(await extractFacts(orgId, window, { kind: "document", context }))
     );

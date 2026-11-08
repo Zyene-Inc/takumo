@@ -1,8 +1,9 @@
 import { generateText } from "@repo/ai";
 import { database, forOrg } from "@repo/database";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { agentSettings } from "@/lib/agent/agent";
 import { collectSources, linkCitations } from "@/lib/agent/citations";
+import { agentContext } from "@/lib/agent/tools";
 import { factLabel } from "@/lib/facts/attributes";
 import { setupTrend, weeklyError } from "@/lib/facts/calibration";
 import { approveFact, findSubject, proposeFact } from "@/lib/facts/facts";
@@ -13,6 +14,7 @@ import {
   recalibrate,
 } from "@/lib/facts/recalibrate";
 import { logOperation } from "@/lib/floor/log";
+import { viewerForMember } from "@/lib/library/viewer";
 import { EVAL_TODAY } from "./golden";
 
 // Tribal knowledge and calibration end to end on the demo shop
@@ -23,6 +25,20 @@ import { EVAL_TODAY } from "./golden";
 // and ANTHROPIC_API_KEY. Leaves the shop as it was.
 const ORG_ID = process.env.EVAL_ORG_ID ?? "org_01M64Y2YX6Q7517K5KJR1185CA";
 const USER = "eval:knowledge";
+
+// The eval's person is an admin of the eval shop (WorkOS isn't called).
+vi.mock("@repo/auth/server", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  shopRole: async (userId: string) => (userId === USER ? "admin" : null),
+}));
+
+const evalViewer = async () => {
+  const viewer = await viewerForMember(ORG_ID, USER);
+  if (!viewer) {
+    throw new Error("The eval shop isn't set up.");
+  }
+  return viewer;
+};
 const NOW = new Date(`${EVAL_TODAY}T12:00:00Z`);
 const DAY_MS = 86_400_000;
 
@@ -191,11 +207,9 @@ describe("notes become facts", () => {
 // Tests in a suite run one after another by default.
 describe("review, recalibration and the error trend", () => {
   test("a correction told to Ask Takumo waits for review", async () => {
-    const settings = await agentSettings({
-      orgId: ORG_ID,
-      userId: USER,
-      today: EVAL_TODAY,
-    });
+    const settings = await agentSettings(
+      agentContext(await evalViewer(), EVAL_TODAY)
+    );
     const result = await generateText({
       ...settings,
       prompt:
@@ -237,7 +251,9 @@ describe("review, recalibration and the error trend", () => {
     const first = await db.fact.findFirst({
       where: { source: "chat", attribute: "setupMin" },
     });
-    expect((await approveFact(ORG_ID, first?.id ?? "", USER)).ok).toBe(true);
+    expect((await approveFact(await evalViewer(), first?.id ?? "")).ok).toBe(
+      true
+    );
     const routing = await db.routing.findFirst({
       where: { seq: 10, part: { partNo: "P-1001" } },
     });
@@ -260,7 +276,7 @@ describe("review, recalibration and the error trend", () => {
     });
     expect(second.ok).toBe(true);
     const secondId = (second as { fact: { id: string } }).fact.id;
-    expect((await approveFact(ORG_ID, secondId, USER)).ok).toBe(true);
+    expect((await approveFact(await evalViewer(), secondId)).ok).toBe(true);
     const [old, current] = await Promise.all([
       db.fact.findFirst({ where: { id: first?.id } }),
       db.fact.findFirst({ where: { id: secondId } }),
@@ -321,7 +337,9 @@ describe("review, recalibration and the error trend", () => {
     const fix = await db.fact.findFirst({
       where: { source: RECALIBRATION, attribute: "setupMin" },
     });
-    expect((await approveFact(ORG_ID, fix?.id ?? "", USER)).ok).toBe(true);
+    expect((await approveFact(await evalViewer(), fix?.id ?? "")).ok).toBe(
+      true
+    );
 
     const history = await loadFinishedJobs(
       ORG_ID,
@@ -405,12 +423,12 @@ describe("review, recalibration and the error trend", () => {
       where: { attribute: "note", value: { string_contains: "grain" } },
     });
     expect(grain).toBeTruthy();
-    expect((await approveFact(ORG_ID, grain?.id ?? "", USER)).ok).toBe(true);
-    const settings = await agentSettings({
-      orgId: ORG_ID,
-      userId: USER,
-      today: EVAL_TODAY,
-    });
+    expect((await approveFact(await evalViewer(), grain?.id ?? "")).ok).toBe(
+      true
+    );
+    const settings = await agentSettings(
+      agentContext(await evalViewer(), EVAL_TODAY)
+    );
     const result = await generateText({
       ...settings,
       prompt: "Anything I should know before running P-3001?",

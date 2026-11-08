@@ -33,6 +33,7 @@ const BY_TYPE_SQL = `
   where c."orgId" = $1 and c.ordinal = 0
     and c."versionId" = s."currentVersionId" and s."deletedAt" is null
     and c.meta ->> 'docType' = any($2::text[])
+    and c."sourceId" in (select library.visible_source_ids($1, $3, $4))
   limit 200`;
 
 /** Document types whose label contains the query ("sop", "drawing"…). */
@@ -47,7 +48,7 @@ export const searchLibrary = async (
   viewer: Viewer,
   raw: string
 ): Promise<SearchResult[]> => {
-  const { orgId } = trustedViewer(viewer);
+  const { orgId, userId, role } = trustedViewer(viewer);
   const query = raw.trim().slice(0, MAX_QUERY);
   if (query.length < MIN_QUERY) {
     return [];
@@ -75,9 +76,15 @@ export const searchLibrary = async (
       take: 200,
     }),
     types.length
-      ? database.$queryRawUnsafe<{ id: string }[]>(BY_TYPE_SQL, orgId, types)
+      ? database.$queryRawUnsafe<{ id: string }[]>(
+          BY_TYPE_SQL,
+          orgId,
+          types,
+          userId,
+          role
+        )
       : [],
-    keywordPassages(orgId, query, 60),
+    keywordPassages(viewer, query, 60),
   ]);
   // Best reason first: its name, then its type, its folder, then its text.
   const reasons = new Map<string, { by: MatchedBy; snippet: string | null }>();

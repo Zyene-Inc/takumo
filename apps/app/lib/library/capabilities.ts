@@ -35,6 +35,10 @@ export const PRESETS = {
 export const has = (capabilities: number, capability: Capability) =>
   (capabilities & CAPABILITY[capability]) === CAPABILITY[capability];
 
+/** Of these capabilities, uploading only (what everyone or a role keeps in a confidential folder). */
+export const onlyUpload = (capabilities: number) =>
+  capabilities & CAPABILITY.upload;
+
 /** Every bit of `wanted` is in `held`. */
 export const covers = (held: number, wanted: number) =>
   (held & wanted) === wanted;

@@ -105,12 +105,20 @@ export interface ReadOptions {
    * so a run that stops resumes from there (Knowledge Hub processing).
    */
   onRecognized?: (pages: PageText[]) => Promise<void>;
+  /**
+   * May scanned pages and photos be sent to an AI service to be read? False
+   * when the folder's AI setting is "off" or "search": they're left unread
+   * (ReadResult.unread) and nothing is sent.
+   */
+  recognize?: boolean;
 }
 
 interface ReadResult {
   pages: PageText[];
   /** Pages read from an image (scans, photos) rather than a text layer. */
   recognized: number;
+  /** Scanned pages or photos left unread because recognising them wasn't allowed. */
+  unread?: number;
 }
 
 /**
@@ -123,12 +131,15 @@ export const readDocument = async (
   bytes: Uint8Array,
   options: ReadOptions = {}
 ): Promise<ReadResult> => {
-  const { known, onProgress, onRecognized } = options;
+  const { known, onProgress, onRecognized, recognize: may = true } = options;
   const ext = name.slice(name.lastIndexOf(".")).toLowerCase();
   if ((IMAGE_TYPES as readonly string[]).includes(ext)) {
     const saved = known?.get(1);
     if (saved !== undefined) {
       return { pages: [{ page: 1, text: saved }], recognized: 1 };
+    }
+    if (!may) {
+      return { pages: [{ page: 1, text: "" }], recognized: 0, unread: 1 };
     }
     const [markdown] = await recognize(orgId, bytes, IMAGE_MEDIA[ext], 1);
     await onRecognized?.([{ page: 1, text: markdown }]);
@@ -151,6 +162,13 @@ export const readDocument = async (
     }
   }
   const toRead = scanned.filter((page) => !known?.has(page));
+  if (!may) {
+    return {
+      pages,
+      recognized: scanned.length - toRead.length,
+      unread: toRead.length,
+    };
+  }
   const groups = inGroups(toRead, PAGES_PER_CALL);
   let done = scanned.length - toRead.length;
   for (const batch of inGroups(groups, PARALLEL_CALLS)) {

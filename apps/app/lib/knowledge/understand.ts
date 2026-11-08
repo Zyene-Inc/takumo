@@ -215,7 +215,9 @@ const contextSchema = z.object({
 export const contextualize = async (
   orgId: string,
   doc: { name: string; summary: string; text: string },
-  passages: string[]
+  passages: string[],
+  /** Asked before every batch: false stops sending (AI setting lowered). */
+  allowed: () => Promise<boolean> = async () => true
 ) => {
   const out = new Array<string>(passages.length).fill("");
   const header = `Document "${doc.name}": ${doc.summary}
@@ -223,6 +225,11 @@ export const contextualize = async (
 ${doc.text.slice(0, CONTEXT_DOC_CHARS)}
 </document>`;
   for (let start = 0; start < passages.length; start += CONTEXT_BATCH) {
+    // Nothing more goes to the AI service once the setting is lowered
+    // (security audit M2).
+    if (!(await allowed())) {
+      break;
+    }
     const batch = passages.slice(start, start + CONTEXT_BATCH);
     try {
       const { output, usage, finalStep } = await generateText({

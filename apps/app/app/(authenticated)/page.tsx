@@ -1,10 +1,11 @@
-import { auth } from "@repo/auth/server";
 import { database, forOrg } from "@repo/database";
 import { Button } from "@repo/design-system/components/ui/button";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { lateReports } from "@/lib/erp/health";
+import { visibleFactIds } from "@/lib/library/ai-access";
+import { resolveViewer, type Viewer } from "@/lib/library/viewer";
 import { setupSteps } from "@/lib/onboarding";
 import { Header } from "./components/header";
 import { SetupChecklist } from "./components/setup-checklist";
@@ -27,8 +28,11 @@ interface Attention {
 }
 
 /** What's waiting for a person today, most urgent first. */
-const needsAttention = async (orgId: string): Promise<Attention[]> => {
+const needsAttention = async (viewer: Viewer): Promise<Attention[]> => {
+  const { orgId } = viewer;
   const db = forOrg(database, orgId);
+  // Only facts this person may see are counted.
+  const facts = await visibleFactIds(viewer);
   const [rfqs, posToEnter, factsToApprove, reports, brokenMailboxes] =
     await Promise.all([
       db.rfq.groupBy({
@@ -39,7 +43,7 @@ const needsAttention = async (orgId: string): Promise<Attention[]> => {
         _count: true,
       }),
       db.customerPo.count({ where: { status: "review" } }),
-      db.fact.count({ where: { status: "pending" } }),
+      db.fact.count({ where: { id: { in: facts }, status: "pending" } }),
       db.erpReport.findMany({
         where: { status: "active" },
         select: {
@@ -99,16 +103,16 @@ const needsAttention = async (orgId: string): Promise<Attention[]> => {
 };
 
 const App = async () => {
-  const { orgId } = await auth();
-
-  if (!orgId) {
+  const viewer = await resolveViewer();
+  if (!viewer) {
     notFound();
   }
+  const { orgId } = viewer;
 
   const db = forOrg(database, orgId);
   const [steps, attention, workCenters, parts] = await Promise.all([
     setupSteps(orgId),
-    needsAttention(orgId),
+    needsAttention(viewer),
     db.workCenter.count(),
     db.part.count(),
   ]);
