@@ -62,9 +62,11 @@ describe("launch settings check", () => {
     const key = checkService(SERVICES.app, {
       CONNECTOR_ENCRYPTION_KEY: Buffer.alloc(16).toString("base64"),
     });
-    assert.match(
-      key.find((p) => p.name === "CONNECTOR_ENCRYPTION_KEY")?.problem ?? "",
-      /32 bytes/
+    assert.equal(
+      (
+        key.find((p) => p.name === "CONNECTOR_ENCRYPTION_KEY")?.problem ?? ""
+      ).includes("32 bytes"),
+      true
     );
   });
 
