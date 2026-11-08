@@ -32,12 +32,16 @@ const queryFailed = (orgId: string, n: number, error: unknown) => {
     });
     return { query: n, error: "The query failed.", hint: SQL_HINT };
   }
-  if (error.stage === "plan" || error.stage === "run") {
+  if (error.stage === "run") {
     log.warn("Ask data query failed", {
       orgId,
       ref: error.ref,
       sqlState: error.sqlState,
-      stage: error.stage,
+    });
+  } else if (error.problems) {
+    // Turned on, but the database isn't set up as reviewed (reader-check.ts).
+    log.error("Ask data queries refused: database security check failed", {
+      problems: error.problems,
     });
   }
   return {
@@ -51,7 +55,8 @@ export const dataTools = (ctx: AgentContext, tally: Counters) => ({
   query_data: tool({
     description: `Run one read-only SQL SELECT (Postgres) over this shop's data and get rows back. Use for counts, totals, averages, rankings, lists and comparisons. Only these views exist (no schema prefix needed):
 ${describeViews()}
-Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in SQL; round money to 2 decimals; use ILIKE for names. Today is given in the system prompt (current_date is the server's date, so prefer literal dates).`,
+Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in SQL; round money to 2 decimals; use ILIKE for names. Today is given in the system prompt (current_date is the server's date, so prefer literal dates).
+Allowed: these views only (no system tables); aggregates and window functions (count, sum, avg, min, max, string_agg, percentile_cont, row_number, rank, lag…); round, abs, ceil, floor, greatest, least, coalesce, nullif; text functions (lower, upper, length, substring, replace, split_part, concat, to_char…); dates (now, date_trunc, extract, date_part, age, to_date, make_date, intervals); generate_series and unnest; casts to numbers, text, dates, timestamps, intervals and booleans. Anything else is refused.`,
     inputSchema: z.object({
       purpose: z
         .string()

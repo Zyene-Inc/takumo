@@ -1,20 +1,25 @@
-// A fast, friendly check of the agent's SQL before it reaches the database.
-// The takumo_reader role's permissions are the real guarantee (see reader.ts);
-// this only turns obvious mistakes into clear messages. Pure, so tested.
+// A fast, friendly check of the agent's SQL: obvious mistakes get clear
+// messages. Regex only, so not a boundary: the parse-tree allowlist
+// (sql-allow.ts) decides what may run, and the takumo_reader role's
+// permissions and the barrier views are the real guarantee (see reader.ts).
+// Pure, so tested.
 
 export interface QueryErrorDetails {
+  /** Why it's off (reader-check.ts problems): for the server's logs only. */
+  problems?: string[];
   /** Reference shown with the message, to find the failure in the logs. */
   ref?: string;
   /** Postgres SQLSTATE, for the logs; never the database's own message. */
   sqlState?: string;
-  /** Where it failed: "check" (here), "off", "plan" or "run" (reader.ts). */
-  stage?: "check" | "off" | "plan" | "run";
+  /** Where it failed: "check" (the agent's SQL), "off", or "run" (reader.ts). */
+  stage?: "check" | "off" | "run";
 }
 
 /** A query that didn't run; its message is safe to show the agent. */
 export class QueryError extends Error {
   readonly ref?: string;
   readonly sqlState?: string;
+  readonly problems?: string[];
   readonly stage: NonNullable<QueryErrorDetails["stage"]>;
 
   constructor(message: string, details: QueryErrorDetails = {}) {
@@ -22,6 +27,7 @@ export class QueryError extends Error {
     this.name = "QueryError";
     this.ref = details.ref;
     this.sqlState = details.sqlState;
+    this.problems = details.problems;
     this.stage = details.stage ?? "check";
   }
 }

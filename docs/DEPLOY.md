@@ -28,21 +28,62 @@ Use a separate Supabase project for anything customers touch; the dev project is
    `takumo_reader.<project-ref>` and that password. It can only read the `ask.*` views, one
    shop at a time, read-only, with a 5-second statement timeout.
 
-   **Security (migration `20261113100000_ask_view_isolation`):** Ask Takumo's SQL tool stays
-   off until `ASK_SQL_ENABLED` = `true` on takumo-app, and the app also turns it off by itself
-   while any relation in schema `ask` isn't a security-barrier view. Before turning it on,
-   check in the SQL editor, after `pnpm migrate:deploy`:
-   ```sql
-   -- every row must say true
-   select c.relname, coalesce(c.reloptions @> array['security_barrier=true'], false) as barrier
-   from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'ask';
-   -- must list track_activities=off
-   select setconfig from pg_db_role_setting where setrole = 'takumo_reader'::regrole;
-   ```
-   If `track_activities=off` is missing (the migration warns when its role can't set it),
-   run `alter role takumo_reader set track_activities = off;` as a role allowed to, or the
-   reader's sessions can see each other's query text. Any migration that redefines an `ask`
-   view must keep `with (security_barrier = true)`.
+   **Ask Takumo's SQL tool (`query_data`) is off until this whole step passes** (security
+   hotfix, migrations `20261113100000_ask_view_isolation` and
+   `20261113110000_ask_sql_wrapper`):
+
+   - **Safe state:** `ASK_SQL_ENABLED` unset (or anything but `true`) on takumo-app. Ask
+     still answers with its other tools; `query_data` tells the agent data queries are off.
+     Even with `true`, the app runs nothing unless the database passes its security check
+     on every query (`packages/database/reader-check.ts`): both hotfix migrations applied,
+     every `ask` view a security barrier filtered by `ask_private.org_id()` and exactly as
+     recorded in `ask_private.trusted`, the reader able to run only `ask_private.org_id` and
+     `ask_private.run` (unchanged, `run` SECURITY INVOKER), no elevated attributes or role
+     memberships, no readable table outside `ask`. When it fails, the logs say
+     "Ask data queries refused: database security check failed" with the problem names.
+   - **How the agent's SQL runs:** the app checks it against an allowlist on Postgres's own
+     parse tree (`packages/database/sql-allow.ts`: one SELECT over the `ask` views, plain
+     functions and casts; no system catalogs, no `query_to_xml`-style functions), then sends
+     it as a bind parameter to `ask_private.run(statement, row_limit)`. That function runs
+     it with one dynamic `EXECUTE` and the reader's own rights (SECURITY INVOKER, fixed
+     `search_path = pg_catalog, ask, pg_temp`, read-only transactions with a signed shop
+     only). It needs no privileges beyond the reader's: `EXECUTE` on it is granted to
+     `takumo_reader` only.
+   - **Why the wrapper:** every shop's queries use the one `takumo_reader` login, and a
+     session can read its own login's other sessions' statement text in
+     `pg_stat_activity`. That text is now always `select r from ask_private.run($1, $2) as r`
+     (parameter values aren't shown). The first hotfix migration also tries
+     `alter role takumo_reader set track_activities = off`, but on Supabase the migration's
+     role (`postgres`) isn't a superuser and **can't**, and Prisma doesn't show the
+     migration's warning. Nothing depends on it any more; don't try to work around it.
+   - **Errors:** no Postgres error text, detail or position is ever passed to the agent,
+     the answer, the saved conversation or an email: a fixed message by kind of error and
+     a reference (`ref 1a2b3c4d`) that the server log records with the SQLSTATE only.
+
+   Before setting `ASK_SQL_ENABLED=true` on an environment (staging first):
+   1. `pnpm migrate:deploy` applied both hotfix migrations.
+   2. From your machine, with that environment's **reader** connection string:
+      `ASK_DATABASE_URL='<reader url>' pnpm --filter @repo/database check:ask-sql` prints
+      "database checks passed" (it reads only the catalog, no shop's data). Any problem it
+      lists must be fixed first, e.g. a grant that lets the reader read another table.
+   3. On **staging only** (they create test shops), run the reader tests against it:
+      `TEST_DATABASE_URL='<owner url>' TEST_ASK_DATABASE_URL='<reader url>' pnpm --filter @repo/database test:db`.
+      They show that one shop's session can't read another's SQL (`pg_stat_activity`,
+      `query_to_xml`, and `pg_stat_statements` where its view is readable) and that every
+      tampering with the views, functions or grants turns the tool off.
+   4. Then set `ASK_SQL_ENABLED=true` on takumo-app and redeploy; try a totals question.
+
+   **Rollback:** set `ASK_SQL_ENABLED` to `false` (or remove it) and redeploy: the tool is off
+   again. Rolling the app back to an earlier deploy is safe once the migrations are applied
+   (the views stay isolated). Never restore the old view definitions or drop
+   `ask_private.run`/`ask_private.trusted`: the app then stays off by itself.
+
+   **Changing an `ask` view or `ask_private` function later** (Phase 4's `ask.facts` included):
+   keep every view `with (security_barrier = true)`, filter every table it reads by
+   `ask_private.org_id()` (joined tables too), then end the migration with
+   `select ask_private.record_trusted();` (it refuses views that aren't). Until then the
+   app keeps the tool off. Update `ASK_VIEWS` in `packages/database/sql-allow.ts` for a new
+   view.
 
 ## 2. Vercel projects
 

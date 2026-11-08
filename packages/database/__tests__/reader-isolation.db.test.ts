@@ -300,8 +300,13 @@ describe.skipIf(!(ADMIN && READER))("Ask Takumo: no other shop's data", () => {
       { schema: string; privilege: string }[]
     >(
       `select distinct table_schema as schema, privilege_type as privilege
-       from information_schema.role_table_grants where grantee = 'takumo_reader'`
+       from information_schema.role_table_grants
+       where grantee = 'takumo_reader'
+         and not (table_schema = 'ask_private' and table_name = 'trusted')
+       order by 1`
     );
+    // Plus ask_private.trusted: fingerprints only (migration
+    // 20261113110000_ask_sql_wrapper), read by the app's security check.
     expect(grants).toEqual([{ schema: "ask", privilege: "SELECT" }]);
     const [can] = await admin.$queryRawUnsafe<
       { create_public: boolean; secret: boolean }[]
@@ -363,18 +368,8 @@ describe.skipIf(!(ADMIN && READER))("Ask Takumo: no other shop's data", () => {
     expect(found).toEqual([]);
   }, 60_000);
 
-  test("another reader session can't see this one's query text", async () => {
-    await reader.query("begin read only");
-    const running = reader
-      .query(`select pg_sleep(1.5), '${B("SQL")}' as asked`)
-      .finally(() => reader.query("rollback"));
-    await new Promise((r) => setTimeout(r, 400));
-    const seen = await other.query(
-      "select query from pg_stat_activity where pid <> pg_backend_pid() and query like '%ORGB-LEAK-SQL%'"
-    );
-    await running;
-    expect(seen.rows).toEqual([]);
-  });
+  // Other sessions' query text: reader-wrapper.db.test.ts (the agent's SQL
+  // only ever reaches the database as a parameter of ask_private.run).
 
   describe("through the app (askQuery)", () => {
     test("off unless ASK_SQL_ENABLED is true: nothing reaches the database", async () => {
@@ -404,7 +399,6 @@ describe.skipIf(!(ADMIN && READER))("Ask Takumo: no other shop's data", () => {
       process.env.ASK_SQL_ENABLED = "true";
       for (const sql of [
         "select 1 from customers where name::int > 0",
-        "select 1 from parts where customer::regclass is not null",
         "select 1 from routings where work_center::int > 0",
         "select 1 from facts where value::numeric > 0",
         "select 1 / (count(*) - count(*)) from customers",
@@ -421,6 +415,19 @@ describe.skipIf(!(ADMIN && READER))("Ask Takumo: no other shop's data", () => {
       }
     });
 
+    test("on: lookup casts are refused before the database, naming only the type", async () => {
+      process.env.ASK_SQL_ENABLED = "true";
+      await expect(
+        askQuery(
+          admin,
+          shopA,
+          "select 1 from parts where customer::regclass is not null"
+        )
+      ).rejects.toThrow(
+        /^Casting to regclass isn't allowed in data queries\.$/
+      );
+    });
+
     test("on: a condition aimed at shop B's rows finds nothing", async () => {
       process.env.ASK_SQL_ENABLED = "true";
       for (const sql of [
@@ -434,14 +441,25 @@ describe.skipIf(!(ADMIN && READER))("Ask Takumo: no other shop's data", () => {
       }
     });
 
-    test("on: mistakes in the SQL itself still get a useful message", async () => {
+    test("on: unknown views are named from the agent's own SQL; database errors stay generic", async () => {
       process.env.ASK_SQL_ENABLED = "true";
-      await expect(
-        askQuery(admin, shopA, "select no_such_column from customers")
-      ).rejects.toThrow(/no_such_column/);
+      // Caught by the allowlist before the database: its message is about
+      // the agent's SQL, not from Postgres.
       await expect(
         askQuery(admin, shopA, "select name from no_such_view")
-      ).rejects.toThrow(/no_such_view/);
+      ).rejects.toThrow(/"no_such_view" can't be read/);
+      // Postgres's own message ("column … does not exist") isn't passed on.
+      const error = await askQuery(
+        admin,
+        shopA,
+        "select no_such_column from customers"
+      ).then(
+        () => null,
+        (e: unknown) => e as InstanceType<typeof QueryError>
+      );
+      expect(error?.message).toMatch(/^The query couldn't be run\./);
+      expect(error?.message).not.toMatch(/no_such_column|does not exist/);
+      expect(error?.sqlState).toBe("42703");
     });
 
     test("on, but a view without its barrier: off again", async () => {
@@ -468,6 +486,15 @@ describe.skipIf(!(ADMIN && READER))("Ask Takumo: no other shop's data", () => {
       await expect(
         askQuery(admin, shopA, "select query from pg_stat_activity")
       ).rejects.toThrow(/pg_stat_activity/);
+      // The guard's regex can't see inside strings; the allowlist refuses
+      // the function itself.
+      await expect(
+        askQuery(
+          admin,
+          shopA,
+          "select query_to_xml('select query from pg_stat_activity', true, false, '')"
+        )
+      ).rejects.toThrow(/query_to_xml\(\) isn't allowed/);
       await expect(
         askQuery(admin, shopA, `select U&"set\\005fconfig"('a', 'b', true)`)
       ).rejects.toThrow(/escape/i);

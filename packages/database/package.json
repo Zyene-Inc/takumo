@@ -9,15 +9,17 @@
     "postinstall": "prisma generate --no-hints --schema=./prisma/schema.prisma",
     "clean": "git clean -xdf .cache .turbo dist node_modules",
     "typecheck": "tsc --noEmit --emitDeclarationOnly false",
-    "test:db": "vitest run __tests__/reader.db.test.ts __tests__/reader-isolation.db.test.ts",
+    "test:db": "vitest run --no-file-parallelism __tests__/reader.db.test.ts __tests__/reader-isolation.db.test.ts __tests__/reader-wrapper.db.test.ts",
     "generate-demo": "tsx scripts/generate-demo.ts",
-    "test": "vitest run __tests__/demo.test.ts"
+    "check:ask-sql": "tsx scripts/check-ask-sql.ts",
+    "test": "vitest run __tests__/demo.test.ts __tests__/sql-allow.test.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
     "@prisma/client-runtime-utils": "^7.10.1",
     "@t3-oss/env-nextjs": "^0.13.10",
+    "libpg-query": "17.7.4",
     "pg": "^8.23.1",
     "server-only": "^0.0.1",
     "zod": "^4.3.6"

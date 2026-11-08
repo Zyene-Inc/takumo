@@ -4,6 +4,8 @@ import { createHmac, randomBytes } from "node:crypto";
 import pg from "pg";
 import type { PrismaClient } from "./generated/client";
 import { keys } from "./keys";
+import { SECURITY_PROBLEMS_SQL } from "./reader-check";
+import { allowSql } from "./sql-allow";
 import { checkSql, QueryError } from "./sql-guard";
 
 export { QueryError } from "./sql-guard";
@@ -15,15 +17,19 @@ export { QueryError } from "./sql-guard";
  * 20261031120000_ask_takumo). Rewriting the setting from inside a query
  * returns no rows; everything else is refused by the database itself.
  *
- * Security hotfix (migration 20261113100000_ask_view_isolation):
- * - Off unless ASK_SQL_ENABLED is "true" AND every relation in schema "ask"
- *   is a security-barrier view (checked on every query, in the database the
- *   reader uses). Before the views were barriers, a condition in the query
- *   could run on other shops' rows and quote them in its error.
- * - Errors raised while rows are read can quote a row's value, so they are
- *   never passed on: the caller gets a plain message and a reference. Errors
- *   from planning the query (before any row is read: unknown column, syntax)
- *   are passed on so the agent can fix its SQL.
+ * Security hotfix (migrations 20261113100000_ask_view_isolation and
+ * 20261113110000_ask_sql_wrapper):
+ * - Off unless ASK_SQL_ENABLED is exactly "true" AND the database passes
+ *   reader-check.ts at the start of every query (hotfix migrations applied,
+ *   views and functions exactly as recorded, reader privileges as expected).
+ * - The agent's SQL is checked against an allowlist on Postgres's own parse
+ *   tree first (sql-allow.ts): one SELECT over the ask views, plain functions.
+ * - It reaches the database only as a bind parameter of ask_private.run, so
+ *   other sessions of the reader (other shops) never see its text in
+ *   pg_stat_activity.
+ * - No database error text is ever passed on (it can quote a row's value):
+ *   the caller gets a fixed message by kind of error and a reference that the
+ *   server logs with the SQLSTATE.
  */
 
 /** What the agent is told while data queries are off. */
@@ -43,27 +49,6 @@ interface QueryResult {
   /** More rows matched than MAX_ROWS. */
   truncated: boolean;
 }
-
-const toJson = (value: unknown): QueryRow[string] => {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (value instanceof Date) {
-    // Dates without a time stay dates.
-    const iso = value.toISOString();
-    return iso.endsWith("T00:00:00.000Z") ? iso.slice(0, 10) : iso;
-  }
-  if (typeof value === "bigint") {
-    return Number(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map((v) => toJson(v) as string | number | null);
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  return String(value);
-};
 
 // numeric/bigint come back as strings from pg; numbers are what the agent needs.
 const NUMERIC_TYPES = [20, 1700]; // int8, numeric
@@ -106,15 +91,6 @@ const signingSecret = async (admin: PrismaClient) => {
   return globalForReader.askSecret;
 };
 
-// Relations in schema "ask" that aren't security-barrier views.
-const UNSAFE_VIEWS_SQL = `
-  select count(*)::int as unsafe
-  from pg_class c join pg_namespace n on n.oid = c.relnamespace
-  where n.nspname = 'ask'
-    and not (c.relkind = 'v' and coalesce((
-      select bool_or(o.option_name = 'security_barrier' and o.option_value in ('true', 'on', '1'))
-      from pg_options_to_table(c.reloptions) o), false))`;
-
 const switchedOn = () => keys().ASK_SQL_ENABLED === "true";
 
 /** A short reference to find a failed query in the server's logs. */
@@ -125,59 +101,64 @@ const sqlState = (error: unknown) =>
     ? (error as { code: string }).code
     : undefined;
 
-// Planning reads no rows, so its errors (class 42: syntax, unknown column or
-// view, wrong types, no permission; class 0A: not supported) only describe
-// the query and the schema. Anything else is answered in general terms.
-const PLAN_MESSAGE_CLASSES = ["42", "0A"];
-
-const planError = (error: unknown) => {
-  const ref = newRef();
-  const state = sqlState(error);
-  const message =
-    state &&
-    PLAN_MESSAGE_CLASSES.includes(state.slice(0, 2)) &&
-    error instanceof Error
-      ? error.message.split("\n")[0].slice(0, 300)
-      : "The query couldn't be planned.";
-  return new QueryError(`${message} (ref ${ref})`, {
-    ref,
-    sqlState: state,
-    stage: "plan",
-  });
-};
-
-// While rows are read, an error can quote a value from one (a failed cast,
-// a regclass lookup): only its kind is passed on.
-const RUN_MESSAGES: [prefix: string, message: string][] = [
+// Fixed messages by kind of error. No part of the database's own message,
+// detail, hint or position is ever passed on: it can quote a row's value, a
+// setting or the session's signature, even while the query is only planned.
+const FAILURES: [prefix: string, message: string][] = [
   [
     "57014",
     "The query took longer than 5 seconds and was stopped. Narrow it down or aggregate.",
   ],
   [
     "22",
-    "A value in the data couldn't be converted or calculated (a text column cast to a number or date, or dividing by zero). Avoid casting text columns.",
+    "A value couldn't be converted or calculated (for example a text column cast to a number or date, or dividing by zero). Avoid casting text columns.",
   ],
-  ["21000", "A subquery used as a value returned more than one row."],
-  ["53", "The query needed too much memory. Narrow it down or aggregate."],
-  ["54", "The query is too complex. Simplify it."],
 ];
+const GENERIC_FAILURE =
+  "The query couldn't be run. Check the view and column names and the functions in the tool description.";
 
-const runError = (error: unknown) => {
+/** The error the caller gets for a database failure (exported for tests). */
+export const queryFailure = (error: unknown) => {
   const ref = newRef();
   const state = sqlState(error);
   const known = state
-    ? RUN_MESSAGES.find(([prefix]) => state.startsWith(prefix))?.[1]
+    ? FAILURES.find(([prefix]) => state.startsWith(prefix))?.[1]
     : undefined;
-  return new QueryError(
-    `${known ?? "The query failed while reading the data."} (ref ${ref})`,
-    { ref, sqlState: state, stage: "run" }
-  );
+  return new QueryError(`${known ?? GENERIC_FAILURE} (ref ${ref})`, {
+    ref,
+    sqlState: state,
+    stage: "run",
+  });
 };
+
+/** A value from the json rows as the agent gets it. */
+const fromJson = (value: unknown): QueryRow[string] => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => {
+      const item = fromJson(v);
+      return Array.isArray(item) || typeof item === "boolean"
+        ? JSON.stringify(item)
+        : item;
+    });
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  return String(value);
+};
+
+const RUN_SQL = "select r from ask_private.run($1, $2) as r";
 
 /**
  * Run one read-only SELECT over the current shop's ask.* views. Throws
- * QueryError (with ASK_SQL_OFF while switched off); its message is safe to
- * show the agent and the person asking.
+ * QueryError (with ASK_SQL_OFF while switched off or not verified); its
+ * message is safe to show the agent and the person asking.
  */
 export const askQuery = async (
   admin: PrismaClient,
@@ -187,45 +168,38 @@ export const askQuery = async (
   if (!switchedOn()) {
     throw new QueryError(ASK_SQL_OFF, { stage: "off" });
   }
-  const statement = checkSql(sql);
+  // Friendly first messages, then the parse-tree allowlist decides.
+  checkSql(sql);
+  const statement = await allowSql(sql);
   const signature = createHmac("sha256", await signingSecret(admin))
     .update(orgId)
     .digest("hex");
   const client = await pool().connect();
   try {
     await client.query("begin read only");
-    const [{ unsafe }] = (
-      await client.query<{ unsafe: number }>(UNSAFE_VIEWS_SQL)
-    ).rows;
-    if (unsafe > 0) {
-      throw new QueryError(ASK_SQL_OFF, { stage: "off" });
+    await client.query("select set_config('search_path', 'pg_catalog', true)");
+    const problems = (
+      await client.query<{ problem: string }>(SECURITY_PROBLEMS_SQL)
+    ).rows.map((r) => r.problem);
+    if (problems.length > 0) {
+      throw new QueryError(ASK_SQL_OFF, { stage: "off", problems });
     }
     await client.query(
       "select set_config('takumo.org_id', $1, true), set_config('takumo.org_sig', $2, true)",
       [orgId, signature]
     );
-    const text = `select * from (${statement}) as answer limit ${MAX_ROWS + 1}`;
-    // The extended protocol runs exactly one statement.
-    // (queryMode is in pg ≥ 8.11; @types/pg doesn't list it yet.)
-    const plan: pg.QueryConfig & { queryMode: "extended" } = {
-      queryMode: "extended",
-      text: `explain ${text}`,
-    };
-    await client.query(plan).catch((error: unknown) => {
-      throw planError(error);
-    });
-    const query: pg.QueryConfig & { queryMode: "extended" } = {
-      queryMode: "extended",
-      text,
-    };
-    const result = await client.query(query).catch((error: unknown) => {
-      throw runError(error);
-    });
-    const rows = result.rows.map((row: Record<string, unknown>) =>
-      Object.fromEntries(Object.entries(row).map(([k, v]) => [k, toJson(v)]))
+    // The statement is a parameter: pg_stat_activity shows only RUN_SQL.
+    const result = await client
+      .query<{ r: Record<string, unknown> }>(RUN_SQL, [statement, MAX_ROWS + 1])
+      .catch((error: unknown) => {
+        throw queryFailure(error);
+      });
+    const rows = result.rows.map(({ r }) =>
+      Object.fromEntries(Object.entries(r).map(([k, v]) => [k, fromJson(v)]))
     );
     return {
-      columns: result.fields.map((f) => f.name),
+      // Column names come with the rows (none when nothing matched).
+      columns: rows[0] ? Object.keys(rows[0]) : [],
       rows: rows.slice(0, MAX_ROWS),
       truncated: rows.length > MAX_ROWS,
     };
@@ -233,9 +207,8 @@ export const askQuery = async (
     if (error instanceof QueryError) {
       throw error;
     }
-    // Connecting or setting up failed: nothing from the query, but no
-    // driver text either.
-    throw runError(error);
+    // Connecting or checking failed: no driver text either.
+    throw queryFailure(error);
   } finally {
     await client.query("rollback").catch(() => undefined);
     client.release();

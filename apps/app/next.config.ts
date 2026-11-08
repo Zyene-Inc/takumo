@@ -17,6 +17,21 @@ nextConfig = {
   },
 };
 
+// Ask Takumo's SQL allowlist (packages/database/sql-allow.ts) parses with
+// libpg-query, which loads libpg-query.wasm from its own folder at run time:
+// keep it out of the bundle and ship the file with every server route.
+nextConfig = {
+  ...nextConfig,
+  serverExternalPackages: [
+    ...(nextConfig.serverExternalPackages ?? []),
+    "libpg-query",
+  ],
+  outputFileTracingIncludes: {
+    ...nextConfig.outputFileTracingIncludes,
+    "/**/*": ["./node_modules/libpg-query/wasm/libpg-query.wasm"],
+  },
+};
+
 if (env.VERCEL) {
   nextConfig = withSentry(nextConfig);
 }

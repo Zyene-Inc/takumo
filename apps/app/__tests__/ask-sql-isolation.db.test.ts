@@ -78,6 +78,9 @@ const PROBES = [
   "select work_center from calendar where work_center not like 'A-%' and work_center::int > 0",
   "select order_no from jobs where work_center not like 'A-%' and work_center::int > 0",
   "select 1 from parts where customer not like 'A-%' and customer::regclass is not null",
+  // Other sessions' SQL, through a function that runs a query of its own:
+  // refused before the database (and the wrapper hides it anyway).
+  "select query_to_xml('select query from pg_stat_activity', true, false, '')",
   // Shop A's own value in an error isn't passed on either.
   "select name from customers where name::int > 0",
   // A normal query: shop A's own rows come back.
