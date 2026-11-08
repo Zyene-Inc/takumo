@@ -9,7 +9,7 @@
     "postinstall": "prisma generate --no-hints --schema=./prisma/schema.prisma",
     "clean": "git clean -xdf .cache .turbo dist node_modules",
     "typecheck": "tsc --noEmit --emitDeclarationOnly false",
-    "test:db": "vitest run __tests__/reader.db.test.ts",
+    "test:db": "vitest run __tests__/reader.db.test.ts __tests__/reader-isolation.db.test.ts",
     "generate-demo": "tsx scripts/generate-demo.ts",
     "test": "vitest run __tests__/demo.test.ts"
   },

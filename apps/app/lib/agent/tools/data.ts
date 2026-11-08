@@ -5,12 +5,47 @@ import "server-only";
 import { tool } from "@repo/ai";
 import { database, forOrg } from "@repo/database";
 import { askQuery, QueryError } from "@repo/database/reader";
+import { log } from "@repo/observability/log";
 import { z } from "zod";
 import { searchDocuments } from "@/lib/knowledge/documents";
 import { cite, sourcesFromRows } from "../citations";
 import { getRecordWithKnowledge, RECORD_TYPES } from "../records";
 import { describeViews } from "../schema";
 import type { AgentContext, Counters } from "./shared";
+
+const SQL_HINT =
+  "Fix the SQL and try again. Check view and column names in the tool description.";
+const OFF_HINT =
+  "Don't call query_data again in this answer. Use get_record, get_schedule or the other tools, or tell the person that totals, counts and lists aren't available right now.";
+
+/**
+ * What the agent sees when a query didn't run. QueryError messages never
+ * quote the database (reader.ts); anything else is answered in general terms.
+ * The log keeps the reference and SQLSTATE only: not the SQL, not a message
+ * that could quote a row.
+ */
+const queryFailed = (orgId: string, n: number, error: unknown) => {
+  if (!(error instanceof QueryError)) {
+    log.error("Ask data query failed", {
+      orgId,
+      name: String((error as Error)?.name),
+    });
+    return { query: n, error: "The query failed.", hint: SQL_HINT };
+  }
+  if (error.stage === "plan" || error.stage === "run") {
+    log.warn("Ask data query failed", {
+      orgId,
+      ref: error.ref,
+      sqlState: error.sqlState,
+      stage: error.stage,
+    });
+  }
+  return {
+    query: n,
+    error: error.message,
+    hint: error.stage === "off" ? OFF_HINT : SQL_HINT,
+  };
+};
 
 export const dataTools = (ctx: AgentContext, tally: Counters) => ({
   query_data: tool({
@@ -44,12 +79,7 @@ Rules: one SELECT or WITH…SELECT; at most 200 rows come back, so aggregate in 
           ],
         };
       } catch (error) {
-        return {
-          query: n,
-          error:
-            error instanceof QueryError ? error.message : "The query failed.",
-          hint: "Fix the SQL and try again. Check view and column names in the tool description.",
-        };
+        return queryFailed(ctx.orgId, n, error);
       }
     },
   }),

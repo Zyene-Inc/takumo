@@ -28,6 +28,22 @@ Use a separate Supabase project for anything customers touch; the dev project is
    `takumo_reader.<project-ref>` and that password. It can only read the `ask.*` views, one
    shop at a time, read-only, with a 5-second statement timeout.
 
+   **Security (migration `20261113100000_ask_view_isolation`):** Ask Takumo's SQL tool stays
+   off until `ASK_SQL_ENABLED` = `true` on takumo-app, and the app also turns it off by itself
+   while any relation in schema `ask` isn't a security-barrier view. Before turning it on,
+   check in the SQL editor, after `pnpm migrate:deploy`:
+   ```sql
+   -- every row must say true
+   select c.relname, coalesce(c.reloptions @> array['security_barrier=true'], false) as barrier
+   from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'ask';
+   -- must list track_activities=off
+   select setconfig from pg_db_role_setting where setrole = 'takumo_reader'::regrole;
+   ```
+   If `track_activities=off` is missing (the migration warns when its role can't set it),
+   run `alter role takumo_reader set track_activities = off;` as a role allowed to, or the
+   reader's sessions can see each other's query text. Any migration that redefines an `ask`
+   view must keep `with (security_barrier = true)`.
+
 ## 2. Vercel projects
 
 For each row in the table: Vercel → Add New → Project → import `Zyene-Inc/takumo` → set the
@@ -48,6 +64,8 @@ or the service dashboards; never commit them.
 - `NEXT_PUBLIC_APP_URL` = `https://<app-url>`, `NEXT_PUBLIC_WEB_URL` = `https://<web-url>`
 - `ANTHROPIC_API_KEY` (Ask Takumo and AI column matching; column matching falls back to the offline matcher without it)
 - `ASK_DATABASE_URL` (step 1.3): the reader's connection string; without it Ask Takumo can't query data
+- `ASK_SQL_ENABLED` = `true` (step 1.3): turns Ask Takumo's SQL tool on, only after the checks
+  in step 1.3; any other value or none keeps it off
 - `OPENAI_API_KEY` (optional): vector search over documents, and transcribing uploaded voice-note
   recordings; keyword search and recording in the browser work without it
 - Or Gemini on Vertex AI for every AI feature instead of the two keys above:

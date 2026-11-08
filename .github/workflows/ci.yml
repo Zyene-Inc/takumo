@@ -75,13 +75,14 @@ jobs:
       - name: Import tests against the database
         working-directory: packages/ingest
         run: pnpm test:db
-      - name: App tests against the database
-        working-directory: apps/app
-        run: pnpm exec vitest run __tests__/*.db.test.ts
       # Ask Takumo's read-only login (set per environment, see docs/DEPLOY.md).
+      # Before the app tests: ask-sql-isolation.db.test.ts queries through it.
       - name: Give the reader a password
         working-directory: packages/database
         run: echo "alter role takumo_reader password 'ci-reader';" | pnpm exec prisma db execute --stdin
+      - name: App tests against the database
+        working-directory: apps/app
+        run: pnpm exec vitest run __tests__/*.db.test.ts
       - name: Ask Takumo reader isolation tests
         working-directory: packages/database
         run: pnpm test:db
