@@ -32,7 +32,7 @@ export const BRAIN_TYPE_LABEL: Record<BrainType, string> = {
 export const BRAIN_TYPE_COLOR: Record<BrainType, string> = {
   customer: "#38bdf8", // sky
   part: "#a78bfa", // violet
-  material: "#fb7185", // rose
+  material: "#e879f9", // fuchsia
   work_center: "#fb923c", // orange
   order: "#34d399", // emerald
   quote: "#fbbf24", // amber
