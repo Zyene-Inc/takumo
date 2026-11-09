@@ -200,7 +200,7 @@ export const TakumoEyes = ({
           ref={halo}
           style={{
             background:
-              "conic-gradient(from 90deg, #2dd4bf, #60a5fa, #a78bfa, #f472b6, #fbbf24, #2dd4bf)",
+              "conic-gradient(from 90deg, #7dd3fc, #38bdf8, #0ea5e9, #0284c7, #38bdf8, #7dd3fc)",
           }}
         />
       )}
@@ -258,7 +258,7 @@ export const TakumoEyes = ({
                     <circle
                       cx={eye.cx}
                       cy={eye.cy + 0.5}
-                      fill="#0A0B0D"
+                      fill="#0f172a"
                       r="3.2"
                     />
                     {/* A catch-light makes the eyes look alive. */}

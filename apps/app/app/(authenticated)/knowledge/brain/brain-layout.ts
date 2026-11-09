@@ -29,7 +29,8 @@ export interface Placed {
 
 export const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
-export const HIGHLIGHT = "#F5C200";
+// The selection accent: Warmbly's sky, bright enough on the dark canvas.
+export const HIGHLIGHT = "#7dd3fc";
 
 /** Same graph, same picture: a seeded generator instead of Math.random. */
 export const seeded = (seed: number) => {

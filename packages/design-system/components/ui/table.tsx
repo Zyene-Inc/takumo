@@ -1,3 +1,5 @@
+// Styles adapted from Warmbly (https://github.com/warmbly/warmbly, Apache-2.0),
+// modified for Takumo. See THIRD-PARTY-NOTICES.md.
 "use client"
 
 import * as React from "react"
@@ -23,7 +25,7 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
+      className={cn("[&_tr]:border-b [&_tr]:border-slate-200", className)}
       {...props}
     />
   )
@@ -57,7 +59,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors",
+        "hover:bg-slate-50/80 data-[state=selected]:bg-muted border-b border-slate-200/60 transition-colors",
         className
       )}
       {...props}
@@ -70,7 +72,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        "h-9 px-3 text-left align-middle text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400 whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className
       )}
       {...props}
@@ -83,7 +85,7 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     <td
       data-slot="table-cell"
       className={cn(
-        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        "h-11 px-3 text-[12.5px] text-slate-700 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className
       )}
       {...props}

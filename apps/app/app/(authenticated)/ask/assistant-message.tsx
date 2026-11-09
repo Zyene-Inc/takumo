@@ -47,7 +47,7 @@ export const outputsOf = (messages: UIMessage[]) =>
   );
 
 /** The gear is black while Takumo works (dark grey in dark mode). */
-export const THINKING_COLOR = "text-neutral-900 dark:text-neutral-600";
+export const THINKING_COLOR = "text-slate-900 dark:text-slate-600";
 
 /** Text with a light sweeping across it, for work in progress. */
 export const Shimmer = ({ children }: { children: string }) => {

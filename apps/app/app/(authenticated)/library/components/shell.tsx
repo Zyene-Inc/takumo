@@ -1,17 +1,8 @@
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@repo/design-system/components/ui/breadcrumb";
 import { Input } from "@repo/design-system/components/ui/input";
-import { Separator } from "@repo/design-system/components/ui/separator";
-import { SidebarTrigger } from "@repo/design-system/components/ui/sidebar";
-import { SearchIcon } from "lucide-react";
+import { ChevronRightIcon, SearchIcon } from "lucide-react";
 import Link from "next/link";
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { PageTopbar } from "@/components/page";
 import type { FolderCard } from "@/lib/library/browse";
 import { LibraryNav } from "./nav";
 
@@ -42,54 +33,62 @@ export const LibraryShell = ({
   title: string;
 }) => (
   <>
-    <header className="flex h-16 shrink-0 items-center justify-between gap-2 px-4">
-      <div className="flex min-w-0 items-center gap-2">
-        <SidebarTrigger className="-ml-1" />
-        <Separator className="mr-2 h-4" orientation="vertical" />
-        <Breadcrumb>
-          <BreadcrumbList>
-            {crumbs.map((crumb, index) => (
-              <Fragment key={crumb.href ?? `here:${crumb.label}`}>
-                {index > 0 && <BreadcrumbSeparator />}
-                {/* The item is a flex box: the text itself truncates. */}
-                <BreadcrumbItem className="min-w-0 max-w-48">
-                  {crumb.href && index < crumbs.length - 1 ? (
-                    <BreadcrumbLink asChild>
-                      <Link
-                        className="truncate"
-                        href={crumb.href}
-                        title={crumb.label}
-                      >
-                        {crumb.label}
-                      </Link>
-                    </BreadcrumbLink>
-                  ) : (
-                    <BreadcrumbPage className="truncate" title={crumb.label}>
-                      {crumb.label}
-                    </BreadcrumbPage>
+    <PageTopbar
+      className="mb-4"
+      eyebrow="Company Knowledge"
+      eyebrowAs="span"
+      subtitle={
+        crumbs.length > 0 && (
+          <nav aria-label="Breadcrumb">
+            <ol className="flex min-w-0 items-center gap-1.5">
+              {crumbs.map((crumb, index) => (
+                <li
+                  className="flex min-w-0 items-center gap-1.5"
+                  key={crumb.href ?? `here:${crumb.label}`}
+                >
+                  {index > 0 && (
+                    <ChevronRightIcon className="size-3 shrink-0 text-slate-300" />
                   )}
-                </BreadcrumbItem>
-              </Fragment>
-            ))}
-          </BreadcrumbList>
-        </Breadcrumb>
-      </div>
+                  {crumb.href && index < crumbs.length - 1 ? (
+                    <Link
+                      className="max-w-48 truncate hover:text-slate-900"
+                      href={crumb.href}
+                      title={crumb.label}
+                    >
+                      {crumb.label}
+                    </Link>
+                  ) : (
+                    <span
+                      aria-current="page"
+                      className="max-w-48 truncate text-slate-900"
+                      title={crumb.label}
+                    >
+                      {crumb.label}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </nav>
+        )
+      }
+    >
       <form
         action="/library/search"
         aria-label="Search documents"
-        className="relative hidden w-72 sm:block"
+        className="relative hidden w-64 sm:block"
       >
-        <SearchIcon className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
+        <SearchIcon className="pointer-events-none absolute top-2 left-2.5 size-3.5 text-slate-400" />
         <Input
           aria-label="Search documents"
-          className="pl-8"
+          className="h-7 pl-8 text-[12.5px]"
           defaultValue={query}
           name="q"
           placeholder="Search documents"
           type="search"
         />
       </form>
-    </header>
+    </PageTopbar>
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0 xl:flex-row xl:gap-6">
       <LibraryNav folders={folders} />
       {/* The app shell already provides the page's <main>. */}

@@ -3,3 +3,113 @@
 
 /* Ask Takumo renders answers with Streamdown. */
 @source "../node_modules/streamdown/dist/*.js";
+
+/*
+ * The dashboard's look: colours, type and radius adapted from Warmbly
+ * (https://github.com/warmbly/warmbly, Apache-2.0), modified for Takumo.
+ * See THIRD-PARTY-NOTICES.md. These override the shared design-system theme
+ * for this app only; the marketing site keeps its own.
+ */
+:root {
+  --radius: 0.5rem;
+  --foreground: oklch(0.15 0.01 260);
+  --background: oklch(1 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.01 260);
+  /* Warmbly's accent: sky-600 for highlights, links, selection, drop zones
+     and progress. Solid buttons stay near-black (see the layer below). */
+  --primary: #0284c7;
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0.005 260);
+  --secondary-foreground: oklch(0.25 0.01 260);
+  --muted: oklch(0.97 0.003 260);
+  --muted-foreground: oklch(0.55 0.01 260);
+  --accent: oklch(0.96 0.005 260);
+  --accent-foreground: oklch(0.2 0.01 260);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  /* Warmbly marks success in emerald-600. */
+  --success: #059669;
+  --border: oklch(0.92 0.005 260);
+  --input: oklch(0.92 0.005 260);
+  --ring: oklch(0.55 0.01 260);
+  --chart-1: oklch(0.55 0.15 250);
+  --chart-2: oklch(0.6 0.12 160);
+  --chart-3: oklch(0.65 0.1 30);
+  --chart-4: oklch(0.5 0.14 300);
+  --chart-5: oklch(0.58 0.08 200);
+  --sidebar: #f5f6f8;
+  --sidebar-foreground: oklch(0.15 0.01 260);
+  --sidebar-primary: oklch(0.45 0.01 260);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.96 0.005 260);
+  --sidebar-accent-foreground: oklch(0.2 0.01 260);
+  --sidebar-border: oklch(0.92 0.005 260);
+  --sidebar-ring: oklch(0.55 0.01 260);
+}
+
+@theme inline {
+  --font-sans:
+    "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  /* Warmbly's type scale: dense UI text is 11-13px, headings 15-18px, big
+     numbers 20-24px. Remapping Tailwind's names here shrinks every page and
+     component at once; the chrome uses exact pixel sizes and is unaffected. */
+  --text-xs: 11.5px;
+  --text-xs--line-height: 16px;
+  --text-sm: 12.5px;
+  --text-sm--line-height: 18px;
+  --text-base: 13.5px;
+  --text-base--line-height: 20px;
+  --text-lg: 15px;
+  --text-lg--line-height: 22px;
+  --text-xl: 18px;
+  --text-xl--line-height: 26px;
+  --text-2xl: 20px;
+  --text-2xl--line-height: 28px;
+  --text-3xl: 24px;
+  --text-3xl--line-height: 32px;
+}
+
+/* Warmbly's solid buttons are zinc-900 and its default badge is grey, while
+   its accent (--primary) is sky. In the utilities layer so a page's own
+   utilities, like the page bar's sky action, still win by specificity. */
+@layer utilities {
+  [data-slot="button"][data-variant="default"] {
+    color: #fff;
+    background-color: #18181b;
+  }
+  [data-slot="button"][data-variant="default"]:hover {
+    background-color: #27272a;
+  }
+  [data-slot="button"][data-variant="link"] {
+    color: var(--foreground);
+  }
+  [data-slot="badge"][data-variant="default"] {
+    background-color: oklch(0.45 0.01 260);
+  }
+  /* Warmbly's switch and progress bar use its grey primary, not the sky. */
+  [data-slot="switch"][data-state="checked"] {
+    background-color: oklch(0.45 0.01 260);
+  }
+  [data-slot="progress"] {
+    background-color: oklch(0.45 0.01 260 / 0.2);
+  }
+  [data-slot="progress-indicator"] {
+    background-color: oklch(0.45 0.01 260);
+  }
+}
+
+body {
+  font-family: var(--font-sans);
+  /* Text without a size class reads at Warmbly's message size, not 16px. */
+  font-size: var(--text-base);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

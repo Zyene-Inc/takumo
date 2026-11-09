@@ -28,17 +28,18 @@ export const BRAIN_TYPE_LABEL: Record<BrainType, string> = {
   shop: "Shop",
 };
 
+// Warmbly's category tones at their 400 shade, for the dark knowledge map.
 export const BRAIN_TYPE_COLOR: Record<BrainType, string> = {
-  customer: "#38BDF8",
-  part: "#A78BFA",
-  material: "#F472B6",
-  work_center: "#FB923C",
-  order: "#34D399",
-  quote: "#F5C200",
-  rfq: "#F87171",
-  fact: "#A3E635",
-  document: "#94A3B8",
-  shop: "#F2ECDD",
+  customer: "#38bdf8", // sky
+  part: "#a78bfa", // violet
+  material: "#fb7185", // rose
+  work_center: "#fb923c", // orange
+  order: "#34d399", // emerald
+  quote: "#fbbf24", // amber
+  rfq: "#f87171", // red
+  fact: "#a3e635", // lime
+  document: "#94a3b8", // slate
+  shop: "#f7f8f8", // Warmbly's dark-theme text
 };
 
 export interface BrainNode {

@@ -30,12 +30,17 @@ export const BillingBanner = async ({ orgId }: { orgId: string }) => {
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm",
-        urgent ? "bg-destructive/10 text-destructive" : "bg-muted"
+        "flex min-h-8 shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b px-4 py-1.5 text-[12.5px]",
+        urgent
+          ? "border-red-100 bg-red-50 text-red-700"
+          : "border-sky-100 bg-sky-50 text-sky-800"
       )}
     >
       <span>{text}</span>
-      <Link className="font-medium underline" href="/settings/billing">
+      <Link
+        className="font-medium underline underline-offset-2"
+        href="/settings/billing"
+      >
         Plans and billing
       </Link>
     </div>

@@ -38,9 +38,10 @@ export interface QuoteDocument {
 
 const PAGE = { width: 612, height: 792 }; // US Letter, points
 const MARGIN = 50;
-const INK = rgb(0.11, 0.12, 0.14);
-const MUTED = rgb(0.42, 0.44, 0.48);
-const RULE = rgb(0.85, 0.86, 0.88);
+// Warmbly's slate: 900 for text, 500 for secondary text, 200 for rules.
+const INK = rgb(0.059, 0.09, 0.165);
+const MUTED = rgb(0.392, 0.455, 0.545);
+const RULE = rgb(0.886, 0.91, 0.941);
 const SPACES = /\s+/;
 
 // Column x positions (left edges); numbers are right-aligned to the next edge.

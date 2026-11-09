@@ -103,7 +103,7 @@ export const BrainView = ({ brain }: { brain: Brain }) => {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-      <div className="relative h-[560px] overflow-hidden rounded-2xl bg-[#0A0B0D] lg:h-[640px]">
+      <div className="relative h-[560px] overflow-hidden rounded-2xl bg-[#111214] lg:h-[640px]">
         <BrainCanvas
           links={links}
           matchIds={matchIds}
@@ -114,11 +114,11 @@ export const BrainView = ({ brain }: { brain: Brain }) => {
           selectedId={selectedId}
         />
         <div className="pointer-events-none absolute top-5 left-6">
-          <p className="font-semibold text-[#F2ECDD] text-sm">Knowledge map</p>
-          <p className="mt-1 text-[#B8B2A4] text-xs">
+          <p className="font-semibold text-[#f7f8f8] text-sm">Knowledge map</p>
+          <p className="mt-1 text-[#b4bac3] text-xs">
             {nodes.length} nodes · {links.length} connections
           </p>
-          <p className="mt-1 text-[#8A8578] text-xs">
+          <p className="mt-1 text-[#8a8f98] text-xs">
             {mode === "globe"
               ? "Drag to turn · Click a node to see what it connects to"
               : "Drag to move · Pinch or ctrl+scroll to zoom"}
@@ -130,8 +130,8 @@ export const BrainView = ({ brain }: { brain: Brain }) => {
               className={cn(
                 "rounded-full px-3 py-1 font-medium transition-colors",
                 mode === m
-                  ? "bg-[#F5C200] text-black"
-                  : "text-[#B8B2A4] hover:text-white"
+                  ? "bg-[#38bdf8] text-[#070708]"
+                  : "text-[#b4bac3] hover:text-white"
               )}
               key={m}
               onClick={() => setMode(m)}
@@ -145,7 +145,7 @@ export const BrainView = ({ brain }: { brain: Brain }) => {
           {present.map((t) => (
             <button
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-black/50 px-2 py-1 text-[#D6D0C2] text-[11px] backdrop-blur transition-opacity",
+                "inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-black/50 px-2 py-1 text-[#d0d6e0] text-[11px] backdrop-blur transition-opacity",
                 hidden.has(t) && "opacity-40"
               )}
               key={t}
@@ -163,14 +163,14 @@ export const BrainView = ({ brain }: { brain: Brain }) => {
         </div>
         {hovered && hover && hovered.id !== selectedId && (
           <div
-            className="pointer-events-none absolute z-10 min-w-40 max-w-64 rounded-xl border bg-[#14161A]/95 px-3 py-2.5 shadow-2xl backdrop-blur"
+            className="pointer-events-none absolute z-10 min-w-40 max-w-64 rounded-xl border bg-[#1a1b1e]/95 px-3 py-2.5 shadow-2xl backdrop-blur"
             style={{
               left: hover.x + 16,
               top: hover.y - 8,
               borderColor: `${BRAIN_TYPE_COLOR[hovered.type]}55`,
             }}
           >
-            <p className="font-bold text-[#F2ECDD] text-xs leading-tight">
+            <p className="font-bold text-[#f7f8f8] text-xs leading-tight">
               {hovered.label}
             </p>
             <p
@@ -180,17 +180,17 @@ export const BrainView = ({ brain }: { brain: Brain }) => {
               {BRAIN_TYPE_LABEL[hovered.type]}
             </p>
             {hovered.sub && (
-              <p className="mt-1 line-clamp-2 text-[#B8B2A4] text-[10px]">
+              <p className="mt-1 line-clamp-2 text-[#b4bac3] text-[10px]">
                 {hovered.sub}
               </p>
             )}
-            <p className="mt-1 text-[#8A8578] text-[10px]">
+            <p className="mt-1 text-[#8a8f98] text-[10px]">
               {hovered.degree} connection{hovered.degree === 1 ? "" : "s"}
             </p>
           </div>
         )}
         {nodes.length === 0 && (
-          <p className="absolute inset-0 grid place-items-center text-[#8A8578] text-sm">
+          <p className="absolute inset-0 grid place-items-center text-[#8a8f98] text-sm">
             Nothing to show. Add shop data or turn a type back on.
           </p>
         )}
