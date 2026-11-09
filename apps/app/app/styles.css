@@ -105,6 +105,14 @@
   }
 }
 
+/* Native checkboxes and radios take Warmbly's sky, like its Checkbox. */
+@layer base {
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--primary);
+  }
+}
+
 body {
   font-family: var(--font-sans);
   /* Text without a size class reads at Warmbly's message size, not 16px. */

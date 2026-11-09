@@ -306,7 +306,7 @@ export const BrainView = ({ brain }: { brain: Brain }) => {
                   <label className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted">
                     <input
                       checked={!hidden.has(t)}
-                      className="accent-foreground"
+                      className="accent-primary"
                       onChange={() => toggle(t)}
                       type="checkbox"
                     />
