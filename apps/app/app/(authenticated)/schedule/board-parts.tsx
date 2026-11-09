@@ -65,7 +65,7 @@ export const OperationBar = ({
   result,
   crew,
   geometry,
-  hue,
+  colour,
   canEdit,
   dimmed,
   dragOffset,
@@ -80,7 +80,7 @@ export const OperationBar = ({
   dimmed: boolean;
   dragOffset: { x: number; y: number } | null;
   geometry: { left: number; width: number };
-  hue: number;
+  colour: string;
   info: OrderInfo | undefined;
   onCancel: () => void;
   onClick: () => void;
@@ -97,8 +97,8 @@ export const OperationBar = ({
     <button
       aria-label={`${op.order_no} op ${op.seq} on ${op.work_center}, ${fmtTime(op.start_at)} to ${fmtTime(op.end_at)}`}
       className={cn(
-        "absolute inset-y-2 z-10 flex items-center gap-1 overflow-hidden rounded-md px-1.5 text-left text-white text-xs shadow-sm outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-ring dark:text-black",
-        "bg-[hsl(var(--hue)_55%_38%)] dark:bg-[hsl(var(--hue)_50%_62%)]",
+        "absolute inset-y-2 z-10 flex items-center gap-1 overflow-hidden rounded-md px-1.5 text-left text-white text-xs shadow-sm outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-ring",
+        "bg-(--job)",
         risk === "late" &&
           "ring-2 ring-destructive ring-offset-1 ring-offset-background",
         risk === "tight" &&
@@ -114,7 +114,7 @@ export const OperationBar = ({
       onPointerUp={onPointerUp}
       style={
         {
-          "--hue": hue,
+          "--job": colour,
           left: geometry.left,
           width: geometry.width,
           transform: dragOffset

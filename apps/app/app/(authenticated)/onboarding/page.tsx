@@ -118,7 +118,7 @@ const OnboardingPage = async ({
                 return (
                   <li className="flex gap-3" key={entity}>
                     {count > 0 ? (
-                      <CheckCircle2Icon className="mt-0.5 size-4 shrink-0 text-green-600" />
+                      <CheckCircle2Icon className="mt-0.5 size-4 shrink-0 text-emerald-600" />
                     ) : (
                       <CircleIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                     )}

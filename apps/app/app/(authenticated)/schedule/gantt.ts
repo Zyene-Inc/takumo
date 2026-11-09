@@ -102,14 +102,25 @@ export const moveProblem = (
     : null;
 };
 
-/** Theme-friendly hue for an order, stable across re-plans (from its number). */
-const HUES = [186, 28, 262, 142, 330, 48, 210, 0, 100, 290];
-export const orderHue = (orderNo: string) => {
+/**
+ * A colour for an order, stable across re-plans (from its number): Warmbly's
+ * seven category tones at their 600 shade, dark enough for white text.
+ */
+const ORDER_COLOURS = [
+  "#0284c7", // sky
+  "#d97706", // amber
+  "#e11d48", // rose
+  "#059669", // emerald
+  "#7c3aed", // violet
+  "#65a30d", // lime
+  "#475569", // slate
+];
+export const orderColour = (orderNo: string) => {
   let hash = 0;
   for (const char of orderNo) {
     hash = (hash * 31 + char.charCodeAt(0)) % 1_000_003;
   }
-  return HUES[hash % HUES.length];
+  return ORDER_COLOURS[hash % ORDER_COLOURS.length];
 };
 
 type OrderRisk = "late" | "tight" | "ok";

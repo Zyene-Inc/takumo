@@ -14,7 +14,7 @@ import {
   closedReason,
   daysBetween,
   fmtDay,
-  orderHue,
+  orderColour,
 } from "./gantt";
 
 export const ROW_HEIGHT = 48;
@@ -182,6 +182,7 @@ export const BoardGrid = ({
                   return (
                     <OperationBar
                       canEdit={canEdit}
+                      colour={orderColour(op.order_no)}
                       crew={crews[key]}
                       dimmed={Boolean(selected && selected !== op.order_no)}
                       dragOffset={
@@ -190,7 +191,6 @@ export const BoardGrid = ({
                           : null
                       }
                       geometry={barGeometry(op, request.start_date, dayWidth)}
-                      hue={orderHue(op.order_no)}
                       info={orderInfo[op.order_no]}
                       key={key}
                       onCancel={() => updateDrag(null)}

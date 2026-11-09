@@ -18,9 +18,9 @@
   --card-foreground: oklch(0.15 0.01 260);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.15 0.01 260);
-  /* Solid buttons are near-black (Warmbly's zinc-900); blue is kept for
-     primary page actions, live marks and selection (sky-500/600). */
-  --primary: #18181b;
+  /* Warmbly's accent: sky-600 for highlights, links, selection, drop zones
+     and progress. Solid buttons stay near-black (see the layer below). */
+  --primary: #0284c7;
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.96 0.005 260);
   --secondary-foreground: oklch(0.25 0.01 260);
@@ -29,6 +29,9 @@
   --accent: oklch(0.96 0.005 260);
   --accent-foreground: oklch(0.2 0.01 260);
   --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  /* Warmbly marks success in emerald-600. */
+  --success: #059669;
   --border: oklch(0.92 0.005 260);
   --input: oklch(0.92 0.005 260);
   --ring: oklch(0.55 0.01 260);
@@ -71,6 +74,35 @@
   --text-2xl--line-height: 28px;
   --text-3xl: 24px;
   --text-3xl--line-height: 32px;
+}
+
+/* Warmbly's solid buttons are zinc-900 and its default badge is grey, while
+   its accent (--primary) is sky. In the utilities layer so a page's own
+   utilities, like the page bar's sky action, still win by specificity. */
+@layer utilities {
+  [data-slot="button"][data-variant="default"] {
+    color: #fff;
+    background-color: #18181b;
+  }
+  [data-slot="button"][data-variant="default"]:hover {
+    background-color: #27272a;
+  }
+  [data-slot="button"][data-variant="link"] {
+    color: var(--foreground);
+  }
+  [data-slot="badge"][data-variant="default"] {
+    background-color: oklch(0.45 0.01 260);
+  }
+  /* Warmbly's switch and progress bar use its grey primary, not the sky. */
+  [data-slot="switch"][data-state="checked"] {
+    background-color: oklch(0.45 0.01 260);
+  }
+  [data-slot="progress"] {
+    background-color: oklch(0.45 0.01 260 / 0.2);
+  }
+  [data-slot="progress-indicator"] {
+    background-color: oklch(0.45 0.01 260);
+  }
 }
 
 body {

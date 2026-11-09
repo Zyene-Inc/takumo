@@ -209,9 +209,9 @@ export const drawLabels = (
       continue;
     }
     taken.push({ x, y, w });
-    ctx.fillStyle = "rgba(10,11,13,0.82)";
+    ctx.fillStyle = "rgba(17,18,20,0.82)";
     ctx.fillRect(x, y, w, 17);
-    ctx.fillStyle = i === f.focus || p.degree >= 4 ? "#F2ECDD" : "#B8B2A4";
+    ctx.fillStyle = i === f.focus || p.degree >= 4 ? "#f7f8f8" : "#b4bac3";
     ctx.fillText(text, x + 5, p.sy);
   }
 };
@@ -242,8 +242,8 @@ export const drawScene = (
   const cx = width / 2;
   const cy = height / 2;
   const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 1.25 * radius);
-  glow.addColorStop(0, "rgba(245,194,0,0.07)");
-  glow.addColorStop(0.7, "rgba(245,194,0,0.02)");
+  glow.addColorStop(0, "rgba(56,189,248,0.07)");
+  glow.addColorStop(0.7, "rgba(56,189,248,0.02)");
   glow.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, width, height);
