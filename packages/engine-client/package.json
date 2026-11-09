@@ -2,6 +2,11 @@
   "name": "@repo/engine-client",
   "version": "0.0.0",
   "private": true,
+  "turbo": {
+    "tags": [
+      "package"
+    ]
+  },
   "main": "./index.ts",
   "types": "./index.ts",
   "scripts": {

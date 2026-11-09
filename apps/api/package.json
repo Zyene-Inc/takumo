@@ -1,6 +1,11 @@
 {
   "name": "api",
   "private": true,
+  "turbo": {
+    "tags": [
+      "app"
+    ]
+  },
   "scripts": {
     "dev": "next dev -p 3002",
     "dev:stripe": "concurrently \"npm:dev\" \"npm:stripe\"",

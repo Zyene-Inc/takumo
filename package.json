@@ -13,6 +13,7 @@
     "typecheck": "turbo typecheck",
     "analyze": "turbo analyze",
     "boundaries": "turbo boundaries",
+    "test:env": "node --test scripts/env-rules.test.mjs",
     "migrate": "cd packages/database && pnpm exec prisma format && pnpm exec prisma generate && pnpm exec prisma migrate dev",
     "migrate:deploy": "cd packages/database && pnpm exec prisma generate && pnpm exec prisma migrate deploy",
     "db:push": "cd packages/database && pnpm exec prisma format && pnpm exec prisma generate && pnpm exec prisma db push",

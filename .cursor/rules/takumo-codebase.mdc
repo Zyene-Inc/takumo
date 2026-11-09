@@ -1,0 +1,10 @@
+---
+description: Follow Takumo structure, size, and security rules before writing code
+alwaysApply: true
+---
+
+# Takumo codebase
+
+Before adding or editing code in this repo, read and follow `.cursor/skills/takumo-codebase/SKILL.md`. Use `.cursor/skills/takumo-codebase/placement.md` when the domain or package is unclear.
+
+`CONTRIBUTING.md` wins if they disagree. Do not restructure the monorepo. Place the change, stay under the file-size limits, and keep route files thin.

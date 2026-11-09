@@ -2,26 +2,10 @@
 
 // Editing the estimate's inputs: operations, material and outside processes.
 
-import { Badge } from "@repo/design-system/components/ui/badge";
 import { Button } from "@repo/design-system/components/ui/button";
 import { Input } from "@repo/design-system/components/ui/input";
 import { Label } from "@repo/design-system/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@repo/design-system/components/ui/select";
 import { Spinner } from "@repo/design-system/components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@repo/design-system/components/ui/table";
 import type {
   OperationSource,
   OutsideProcess,
@@ -33,7 +17,8 @@ import { useState, useTransition } from "react";
 import type { LineView } from "@/lib/quotes/view";
 import { localToday } from "../../schedule/gantt";
 import { type LineInputs, reestimateLine } from "../actions";
-import { Fold, SOURCE_LABEL } from "./line-card-parts";
+import { Fold } from "./line-card-parts";
+import { OperationRows } from "./operation-rows";
 
 export interface OpRow {
   alt: string[];
@@ -189,156 +174,14 @@ export const InputsEditor = ({
       title="Operations and inputs"
     >
       <div className="grid gap-4">
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-16">Op</TableHead>
-                <TableHead>Machine</TableHead>
-                <TableHead className="text-right">Setup min</TableHead>
-                <TableHead className="text-right">Run min/ea</TableHead>
-                <TableHead>From</TableHead>
-                {editable && <TableHead className="w-10" />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {ops.map((op) => (
-                <TableRow key={op.key}>
-                  <TableCell>
-                    {editable ? (
-                      <Input
-                        aria-label="Operation number"
-                        className="h-8 w-16"
-                        onChange={(e) =>
-                          editOp(op.key, { seq: e.target.value })
-                        }
-                        type="number"
-                        value={op.seq}
-                      />
-                    ) : (
-                      op.seq
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {editable ? (
-                      <Select
-                        onValueChange={(v) => editOp(op.key, { workCenter: v })}
-                        value={op.workCenter}
-                      >
-                        <SelectTrigger
-                          aria-label="Machine"
-                          className="h-8 w-40"
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {machines.map((m) => (
-                            <SelectItem key={m} value={m}>
-                              {m}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      op.workCenter
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {editable ? (
-                      <Input
-                        aria-label="Setup minutes"
-                        className="ml-auto h-8 w-20 text-right"
-                        min={0}
-                        onChange={(e) =>
-                          editOp(op.key, { setup: e.target.value })
-                        }
-                        step="any"
-                        type="number"
-                        value={op.setup}
-                      />
-                    ) : (
-                      op.setup
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {editable ? (
-                      <Input
-                        aria-label="Run minutes per part"
-                        className="ml-auto h-8 w-20 text-right"
-                        min={0}
-                        onChange={(e) =>
-                          editOp(op.key, { run: e.target.value })
-                        }
-                        step="any"
-                        type="number"
-                        value={op.run}
-                      />
-                    ) : (
-                      op.run
-                    )}
-                  </TableCell>
-                  <TableCell className="max-w-72">
-                    <Badge
-                      variant={
-                        op.source === "comparable" ? "outline" : "secondary"
-                      }
-                    >
-                      {SOURCE_LABEL[op.source]}
-                    </Badge>
-                    {op.note && (
-                      <p className="mt-1 text-muted-foreground text-xs">
-                        {op.note}
-                      </p>
-                    )}
-                  </TableCell>
-                  {editable && (
-                    <TableCell>
-                      <Button
-                        aria-label="Remove operation"
-                        onClick={() => {
-                          setOpsChanged(true);
-                          setOps((rows) =>
-                            rows.filter((r) => r.key !== op.key)
-                          );
-                        }}
-                        size="icon"
-                        variant="ghost"
-                      >
-                        <Trash2Icon />
-                      </Button>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-        {editable && (
-          <Button
-            className="justify-self-start"
-            onClick={() => {
-              setOpsChanged(true);
-              const last = Math.max(0, ...ops.map((o) => Number(o.seq) || 0));
-              setOps((rows) => [
-                ...rows,
-                {
-                  key: nextKey(),
-                  seq: String(last + 10),
-                  workCenter: machines[0] ?? "",
-                  setup: "0",
-                  run: "0",
-                  source: "estimator",
-                  note: null,
-                  alt: [],
-                },
-              ]);
-            }}
-            size="sm"
-            variant="outline"
-          >
-            <PlusIcon /> Add operation
-          </Button>
-        )}
+        <OperationRows
+          editable={editable}
+          editOp={editOp}
+          machines={machines}
+          ops={ops}
+          setOps={setOps}
+          setOpsChanged={setOpsChanged}
+        />
 
         <div className="grid gap-3 sm:grid-cols-3">
           {pricedByStock && (

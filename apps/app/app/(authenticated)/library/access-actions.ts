@@ -10,12 +10,14 @@ import {
 } from "@/lib/library/access-view";
 import { setFolderAiMode } from "@/lib/library/ai-settings";
 import {
+  setConfidential,
+  setInheritance,
+} from "@/lib/library/grant-inheritance";
+import {
   type ChainGrant,
   grantAccess,
   type Principal,
   revokeAccess,
-  setConfidential,
-  setInheritance,
 } from "@/lib/library/grants";
 import { libraryEnabled } from "@/lib/library/stage";
 import { resolveViewer, type Viewer } from "@/lib/library/viewer";

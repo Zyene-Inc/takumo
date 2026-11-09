@@ -1,7 +1,8 @@
 # Contributing to Takumo
 
 How the code is organized and the rules every change follows. CI enforces the ones marked
-**(CI)**; reviewers check the rest.
+**(CI)**; reviewers check the rest. Agents follow the same rules via
+`.cursor/skills/takumo-codebase/SKILL.md` before writing code.
 
 ## Where code goes
 
@@ -22,7 +23,11 @@ into another package. A package lists every package it imports in its own `packa
 
 - **(CI)** Source files: at most **600 lines**. Test files: at most **1,000 lines**
   (`pnpm check:size`). Generated code, vendored code, shadcn components, migrations and the demo
-  data are exempt.
+  data are exempt. Review a file that passes **400** before adding to it: split by responsibility
+  first.
+- **(CI)** A package imports another package only through its name, and only if that
+  package is listed in its own `package.json` (`pnpm boundaries`). Apps may import
+  packages. Packages do not import apps. Nothing imports a file outside its package.
 - When a file grows past the limit, split it by responsibility into sibling modules named for
   what they contain (for example `pricing/material.ts`, `pricing/outside.ts`), keeping the
   original path as the entry point that re-exports.
