@@ -5,7 +5,6 @@
     // the AI SDK's inferred tool types can't be named from here (TS2742).
     "declaration": false,
     "declarationMap": false,
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
       "@repo/*": ["../../packages/*"]
