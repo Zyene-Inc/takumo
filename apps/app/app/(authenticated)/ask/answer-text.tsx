@@ -106,7 +106,7 @@ export const AnswerText = ({
   );
   return (
     <Streamdown
-      className="text-sm leading-relaxed [&_li]:my-0.5 [&_p]:my-2 [&_ul]:my-2"
+      className="text-base leading-relaxed [&_li]:my-0.5 [&_p]:my-2 [&_ul]:my-2"
       components={components}
       controls={{ code: true, table: true, mermaid: false }}
       isAnimating={streaming}

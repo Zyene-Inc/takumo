@@ -53,10 +53,30 @@
     sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   --radius-2xl: calc(var(--radius) + 8px);
+
+  /* Warmbly's type scale: dense UI text is 11-13px, headings 15-18px, big
+     numbers 20-24px. Remapping Tailwind's names here shrinks every page and
+     component at once; the chrome uses exact pixel sizes and is unaffected. */
+  --text-xs: 11.5px;
+  --text-xs--line-height: 16px;
+  --text-sm: 12.5px;
+  --text-sm--line-height: 18px;
+  --text-base: 13.5px;
+  --text-base--line-height: 20px;
+  --text-lg: 15px;
+  --text-lg--line-height: 22px;
+  --text-xl: 18px;
+  --text-xl--line-height: 26px;
+  --text-2xl: 20px;
+  --text-2xl--line-height: 28px;
+  --text-3xl: 24px;
+  --text-3xl--line-height: 32px;
 }
 
 body {
   font-family: var(--font-sans);
+  /* Text without a size class reads at Warmbly's message size, not 16px. */
+  font-size: var(--text-base);
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
