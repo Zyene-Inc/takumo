@@ -3,3 +3,61 @@
 
 /* Ask Takumo renders answers with Streamdown. */
 @source "../node_modules/streamdown/dist/*.js";
+
+/*
+ * The dashboard's look: colours, type and radius adapted from Warmbly
+ * (https://github.com/warmbly/warmbly, Apache-2.0), modified for Takumo.
+ * See THIRD-PARTY-NOTICES.md. These override the shared design-system theme
+ * for this app only; the marketing site keeps its own.
+ */
+:root {
+  --radius: 0.5rem;
+  --foreground: oklch(0.15 0.01 260);
+  --background: oklch(1 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.01 260);
+  /* Solid buttons are near-black (Warmbly's zinc-900); blue is kept for
+     primary page actions, live marks and selection (sky-500/600). */
+  --primary: #18181b;
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0.005 260);
+  --secondary-foreground: oklch(0.25 0.01 260);
+  --muted: oklch(0.97 0.003 260);
+  --muted-foreground: oklch(0.55 0.01 260);
+  --accent: oklch(0.96 0.005 260);
+  --accent-foreground: oklch(0.2 0.01 260);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.92 0.005 260);
+  --input: oklch(0.92 0.005 260);
+  --ring: oklch(0.55 0.01 260);
+  --chart-1: oklch(0.55 0.15 250);
+  --chart-2: oklch(0.6 0.12 160);
+  --chart-3: oklch(0.65 0.1 30);
+  --chart-4: oklch(0.5 0.14 300);
+  --chart-5: oklch(0.58 0.08 200);
+  --sidebar: #f5f6f8;
+  --sidebar-foreground: oklch(0.15 0.01 260);
+  --sidebar-primary: oklch(0.45 0.01 260);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.96 0.005 260);
+  --sidebar-accent-foreground: oklch(0.2 0.01 260);
+  --sidebar-border: oklch(0.92 0.005 260);
+  --sidebar-ring: oklch(0.55 0.01 260);
+}
+
+@theme inline {
+  --font-sans:
+    "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --radius-2xl: calc(var(--radius) + 8px);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

@@ -1,43 +1,26 @@
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@repo/design-system/components/ui/breadcrumb";
-import { Separator } from "@repo/design-system/components/ui/separator";
-import { SidebarTrigger } from "@repo/design-system/components/ui/sidebar";
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { PageTopbar } from "@/components/page";
 
 interface HeaderProps {
   children?: ReactNode;
   page: string;
-  pages: string[];
+  /** Parent pages; the app header's breadcrumb shows where you are now. */
+  pages?: string[];
+  /** A line of context beside the page name. */
+  subtitle?: ReactNode;
 }
 
-export const Header = ({ pages, page, children }: HeaderProps) => (
-  <header className="flex h-16 shrink-0 items-center justify-between gap-2">
-    <div className="flex items-center gap-2 px-4">
-      <SidebarTrigger className="-ml-1" />
-      <Separator className="mr-2 h-4" orientation="vertical" />
-      <Breadcrumb>
-        <BreadcrumbList>
-          {pages.map((page, index) => (
-            <Fragment key={page}>
-              {index > 0 && <BreadcrumbSeparator className="hidden md:block" />}
-              <BreadcrumbItem className="hidden md:block">
-                <BreadcrumbLink href="#">{page}</BreadcrumbLink>
-              </BreadcrumbItem>
-            </Fragment>
-          ))}
-          <BreadcrumbSeparator className="hidden md:block" />
-          <BreadcrumbItem>
-            <BreadcrumbPage>{page}</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+/**
+ * The bar at the top of a page: its name as a small eyebrow, optional
+ * context, and the page's actions on the right (Warmbly's page topbar).
+ * The gap below suits pages whose body pads itself.
+ */
+export const Header = ({ page, subtitle, children }: HeaderProps) => (
+  <PageTopbar className="mb-4" eyebrow={page} subtitle={subtitle}>
+    {/* Actions sit flush (the bar pads itself), compact, and the page's main
+        action is the solid sky button. */}
+    <div className="flex items-center gap-1.5 [&>*:not([data-slot=button])]:px-0 [&_[data-slot=button][data-variant=default]]:bg-sky-600 [&_[data-slot=button][data-variant=default]]:hover:bg-sky-700 [&_[data-slot=button]]:h-7 [&_[data-slot=button]]:text-[12px]">
+      {children}
     </div>
-    {children}
-  </header>
+  </PageTopbar>
 );

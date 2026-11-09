@@ -1,3 +1,4 @@
+import "@fontsource-variable/inter";
 import "./styles.css";
 import { AnalyticsProvider } from "@repo/analytics/provider";
 import { AuthProvider } from "@repo/auth/provider";
@@ -13,7 +14,8 @@ const RootLayout = ({ children }: RootLayoutProperties) => (
   <html className={fonts} lang="en" suppressHydrationWarning>
     <body>
       <AnalyticsProvider>
-        <DesignSystemProvider>
+        {/* Light only for now: the dark theme follows in its own change. */}
+        <DesignSystemProvider forcedTheme="light">
           <AuthProvider>{children}</AuthProvider>
         </DesignSystemProvider>
       </AnalyticsProvider>
