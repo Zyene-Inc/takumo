@@ -1,12 +1,11 @@
 # Deploying Takumo (test environment)
 
-Three Vercel projects from this repo, one Supabase database, one WorkOS environment, and
+Two Vercel projects from this repo (the product and the marketing site), one Supabase database, one WorkOS environment, and
 the scheduling engine (`services/engine`) as a Docker web service.
 
 | Vercel project | Root directory | Test URL (example) |
 |---|---|---|
 | `takumo-app` | `apps/app` | `https://takumo-app.vercel.app` |
-| `takumo-api` | `apps/api` | `https://takumo-api.vercel.app` |
 | `takumo-web` | `apps/web` | `https://takumo-web.vercel.app` |
 
 ## 1. Database
@@ -127,6 +126,7 @@ or the service dashboards; never commit them.
 - `DATABASE_URL` (Supabase pooler, port 6543). `DIRECT_URL` (port 5432) is only for running
   migrations from your machine (step 1); the app doesn't need it
 - `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_COOKIE_PASSWORD` (new value: `openssl rand -base64 32`)
+- `WORKOS_WEBHOOK_SECRET` (step 3): keeps shops and members in sync with WorkOS
 - `NEXT_PUBLIC_WORKOS_REDIRECT_URI` = `https://<app-url>/callback`
 - `NEXT_PUBLIC_APP_URL` = `https://<app-url>`, `NEXT_PUBLIC_WEB_URL` = `https://<web-url>`
 - `ANTHROPIC_API_KEY` (Ask Takumo and AI column matching; column matching falls back to the offline matcher without it)
@@ -145,7 +145,8 @@ or the service dashboards; never commit them.
   recalibration (`/api/cron/recalibrate`, 07:00 UTC, in `apps/app/vercel.json`); without it the
   route refuses every call and recalibration runs only from Knowledge → Calibration. The same
   secret protects the hourly connector sync (`/api/cron/connectors`).
-- `STRIPE_SECRET_KEY` (step 5): billing; without it the Billing page can't take payment
+- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (step 5): billing; without the key the Billing page
+  can't take payment, and without the webhook secret plan changes never reach the shop
 - `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (step 6): product analytics
 - `CONNECTOR_ENCRYPTION_KEY` = a new value (`openssl rand -base64 32`; keep it: losing it means
   every shop reconnects): encrypts QuickBooks, Gmail and Outlook tokens
@@ -177,18 +178,11 @@ or the service dashboards; never commit them.
 
 Check a project's variables before going live (names only, never values):
 from the repo root, `vercel link` to the project, `vercel env pull apps/app/.env.production`, then
-`pnpm check:env app apps/app/.env.production --production` (`api` or `web` for the other
-projects), then delete the file.
+`pnpm check:env app apps/app/.env.production --production` (`web` for the marketing site), then
+delete the file.
 
 `NEXT_PUBLIC_WORKOS_REDIRECT_URI` is built into the app, so preview deployments send sign-in back
 to the production URL. Test sign-in on the production (or staging) domain.
-
-**takumo-api**
-- `DATABASE_URL`, `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`
-- `WORKOS_WEBHOOK_SECRET` (step 3)
-- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (step 5)
-- `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (step 6)
-- `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_WEB_URL`
 
 **takumo-web**
 - `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_WEB_URL`
@@ -202,9 +196,9 @@ In the WorkOS dashboard (staging environment for a test URL):
 
 1. **Redirects** → add `https://<app-url>/callback`; set the sign-in endpoint to
    `https://<app-url>/sign-in` and the sign-out redirect to `https://<web-url>`.
-2. **Webhooks** → add endpoint `https://<api-url>/webhooks/auth` with events
+2. **Webhooks** → add endpoint `https://<app-url>/api/webhooks/auth` with events
    `user.*`, `organization.*`, `organization_membership.*`. Copy the signing secret into
-   `WORKOS_WEBHOOK_SECRET` on `takumo-api` and redeploy it.
+   `WORKOS_WEBHOOK_SECRET` on `takumo-app` and redeploy it.
 3. **Roles** must include `admin`, `planner`, `estimator`, `operator`, `member`
    (see `packages/auth/permissions.ts` for what each may change).
 
@@ -269,11 +263,11 @@ Plant (custom, set by hand). New shops get a 30-day trial with everything in Pro
    `STRIPE_SECRET_KEY=sk_test_… pnpm --filter @repo/payments setup-stripe`
 2. Stripe → Settings → Billing → Customer portal: turn on switching between the two prices,
    cancelling, and updating the card.
-3. Stripe → Developers → Webhooks → Add endpoint: `https://<api-url>/webhooks/payments`, events
+3. Stripe → Developers → Webhooks → Add endpoint: `https://<app-url>/api/webhooks/payments`, events
    `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`,
    `customer.subscription.deleted`, `invoice.payment_failed`. Put its signing secret in
-   `STRIPE_WEBHOOK_SECRET` on `takumo-api`.
-4. Set `STRIPE_SECRET_KEY` on `takumo-app` and `takumo-api`; redeploy both.
+   `STRIPE_WEBHOOK_SECRET` on `takumo-app`.
+4. Set `STRIPE_SECRET_KEY` on `takumo-app` and redeploy it.
 5. Check: Settings → Billing → Choose Pro → pay with `4242 4242 4242 4242` → back on the page the
    plan shows Pro / Active (the webhook updates it within seconds).
 6. Going live: repeat 1–4 with the live key and a live webhook.
@@ -284,7 +278,7 @@ trial as needed. A Plant customer: set `plan = 'plant'` on the shop's `Org` row.
 ## 6. PostHog (analytics)
 
 Create a PostHog project; put its key (`phc_…`) and host (`https://us.i.posthog.com`) in
-`NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` on `takumo-app` and `takumo-api`. People
+`NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` on `takumo-app`. People
 are identified by WorkOS user id and grouped by shop (group type `company`). Server events
 (`apps/app/lib/analytics.ts`): `question_answered`, `quote_drafted`, `quote_approved`,
 `rfq_received`, `capacity_checked`, `plan_built`, `fact_proposed`, `fact_reviewed`, `note_saved`,

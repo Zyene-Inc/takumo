@@ -46,7 +46,7 @@ enum FactStatus {
 }
 
 // ---------------------------------------------------------------------------
-// Orgs & members (mirrored from WorkOS: on shop creation and via apps/api webhook)
+// Orgs & members (mirrored from WorkOS: on shop creation and via the app's WorkOS webhook)
 // ---------------------------------------------------------------------------
 
 model Org {

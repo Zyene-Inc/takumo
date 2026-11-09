@@ -12,6 +12,7 @@ const { stripe } = await vi.hoisted(async () => {
   return { stripe: new Stripe("sk_test_webhook") };
 });
 
+vi.mock("server-only", () => ({}));
 vi.mock("@repo/database", () => ({ database }));
 vi.mock("@repo/payments", () => ({ stripe }));
 vi.mock("@repo/analytics/server", () => ({ analytics: undefined }));
@@ -25,7 +26,7 @@ vi.mock("@/env", () => ({ env: { STRIPE_WEBHOOK_SECRET: SECRET } }));
 
 let currentHeaders = new Headers();
 
-const { POST } = await import("../app/webhooks/payments/route");
+const { POST } = await import("../app/api/webhooks/payments/route");
 
 const send = (event: object, secret = SECRET) => {
   const payload = JSON.stringify(event);
@@ -36,7 +37,7 @@ const send = (event: object, secret = SECRET) => {
     }),
   });
   return POST(
-    new Request("http://localhost/webhooks/payments", {
+    new Request("http://localhost/api/webhooks/payments", {
       method: "POST",
       body: payload,
     })

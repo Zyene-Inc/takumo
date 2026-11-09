@@ -19,7 +19,7 @@ const database = vi.hoisted(() => ({
 }));
 
 // The real WorkOS client, so signature verification is exercised. Imported
-// from the auth package's copy, which pnpm doesn't link into apps/api.
+// from the auth package's copy, which pnpm doesn't link into apps/app.
 vi.mock("@repo/auth/server", async () => {
   const { WorkOS } = await import(
     "../../../packages/auth/node_modules/@workos-inc/node"
@@ -34,7 +34,7 @@ vi.mock("@repo/observability/log", () => ({
 }));
 vi.mock("@/env", () => ({ env: { WORKOS_WEBHOOK_SECRET: SECRET } }));
 
-const { POST } = await import("../app/webhooks/auth/route");
+const { POST } = await import("../app/api/webhooks/auth/route");
 
 // Signs the payload the way WorkOS does: "t=<ms>, v1=<hmac(t.payload)>".
 const signedRequest = (payload: object, secret = SECRET) => {
@@ -43,7 +43,7 @@ const signedRequest = (payload: object, secret = SECRET) => {
   const digest = createHmac("sha256", secret)
     .update(`${timestamp}.${body}`)
     .digest("hex");
-  return new Request("http://localhost/webhooks/auth", {
+  return new Request("http://localhost/api/webhooks/auth", {
     method: "POST",
     headers: { "WorkOS-Signature": `t=${timestamp}, v1=${digest}` },
     body,
@@ -59,7 +59,7 @@ describe("WorkOS webhook", () => {
 
   test("rejects a request without a signature", async () => {
     const response = await POST(
-      new Request("http://localhost/webhooks/auth", {
+      new Request("http://localhost/api/webhooks/auth", {
         method: "POST",
         body: "{}",
       })

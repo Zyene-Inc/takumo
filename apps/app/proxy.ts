@@ -10,8 +10,9 @@ const securityHeaders = securityMiddleware(noseconeOptions);
 // notifications (checked by their secret clientState), and a shop's IT person
 // lands on the admin-consent page without a Takumo account. Inbound email is
 // delivered by our mail receiver, checked by its HMAC signature; texts to the
-// shop number by Twilio, checked by its signature. Brief and alert links
-// carry their own signed token.
+// shop number by Twilio, checked by its signature. WorkOS and Stripe
+// webhooks are checked by their signatures. Brief and alert links carry
+// their own signed token.
 export default authMiddleware(() => securityHeaders(), {
   publicPaths: [
     "/sign-in",
@@ -26,6 +27,7 @@ export default authMiddleware(() => securityHeaders(), {
     "/email",
     "/api/email",
     "/api/twilio",
+    "/api/webhooks",
     "/api/connectors/outlook/notify",
     "/api/connectors/outlook/admin-consent",
   ],

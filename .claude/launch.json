@@ -9,7 +9,6 @@
         "dev",
         "--filter=app",
         "--filter=web",
-        "--filter=api",
         "--ui=stream"
       ],
       "port": 3000

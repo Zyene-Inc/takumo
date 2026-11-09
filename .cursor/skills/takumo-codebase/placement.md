@@ -22,8 +22,7 @@ Root files in `lib/` (`access.ts`, `billing.ts`, `onboarding.ts`, `cron.ts`, …
 
 | Path | Owns |
 |---|---|
-| `apps/app` | The product UI and its domain logic |
-| `apps/api` | Stripe, WorkOS webhooks, cron HTTP entry |
+| `apps/app` | The product UI, its domain logic, webhooks (Stripe, WorkOS) and cron routes |
 | `apps/web` | Marketing site |
 | `apps/email` | Template preview only |
 | `packages/database` | Prisma schema, migrations, `forOrg()`, demo seed |

@@ -8,7 +8,7 @@ import { env } from "@/env";
 
 // WorkOS → Takumo: keeps Org/Member rows and analytics in sync.
 // Configure in the WorkOS dashboard → Webhooks with this URL:
-//   https://<api-host>/webhooks/auth
+//   https://<app-host>/api/webhooks/auth
 // Events: user.*, organization.*, organization_membership.*
 
 const handleEvent = async (event: WebhookEvent) => {

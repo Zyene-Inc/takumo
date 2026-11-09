@@ -20,8 +20,7 @@ It never replaces the ERP and never asks anyone to retype ERP data.
 
 ```
 apps/
-  app/            The product (Next.js, :3000)
-  api/            Webhooks (Stripe, WorkOS) and cron jobs (:3002)
+  app/            The product, its webhooks (Stripe, WorkOS) and cron jobs (Next.js, :3000)
   web/            Marketing site (:3001)
   email/          Email template preview (:3003)
 packages/
@@ -48,14 +47,14 @@ Requirements: Node 22, pnpm 10, Python 3.12 with [uv](https://docs.astral.sh/uv/
 pnpm install
 (cd services/engine && uv sync)
 
-# Environment: copy each .env.example to .env.local (apps/app, apps/api, apps/web) and
+# Environment: copy each .env.example to .env.local (apps/app, apps/web) and
 # packages/database/.env, then fill in the keys. docs/DEPLOY.md lists every variable.
 
 pnpm migrate:deploy                 # apply migrations (enable the `vector` extension first)
 SEED_ORG_ID=org_xxx pnpm db:seed    # load the demo shop into your WorkOS organization
 
 pnpm dev:engine                     # engine on :8000
-pnpm dev                            # app :3000, web :3001, api :3002, email :3003
+pnpm dev                            # app :3000, web :3001, email :3003
 ```
 
 First sign-in lands on **Create your shop**, which creates the WorkOS organization; its `org_…`
@@ -75,4 +74,4 @@ id is your `SEED_ORG_ID`. WorkOS, Supabase and the other accounts are set up as 
 | `pnpm check:env <app> <file> --production` | Check an environment file before a deploy |
 
 CI runs all of these, plus the database tests on a fresh Postgres, on every pull request.
-Merging to `main` deploys the three Vercel projects.
+Merging to `main` deploys the two Vercel projects (`takumo-app` and `takumo-web`).
