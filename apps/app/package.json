@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:stripe": "stripe listen --forward-to localhost:3000/api/webhooks/payments",
     "build": "next build",
     "start": "next start",
     "analyze": "ANALYZE=true npm run build",
@@ -66,6 +67,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "dotenv": "16.6.1",
     "jsdom": "^28.1.0",
+    "stripe": "^20.4.1",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
     "vitest": "^5.0.5"

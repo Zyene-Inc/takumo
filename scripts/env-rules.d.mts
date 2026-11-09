@@ -9,7 +9,7 @@ export interface Service {
   recommended: Record<string, Rule>;
   required: Record<string, Rule>;
 }
-export const SERVICES: Record<"app" | "api", Service>;
+export const SERVICES: Record<"app" | "web", Service>;
 export const checkService: (
   service: Service,
   env: Record<string, string | undefined>,

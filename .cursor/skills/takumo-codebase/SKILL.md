@@ -33,7 +33,7 @@ Do not restructure the repo. Place new code in the existing layout.
 | Code used by more than one app | A package under `packages/` (`@repo/…`). |
 | Scheduling and pricing maths | `services/engine` (Python). The app never computes schedules or prices. |
 | Inbound SMTP | `services/mail`. |
-| Webhooks and cron | `apps/api`. |
+| Webhooks and cron | `apps/app/app/api/webhooks/` and `apps/app/app/api/cron/` (schedules in `apps/app/vercel.json`). |
 | Marketing site | `apps/web`. |
 | Email template preview | `apps/email`. Templates that send live in `packages/email`. |
 | Tests | `__tests__/` (`*.test.ts`). Database tests are `*.db.test.ts`. Engine tests are `services/engine/tests/`. |

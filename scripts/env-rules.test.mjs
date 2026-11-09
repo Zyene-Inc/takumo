@@ -8,15 +8,24 @@ describe("launch settings check", () => {
     DATABASE_URL: "postgres://x",
     WORKOS_API_KEY: "sk_live_x",
     WORKOS_CLIENT_ID: "client_x",
+    WORKOS_COOKIE_PASSWORD: "x".repeat(32),
     WORKOS_WEBHOOK_SECRET: "secret",
-    STRIPE_SECRET_KEY: "sk_live_x",
-    STRIPE_WEBHOOK_SECRET: "whsec_x",
+    NEXT_PUBLIC_WORKOS_REDIRECT_URI: "https://app.takumo.ai/callback",
     NEXT_PUBLIC_APP_URL: "https://app.takumo.ai",
     NEXT_PUBLIC_WEB_URL: "https://takumo.ai",
+    ANTHROPIC_API_KEY: "sk-ant-x",
+    ASK_DATABASE_URL: "postgres://reader",
+    ENGINE_URL: "https://engine.takumo.ai",
+    ENGINE_SECRET: "e".repeat(32),
+    CRON_SECRET: "c".repeat(16),
+    STRIPE_SECRET_KEY: "sk_live_x",
+    STRIPE_WEBHOOK_SECRET: "whsec_x",
+    CONNECTOR_ENCRYPTION_KEY: Buffer.alloc(32).toString("base64"),
+    ADMIN_USER_IDS: "user_1",
   };
 
-  test("a complete production API environment passes; optional ones are only noted", () => {
-    const problems = checkService(SERVICES.api, complete, { production: true });
+  test("a complete production app environment passes; optional ones are only noted", () => {
+    const problems = checkService(SERVICES.app, complete, { production: true });
     assert.deepEqual(
       problems.filter((p) => p.level === "required"),
       []
@@ -29,7 +38,7 @@ describe("launch settings check", () => {
 
   test("missing and malformed values are named, never shown", () => {
     const problems = checkService(
-      SERVICES.api,
+      SERVICES.app,
       {
         ...complete,
         STRIPE_SECRET_KEY: "sk_test_abc",
@@ -51,7 +60,7 @@ describe("launch settings check", () => {
   });
 
   test("test keys are fine outside production; the connector key must be 32 bytes", () => {
-    const local = checkService(SERVICES.api, {
+    const local = checkService(SERVICES.app, {
       ...complete,
       STRIPE_SECRET_KEY: "sk_test_x",
     });

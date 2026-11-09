@@ -40,6 +40,9 @@ export const SERVICES = {
         why: "sessions",
         check: (v) => (v.length < 32 ? "must be at least 32 characters" : null),
       },
+      WORKOS_WEBHOOK_SECRET: {
+        why: "shop and member sync (WorkOS webhook signatures)",
+      },
       NEXT_PUBLIC_WORKOS_REDIRECT_URI: {
         why: "sign-in callback",
         prod: (v) => (https(v) ? null : "must be https"),
@@ -83,6 +86,11 @@ export const SERVICES = {
         prod: (v) =>
           v.startsWith("sk_live_") ? null : "is not a live Stripe key",
       },
+      STRIPE_WEBHOOK_SECRET: {
+        why: "plan changes (Stripe webhook signatures)",
+        check: (v) =>
+          v.startsWith("whsec_") ? null : "doesn't look like a webhook secret",
+      },
       CONNECTOR_ENCRYPTION_KEY: {
         why: "QuickBooks and Gmail tokens",
         check: (v) => (base64Key32(v) ? null : "must be 32 bytes, base64"),
@@ -90,8 +98,8 @@ export const SERVICES = {
       ADMIN_USER_IDS: { why: "/admin for Takumo staff" },
     },
     recommended: {
-      NEXT_PUBLIC_POSTHOG_KEY: { why: "product analytics" },
-      NEXT_PUBLIC_POSTHOG_HOST: { why: "product analytics" },
+      NEXT_PUBLIC_POSTHOG_KEY: { why: "product and subscription analytics" },
+      NEXT_PUBLIC_POSTHOG_HOST: { why: "product and subscription analytics" },
       NEXT_PUBLIC_SENTRY_DSN: { why: "error reports" },
       AI_MONTHLY_BUDGET_USD: { why: "caps Claude spend per shop per month" },
       QUICKBOOKS_CLIENT_ID: { why: "QuickBooks connector" },
@@ -133,32 +141,6 @@ export const SERVICES = {
             ? null
             : 'must be "true" or "false" (anything else keeps it off)',
       },
-    },
-  },
-  api: {
-    label: "takumo-api (apps/api)",
-    required: {
-      DATABASE_URL: { why: "database" },
-      WORKOS_API_KEY: { why: "shop and member sync" },
-      WORKOS_CLIENT_ID: { why: "shop and member sync" },
-      WORKOS_WEBHOOK_SECRET: { why: "WorkOS webhook signatures" },
-      STRIPE_SECRET_KEY: {
-        why: "billing webhook",
-        prod: (v) =>
-          v.startsWith("sk_live_") ? null : "is not a live Stripe key",
-      },
-      STRIPE_WEBHOOK_SECRET: {
-        why: "Stripe webhook signatures",
-        check: (v) =>
-          v.startsWith("whsec_") ? null : "doesn't look like a webhook secret",
-      },
-      NEXT_PUBLIC_APP_URL: { why: "links" },
-      NEXT_PUBLIC_WEB_URL: { why: "needed to build" },
-    },
-    recommended: {
-      NEXT_PUBLIC_POSTHOG_KEY: { why: "subscription events" },
-      NEXT_PUBLIC_POSTHOG_HOST: { why: "subscription events" },
-      NEXT_PUBLIC_SENTRY_DSN: { why: "error reports" },
     },
   },
   web: {

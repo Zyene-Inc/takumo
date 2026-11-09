@@ -193,7 +193,7 @@ On main. Built so far: ownership, folders, departments and access checks (phase 
 
 **Known limits (phase 4)**
 - What was already streamed or emailed can't be taken back when access changes mid-answer; it's only not saved or reused. Text already sent to an AI service when a folder's AI setting is lowered can't be recalled; nothing more is sent and nothing it returns is kept.
-- A person removed in WorkOS loses access at once (their role is gone); their department places are removed by the WorkOS webhook (apps/api) and, as a backstop, daily (erp-health cron) and when the departments page opens.
+- A person removed in WorkOS loses access at once (their role is gone); their department places are removed by the WorkOS webhook (`/api/webhooks/auth`) and, as a backstop, daily (erp-health cron) and when the departments page opens.
 - A fact whose source document is permanently deleted stays owner-only until published; documents outside any folder keep company-wide reading (as before folders).
 - Names are unique among top-level folders and among documents in a folder, so being refused a name says that a hidden folder or document has that exact name (review G3-F6). Closing it would mean allowing duplicate names.
 - RFQ and PO folders stay company-wide, the same as the Quotes and Orders pages.

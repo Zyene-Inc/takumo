@@ -4,7 +4,7 @@
 //
 //   pnpm check:env app apps/app/.env.local      # a local env file
 //   pnpm check:env app .env.production --production  # from `vercel env pull`
-//   pnpm check:env api apps/api/.env.local
+//   pnpm check:env web apps/web/.env.local
 //
 // Exit code 1 when a required variable is missing or malformed.
 import { readFileSync } from "node:fs";

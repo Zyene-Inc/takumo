@@ -24,17 +24,17 @@ each service; this is the order and the checks. Tick each box.
       Turn on **point-in-time recovery** (Supabase → Database → Backups) and check that a daily
       backup exists.
 - [ ] **Engine** (Render): deploy the latest `main`; `curl https://<engine-url>/health` returns ok.
-- [ ] **Vercel**: `takumo-app`, `takumo-api`, `takumo-web` on `main`, with production domains
-      (`app.`, `api.`, the marketing site).
+- [ ] **Vercel**: `takumo-app` and `takumo-web` on `main`, with production domains
+      (`app.` and the marketing site).
 - [ ] **Environment**: pull each project's production variables (`vercel env pull`) and run
-      `pnpm check:env app apps/app/.env.production --production` (and `api`, `web`). Every required setting
+      `pnpm check:env app apps/app/.env.production --production` (and `web`). Every required setting
       must pass; delete the pulled file afterwards.
 - [ ] **Anthropic**: a production API key in its own workspace, a **monthly spend limit** in the
       Console (Settings → Limits), and `AI_MONTHLY_BUDGET_USD` on `takumo-app` as the per-shop
       cap. Watch *Claude spend this month* on `/admin` for the first weeks.
 - [ ] **Stripe live**: `STRIPE_SECRET_KEY=sk_live_… pnpm --filter @repo/payments setup-stripe`,
       the customer portal, and the live webhook (DEPLOY.md 5).
-- [ ] **WorkOS production** environment: redirect URIs, the webhook to `takumo-api`, and the
+- [ ] **WorkOS production** environment: redirect URIs, the webhook to `takumo-app` (`/api/webhooks/auth`), and the
       roles admin, planner, estimator, operator, member.
 - [ ] **Monitoring**: Sentry (`NEXT_PUBLIC_SENTRY_DSN`) with an alert on new issues; an uptime
       check (BetterStack) on `https://<app-url>/api/health` (503 when the database is down;
