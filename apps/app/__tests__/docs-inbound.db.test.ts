@@ -82,6 +82,11 @@ describe.skipIf(!TEST_DATABASE_URL)("documents by email (database)", () => {
   let database: Db["database"];
   let inbound: Process;
   let address = "";
+  /** The shop's Public folder, where emailed documents go. */
+  const publicFolder = async () => {
+    const { publicFolderId } = await import("../lib/library/folders");
+    return publicFolderId(orgId);
+  };
 
   beforeAll(async () => {
     process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -165,7 +170,8 @@ describe.skipIf(!TEST_DATABASE_URL)("documents by email (database)", () => {
       "user_sam",
       expect.objectContaining({ name: "Setup P-1001.pdf" }),
       expect.any(Function),
-      { via: "email", hidden: false }
+      // Into Public, as an upload with no folder chosen goes.
+      { via: "email", folderId: await publicFolder(), hidden: false }
     );
     const reply = emails.at(-1);
     expect(reply).toMatchObject({
@@ -204,8 +210,15 @@ describe.skipIf(!TEST_DATABASE_URL)("documents by email (database)", () => {
   };
 
   test("an operator can't replace a document by email, whatever the extension", async () => {
+    // Where emailed documents go: a clash there is what can't be replaced.
     const existing = await database.source.create({
-      data: { orgId, name: "SOP-12", type: "upload", profile: "document" },
+      data: {
+        orgId,
+        name: "SOP-12",
+        type: "upload",
+        profile: "document",
+        folderId: await publicFolder(),
+      },
     });
     ingestDocument.mockClear();
     const message = await sendFromSam(["SOP-12.pdf", "SOP-12.docx"]);

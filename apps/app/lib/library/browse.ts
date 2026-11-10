@@ -5,6 +5,7 @@ import { database } from "@repo/database";
 import { folderCapabilities, visibleSourceIds } from "./access";
 import { DEFAULT_FOLDERS, ensureDefaultFolders } from "./folders";
 import { allows } from "./guard";
+import { ensurePersonalFolder, personalOwnerOf } from "./personal";
 import { type DocumentRow, documentRows } from "./rows";
 import { confidentialEnabled } from "./stage";
 import { trustedViewer, type Viewer } from "./viewer";
@@ -35,6 +36,8 @@ export interface FolderView {
     parentId: string | null;
   } | null;
   folders: FolderCard[];
+  /** Inside the viewer's personal folder: nobody else can open it. */
+  personal: boolean;
   /** From the top down to (not including) this folder. */
   trail: { id: string; name: string }[];
 }
@@ -43,12 +46,26 @@ const DEFAULT_ORDER = new Map<string, number>(
   DEFAULT_FOLDERS.map((f, i) => [f.key, i])
 );
 
-const byDefaultThenName = (
-  a: { name: string; systemKey: string | null },
-  b: { name: string; systemKey: string | null }
-) => {
-  const ai = a.systemKey ? (DEFAULT_ORDER.get(a.systemKey) ?? 99) : 100;
-  const bi = b.systemKey ? (DEFAULT_ORDER.get(b.systemKey) ?? 99) : 100;
+/** Folders people browse (the virtual RFQ and PO folders are views). */
+const SHOWN_KINDS = ["normal", "system", "personal"];
+
+interface Sortable {
+  kind: string;
+  name: string;
+  systemKey: string | null;
+}
+
+const rank = (f: Sortable) => {
+  if (f.kind === "personal") {
+    return -1;
+  }
+  return f.systemKey ? (DEFAULT_ORDER.get(f.systemKey) ?? 99) : 100;
+};
+
+/** Your Personal folder first, then the default folders, then by name. */
+const byDefaultThenName = (a: Sortable, b: Sortable) => {
+  const ai = rank(a);
+  const bi = rank(b);
   return ai - bi || a.name.localeCompare(b.name);
 };
 
@@ -76,7 +93,7 @@ const childFolders = async (viewer: Viewer, parentId: string | null) => {
     where: {
       orgId,
       parentId,
-      kind: { in: ["normal", "system"] },
+      kind: { in: SHOWN_KINDS },
     },
     select: {
       id: true,
@@ -108,7 +125,10 @@ const childFolders = async (viewer: Viewer, parentId: string | null) => {
 
 /** The library's top-level folders, for its navigation (defaults first). */
 export const libraryNav = async (viewer: Viewer) => {
-  await ensureDefaultFolders(trustedViewer(viewer).orgId);
+  await Promise.all([
+    ensureDefaultFolders(trustedViewer(viewer).orgId),
+    ensurePersonalFolder(viewer),
+  ]);
   return childFolders(viewer, null);
 };
 
@@ -127,7 +147,7 @@ export const folderView = async (
   let trail: FolderView["trail"] = [];
   if (folderId) {
     const found = await database.folder.findFirst({
-      where: { id: folderId, orgId, kind: { in: ["normal", "system"] } },
+      where: { id: folderId, orgId, kind: { in: SHOWN_KINDS } },
       select: { id: true, name: true, kind: true, parentId: true, path: true },
     });
     if (!(found && access.sees(found.id))) {
@@ -158,8 +178,13 @@ export const folderView = async (
     documentRows(viewer, { folderId, deletedAt: null }),
   ]);
   const topLevelManager = isOwner || isAdmin || can(role, "knowledge:write");
+  // Only its person can see a personal folder, so it's theirs when shown.
+  const personal = Boolean(
+    folderId && (await personalOwnerOf(database, orgId, folderId))
+  );
   return {
     folder,
+    personal,
     trail,
     folders,
     documents,
@@ -175,7 +200,7 @@ export const folderChoices = async (viewer: Viewer) => {
   const { orgId } = trustedViewer(viewer);
   const access = await visibleFolders(viewer);
   const rows = await database.folder.findMany({
-    where: { orgId, kind: { in: ["normal", "system"] } },
+    where: { orgId, kind: { in: SHOWN_KINDS } },
     select: { id: true, name: true, path: true },
   });
   const names = new Map(rows.map((r) => [r.id, r.name]));

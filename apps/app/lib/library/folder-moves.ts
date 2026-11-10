@@ -14,6 +14,7 @@ import {
 import { authorizeDocument, authorizeFolder } from "./guard";
 import type { Outcome } from "./lifecycle";
 import { guardMove, modesOf, settleAiAfterMove } from "./moves";
+import { personalMoveProblem, personalOwnerOf } from "./personal";
 import { confidentialEnabled } from "./stage";
 import { trustedViewer, type Viewer } from "./viewer";
 
@@ -54,6 +55,13 @@ export const moveFolder = async (
   try {
     await database.$transaction(async (tx) => {
       const target = { folderId };
+      const personal = await personalMoveProblem(tx, viewer, {
+        fromFolder: folderId,
+        toFolder: parentId,
+      });
+      if (personal) {
+        throw new MoveRefused(personal);
+      }
       const modes = await modesOf(tx, orgId, target);
       const refused = await guardMove(tx, viewer, {
         target,
@@ -154,9 +162,18 @@ export const deleteFolder = async (
     ) {
       return "trash" as const;
     }
+    // Inside a personal folder they go back to it, never to the top where
+    // everyone could see them once restored.
+    const personal = await personalOwnerOf(tx, orgId, folderId);
+    const home = personal
+      ? await tx.folder.findFirst({
+          where: { orgId, personalUserId: personal },
+          select: { id: true },
+        })
+      : null;
     await tx.source.updateMany({
       where: { orgId, folderId, deletedAt: { not: null } },
-      data: { folderId: null },
+      data: { folderId: home?.id ?? null },
     });
     await tx.folder.delete({ where: { id: folderId } });
     await audit(
@@ -239,6 +256,18 @@ export const moveDocument = async (
         return false;
       }
       const target = { sourceId };
+      const uploader = await tx.source.findFirst({
+        where: { id: sourceId, orgId },
+        select: { uploadedBy: true },
+      });
+      const personal = await personalMoveProblem(tx, viewer, {
+        fromFolder: source.folderId,
+        toFolder: folderId,
+        uploadedBy: uploader?.uploadedBy ?? null,
+      });
+      if (personal) {
+        throw new MoveRefused(personal);
+      }
       const modes = await modesOf(tx, orgId, target);
       const refused = await guardMove(tx, viewer, {
         target,

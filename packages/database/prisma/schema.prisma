@@ -70,7 +70,7 @@ model Org {
   // Company Knowledge Hub rollout: off | library | confidential. Restricted
   // and confidential documents need "confidential", which stays unavailable
   // until every AI path enforces document permissions.
-  libraryStage         String    @default("off")
+  libraryStage         String    @default("library")
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -806,30 +806,35 @@ model DocumentPage {
 // ---------------------------------------------------------------------------
 
 model Folder {
-  id            String   @id @default(uuid())
-  orgId         String
-  parentId      String?
-  name          String
-  // normal | system (a default folder) | virtual_rfq | virtual_po
-  kind          String   @default("normal")
+  id             String    @id @default(uuid())
+  orgId          String
+  parentId       String?
+  name           String
+  // normal | system (a default folder) | personal | virtual_rfq | virtual_po
+  kind           String    @default("normal")
   // Which default folder this is (sops, engineering, hr, finance, …).
-  systemKey     String?
+  systemKey      String?
   // Ancestor folder IDs from the top, ending with this folder's own ID.
   // Maintained by a trigger; never written by the app.
-  path          String[] @default([])
-  depth         Int      @default(1)
+  path           String[]  @default([])
+  depth          Int       @default(1)
   // false: grants on the folders above don't apply here ("Restricted").
-  inheritAccess Boolean  @default(true)
+  inheritAccess  Boolean   @default(true)
   // Confidential folders (HR, Finance): admins get no automatic access, and
   // everyone/role grants may only allow uploading. Applies to subfolders.
-  confidential  Boolean  @default(false)
+  confidential   Boolean   @default(false)
   // What may be sent to outside AI services for documents here: off |
   // search | full. The most restrictive setting on the folder's path applies
   // (library.folder_ai_modes); documents outside any folder are "full".
-  aiMode        String   @default("full")
-  createdBy     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  aiMode         String    @default("full")
+  // A personal folder's person (kind "personal"): only they can open it or
+  // anything under it, not even the owner (library.personal_folders).
+  personalUserId String?
+  // Set when that person leaves the shop; deleted for good after this.
+  deleteAfter    DateTime?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   org      Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   parent   Folder?       @relation("FolderTree", fields: [parentId], references: [id], onDelete: NoAction)

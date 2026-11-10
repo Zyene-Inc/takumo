@@ -1,4 +1,4 @@
-import { FolderIcon } from "lucide-react";
+import { FolderIcon, FolderLockIcon } from "lucide-react";
 import Link from "next/link";
 import type { FolderCard } from "@/lib/library/browse";
 import { FolderMenu } from "./folder-dialogs";
@@ -25,13 +25,18 @@ export const FolderGrid = ({
         className="flex items-center gap-3 rounded-lg border p-3 focus-within:ring-2 focus-within:ring-ring"
         key={f.id}
       >
-        <FolderIcon className="size-5 shrink-0 text-muted-foreground" />
+        {f.kind === "personal" ? (
+          <FolderLockIcon className="size-5 shrink-0 text-primary" />
+        ) : (
+          <FolderIcon className="size-5 shrink-0 text-muted-foreground" />
+        )}
         <Link
           className="min-w-0 flex-1 outline-none"
           href={`/library/f/${f.id}`}
         >
           <span className="block truncate font-medium">{f.name}</span>
           <span className="text-muted-foreground text-xs">
+            {f.kind === "personal" && "Only you · "}
             {count(f.documents, "document", "documents")}
             {f.folders > 0 && ` · ${count(f.folders, "folder", "folders")}`}
           </span>

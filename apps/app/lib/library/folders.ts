@@ -28,7 +28,8 @@ export const MAX_DEPTH = 20;
 
 /** The library's default folders, made the first time a shop opens it. */
 export const DEFAULT_FOLDERS = [
-  { key: "general", name: "General" },
+  // Everything not filed elsewhere (it was "General" before).
+  { key: "public", name: "Public" },
   { key: "sops", name: "SOPs" },
   { key: "engineering", name: "Engineering" },
 ] as const;
@@ -94,7 +95,7 @@ const INSERT_DEFAULT_SQL = `
   returning id`;
 
 /**
- * Make the default folders (General, SOPs, Engineering) if this shop doesn't
+ * Make the default folders (Public, SOPs, Engineering) if this shop doesn't
  * have them yet. Safe to run on every visit and at the same time: a folder
  * that exists (or a custom one with that name) is left alone.
  */
@@ -119,6 +120,20 @@ export const ensureDefaultFolders = async (orgId: string) => {
       }
     });
   }
+};
+
+/**
+ * The shop's Public folder, where documents go when no folder is chosen
+ * (made with the other default folders). Null only when a shop's own
+ * top-level folder called Public kept it from being made.
+ */
+export const publicFolderId = async (orgId: string) => {
+  await ensureDefaultFolders(orgId);
+  const folder = await database.folder.findFirst({
+    where: { orgId, systemKey: "public" },
+    select: { id: true },
+  });
+  return folder?.id ?? null;
 };
 
 const TAKEN = (name: string) =>

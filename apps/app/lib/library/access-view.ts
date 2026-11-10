@@ -12,6 +12,7 @@ import {
 } from "./ai-mode";
 import { has, onlyUpload, PRESETS } from "./capabilities";
 import { allows } from "./guard";
+import { personalOwnerOf } from "./personal";
 import { confidentialEnabled } from "./stage";
 import { trustedViewer, type Viewer } from "./viewer";
 
@@ -302,6 +303,19 @@ export const accessView = async (
   const check = await requireCapability(viewer, target, "view");
   const item = check.ok ? await itemOf(orgId, target) : null;
   if (!(check.ok && item)) {
+    return null;
+  }
+  // A personal folder has nobody else to show and nothing to share.
+  const folderId =
+    "folderId" in target
+      ? target.folderId
+      : ((
+          await database.source.findFirst({
+            where: { id: target.sourceId, orgId },
+            select: { folderId: true },
+          })
+        )?.folderId ?? null);
+  if (await personalOwnerOf(database, orgId, folderId)) {
     return null;
   }
   const mine = check.access;

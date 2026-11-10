@@ -64,7 +64,7 @@ Mark whether you agree with the answer; that's how we check Takumo against your 
     body: `**Ask Takumo** answers questions about your orders, machines, parts, quotes, schedule, documents and shop knowledge: "Which customers' margins dropped this quarter?", "Can we take 200 of P-1001 by Friday?", "How do we hold P-1001 on the HAAS?"
 
 - **Every number has a source.** The small numbers link to the order, part, quote, query or document page it came from. If Takumo doesn't have the data, it says so instead of guessing.
-- **Upload documents** (setup sheets, SOPs, quality manuals; PDF, Word or text) under *Knowledge → Sources* so Takumo can search them.
+- **Upload documents** (setup sheets, SOPs, quality manuals; PDF, Word or text) under *Knowledge → Company files* so Takumo can search them. Pick a folder; without one they go to *Public*, which everyone in the shop can open. Your *Personal* folder is only for you: nobody else can open it, not even the shop's owner.
 - **Tell it what you know.** "Setup on the OKUMA for P-2001 is really two hours" becomes a fact for a supervisor to review; see [Tribal knowledge](/help/knowledge).
 - **History** keeps past conversations; open one to carry on.`,
   },

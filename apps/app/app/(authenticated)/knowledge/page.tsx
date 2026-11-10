@@ -4,7 +4,7 @@ import { Button } from "@repo/design-system/components/ui/button";
 import { FileTextIcon, MessageSquareIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getAccess } from "@/lib/access";
 import { DOC_TYPE_LABEL } from "@/lib/knowledge/understand";
 import { visibleSourceIds } from "@/lib/library/access";
@@ -47,6 +47,10 @@ const KnowledgePage = async () => {
   const viewer = await resolveViewer();
   if (!(orgId && viewer && viewer.orgId === orgId)) {
     notFound();
+  }
+  // Documents live in Company Knowledge, by folder, once the shop uses it.
+  if (await libraryEnabled(orgId)) {
+    redirect("/library");
   }
   // Documents in the Trash aren't listed, nor any this person may not view.
   const viewable = await visibleSourceIds(viewer);
@@ -92,15 +96,6 @@ const KnowledgePage = async () => {
         </div>
       </Header>
       <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
-        {(await libraryEnabled(orgId)) && (
-          <p className="max-w-3xl rounded-lg border bg-muted/40 p-3 text-sm">
-            Your company's documents now live in{" "}
-            <Link className="font-medium underline" href="/library">
-              Company Knowledge
-            </Link>
-            , with folders, versions and the original files.
-          </p>
-        )}
         <p className="max-w-3xl text-muted-foreground text-sm">
           Documents Ask Takumo can search and cite: how jobs are set up, quality
           rules, customer requirements, company policies. Anyone in the company

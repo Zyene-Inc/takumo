@@ -615,7 +615,10 @@ describe.skipIf(!TEST_DATABASE_URL)("library documents (database)", () => {
       );
       expect(home).toContain("All files");
       expect(home).toContain("Setup sheets");
-      expect(home).toContain("General");
+      expect(home).toContain("Public");
+      // Their own Personal folder, marked as theirs alone.
+      expect(home).toContain("Personal");
+      expect(home).toContain("Only you");
       const inFolder = await render(async () =>
         (
           await import("../app/(authenticated)/library/f/[folderId]/page")

@@ -6,6 +6,7 @@ import {
   ClipboardCheckIcon,
   CogIcon,
   FileInputIcon,
+  FolderLockIcon,
   FoldersIcon,
   GaugeIcon,
   HistoryIcon,
@@ -60,6 +61,7 @@ export const TOP_ITEMS: NavItem[] = [
 
 const LIBRARY_ITEMS: NavItem[] = [
   { title: "Company files", url: "/library", icon: FoldersIcon },
+  { title: "Personal", url: "/library/personal", icon: FolderLockIcon },
   { title: "My uploads", url: "/library/mine", icon: UploadIcon },
   { title: "Trash", url: "/library/trash", icon: Trash2Icon },
 ];
@@ -117,7 +119,10 @@ export const sectionsFor = (libraryEnabled: boolean): NavSection[] => [
     items: [
       ...(libraryEnabled ? LIBRARY_ITEMS : []),
       { title: "Brain", url: "/knowledge/brain", icon: BrainIcon },
-      { title: "Sources", url: "/knowledge", icon: BookOpenIcon },
+      // The flat list, for shops not on the library (it opens the library otherwise).
+      ...(libraryEnabled
+        ? []
+        : [{ title: "Sources", url: "/knowledge", icon: BookOpenIcon }]),
       { title: "Facts", url: "/knowledge/facts", icon: ListChecksIcon },
       { title: "Voice notes", url: "/knowledge/notes", icon: MicIcon },
       {

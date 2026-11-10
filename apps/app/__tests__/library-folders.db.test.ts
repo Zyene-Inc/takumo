@@ -124,13 +124,23 @@ describe.skipIf(!TEST_DATABASE_URL)("library folders (database)", () => {
       const viewer = await as("operator");
       await Promise.all([1, 2, 3].map(() => browse.libraryNav(viewer)));
       const nav = await browse.libraryNav(viewer);
+      // Their own Personal folder first, then the shared defaults.
       expect(nav.map((f) => f.name)).toEqual([
-        "General",
+        "Personal",
+        "Public",
         "SOPs",
         "Engineering",
       ]);
-      expect(await database.folder.count({ where: { orgId } })).toBe(3);
-      // Everyone can see and add to them.
+      expect(
+        await database.folder.count({ where: { orgId, kind: "system" } })
+      ).toBe(3);
+      // One Personal folder for this person, however many visits race.
+      expect(
+        await database.folder.count({
+          where: { orgId, personalUserId: viewer.userId },
+        })
+      ).toBe(1);
+      // Everyone can see and add to the shared ones.
       const view = await browse.folderView(viewer, nav[1].id);
       expect(view?.canAdd).toBe(true);
     });
