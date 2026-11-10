@@ -1,3 +1,4 @@
+import { LockIcon } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { accessView } from "@/lib/library/access-view";
@@ -66,6 +67,17 @@ const FolderPage = async ({
       folders={folders}
       title={folder.name}
     >
+      {view.personal && (
+        <p className="flex max-w-3xl items-start gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sky-900 text-sm">
+          <LockIcon className="mt-0.5 size-4 shrink-0" />
+          <span>
+            Only you can see this folder and what's in it, not even the shop's
+            owner. Nothing here is shared or turned into shop facts; Ask Takumo
+            can search it for you alone. If you leave the shop, it's deleted 30
+            days later.
+          </span>
+        </p>
+      )}
       {access && <AccessBadges view={access} />}
       {view.folders.length > 0 && (
         <FolderGrid

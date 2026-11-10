@@ -11,8 +11,10 @@ import { track } from "../analytics";
 import { featureProblem } from "../billing";
 import { DocumentExistsError, documentNamed } from "../knowledge/documents";
 import { ingestDocument } from "../knowledge/ingest";
-import { authorizeDocument } from "../library/guard";
+import { publicFolderId } from "../library/folders";
+import { authorizeDocument, authorizeFolder } from "../library/guard";
 import { DocumentProblem } from "../library/problems";
+import { libraryEnabled } from "../library/stage";
 import { viewerForMember } from "../library/viewer";
 import { parseEmail } from "../quotes/email";
 import { replySubject, threadHeaders } from "./ask-email";
@@ -63,6 +65,20 @@ const failureText = (error: unknown) => {
     : "Takumo couldn't read it just now. Upload it on the Knowledge page instead.";
 };
 
+/** Where an emailed document goes: Public, if the sender may add to it. */
+const emailFolder = async (orgId: string, userId: string) => {
+  if (!(await libraryEnabled(orgId))) {
+    return null;
+  }
+  const folderId = await publicFolderId(orgId);
+  const viewer = folderId ? await viewerForMember(orgId, userId) : null;
+  return folderId &&
+    viewer &&
+    (await authorizeFolder(viewer, folderId, "upload")).ok
+    ? folderId
+    : null;
+};
+
 /** Read one document; never throws. */
 const readOne = async (
   orgId: string,
@@ -73,7 +89,10 @@ const readOne = async (
   // the document is created, in case one arrived in the meantime. A
   // document the sender can't see is never revealed: theirs is stored as
   // "Name (2)" instead.
-  const existing = await documentNamed(orgId, file.name);
+  // Into Public, like an upload with no folder chosen, when the sender may
+  // add documents there; outside any folder while the library is off.
+  const folderId = await emailFolder(orgId, userId);
+  const existing = await documentNamed(orgId, file.name, folderId);
   let hidden = false;
   if (existing) {
     const viewer = await viewerForMember(orgId, userId);
@@ -106,7 +125,7 @@ const readOne = async (
           };
         }
       },
-      { via: "email", hidden }
+      { via: "email", folderId, hidden }
     );
   } catch (error) {
     log.warn("Reading an emailed document failed", {

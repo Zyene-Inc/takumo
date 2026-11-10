@@ -11,6 +11,7 @@ import {
   covers,
   PRESETS,
 } from "./capabilities";
+import { NOT_SHAREABLE, personalOwnerOf } from "./personal";
 import { confidentialEnabled, NOT_YET } from "./stage";
 import { trustedViewer, type Viewer } from "./viewer";
 
@@ -50,6 +51,19 @@ export const managing = async (
       ok: false,
       error: check.reason === "not_found" ? NOT_FOUND : NOT_MANAGER,
     };
+  }
+  // Nothing in a personal folder is shared: its person alone may open it.
+  const folderId =
+    "folderId" in target
+      ? target.folderId
+      : ((
+          await database.source.findFirst({
+            where: { id: target.sourceId, orgId: viewer.orgId },
+            select: { folderId: true },
+          })
+        )?.folderId ?? null);
+  if (await personalOwnerOf(database, viewer.orgId, folderId)) {
+    return { ok: false, error: NOT_SHAREABLE };
   }
   return check;
 };

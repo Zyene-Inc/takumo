@@ -11,6 +11,9 @@ import { env } from "@/env";
 //   https://<app-host>/api/webhooks/auth
 // Events: user.*, organization.*, organization_membership.*
 
+/** When a leaver's Personal folder is deleted (lib/library/personal.ts). */
+const leaverDeadline = () => new Date(Date.now() + 30 * 86_400_000);
+
 const handleEvent = async (event: WebhookEvent) => {
   switch (event.event) {
     case "user.created":
@@ -103,7 +106,9 @@ const handleEvent = async (event: WebhookEvent) => {
         userId: membership.userId,
       };
       // Someone who leaves loses their departments and personal grants
-      // together, so rejoining later doesn't bring old access back.
+      // together, so rejoining later doesn't bring old access back. Their
+      // Personal folder is deleted for good after the grace period (nobody
+      // else can open it meanwhile); back in time, they keep it.
       await database.$transaction([
         database.member.deleteMany({ where: who }),
         database.departmentMember.deleteMany({ where: who }),
@@ -113,6 +118,14 @@ const handleEvent = async (event: WebhookEvent) => {
             principalType: "user",
             principalId: who.userId,
           },
+        }),
+        database.folder.updateMany({
+          where: {
+            orgId: who.orgId,
+            personalUserId: who.userId,
+            deleteAfter: null,
+          },
+          data: { deleteAfter: leaverDeadline() },
         }),
       ]);
       analytics?.capture({

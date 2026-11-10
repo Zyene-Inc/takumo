@@ -5,6 +5,7 @@ import {
   ClockIcon,
   FileInputIcon,
   FolderIcon,
+  FolderLockIcon,
   FoldersIcon,
   ReceiptTextIcon,
   Trash2Icon,
@@ -62,7 +63,7 @@ export const LibraryNav = ({ folders }: { folders: FolderCard[] }) => {
   const folderItems: Item[] = folders.map((f) => ({
     href: `/library/f/${f.id}`,
     label: f.name,
-    icon: FolderIcon,
+    icon: f.kind === "personal" ? FolderLockIcon : FolderIcon,
   }));
   const groups: [string, Item[]][] = [
     ["Views", VIEWS],

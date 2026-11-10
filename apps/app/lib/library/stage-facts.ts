@@ -10,6 +10,7 @@ import {
 } from "../knowledge/steps";
 import { dropIfLowered } from "./ai-mode";
 import { finishVersion, type Lease, renewLease, saveProgress } from "./lease";
+import { isPersonalDocument } from "./personal";
 import {
   type Checkpoint,
   checkpointOf,
@@ -19,6 +20,15 @@ import {
   type Run,
   textOf,
 } from "./stage-run";
+
+/**
+ * Facts are the shop's knowledge: none come from a personal folder, whose
+ * documents only their person may see (Ask Takumo still searches them for
+ * that person). Checked again before each one, in case it moved there.
+ */
+const mayPropose = async (lease: Lease, aiAllowed: boolean) =>
+  aiAllowed &&
+  !(await isPersonalDocument(lease.version.orgId, lease.version.sourceId));
 
 const readFactsOnce = async (
   lease: Lease,
@@ -71,18 +81,19 @@ export const facts = async ({ lease, emit, checkTime }: Run) => {
   };
   // Facts are read by an AI service: only while the setting allows it.
   const full = await mayUseAi(lease);
+  const proposing = await mayPropose(lease, full);
   // A newer version went live meanwhile: its own facts are what count.
-  if (current && full && !checkpoint.facts && !checkpoint.factsError) {
+  if (current && proposing && !checkpoint.facts && !checkpoint.factsError) {
     checkpoint = await readFactsOnce(lease, checkpoint, emit);
     await saveProgress(lease, { stage: "facts", checkpoint });
   }
-  const found = current && full ? (checkpoint.facts ?? []) : [];
+  const found = current && proposing ? (checkpoint.facts ?? []) : [];
   for (let i = checkpoint.factsDone ?? 0; i < found.length; i += 1) {
     // A run that lost its lease proposes nothing more, nor one whose
     // folder's AI setting was lowered meanwhile (any fact that slips
     // through stays hidden: library.fact_access needs "full").
     await renewLease(lease);
-    if (!(await mayUseAi(lease))) {
+    if (!(await mayPropose(lease, await mayUseAi(lease)))) {
       break;
     }
     await proposeOne(

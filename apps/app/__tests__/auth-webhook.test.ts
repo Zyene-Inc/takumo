@@ -15,6 +15,7 @@ const database = vi.hoisted(() => ({
   },
   departmentMember: { deleteMany: vi.fn() },
   accessGrant: { deleteMany: vi.fn() },
+  folder: { updateMany: vi.fn() },
   $transaction: vi.fn(),
 }));
 
@@ -166,8 +167,16 @@ describe("WorkOS webhook", () => {
     expect(database.accessGrant.deleteMany).toHaveBeenCalledWith({
       where: { orgId: "org_123", principalType: "user", principalId: "user_1" },
     });
-    // All three in one transaction.
+    // Their Personal folder is set to be deleted after the grace period.
+    expect(database.folder.updateMany).toHaveBeenCalledWith({
+      where: { orgId: "org_123", personalUserId: "user_1", deleteAfter: null },
+      data: { deleteAfter: expect.any(Date) },
+    });
+    const deadline = database.folder.updateMany.mock.calls[0][0].data
+      .deleteAfter as Date;
+    expect(Math.round((deadline.getTime() - Date.now()) / 86_400_000)).toBe(30);
+    // All four in one transaction.
     expect(database.$transaction).toHaveBeenCalledTimes(1);
-    expect(database.$transaction.mock.calls[0]?.[0]).toHaveLength(3);
+    expect(database.$transaction.mock.calls[0]?.[0]).toHaveLength(4);
   });
 });

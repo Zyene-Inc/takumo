@@ -7,6 +7,7 @@ import { streamSteps } from "@/lib/knowledge/stream";
 import { fileFrom } from "@/lib/knowledge/upload-file";
 import { requireCapability } from "@/lib/library/access";
 import { checkDocumentFile } from "@/lib/library/files";
+import { publicFolderId } from "@/lib/library/folders";
 import { authorizeDocument, authorizeFolder } from "@/lib/library/guard";
 import { libraryEnabled } from "@/lib/library/stage";
 import { resolveViewer, type Viewer } from "@/lib/library/viewer";
@@ -53,19 +54,28 @@ const nameTaken = async (
   );
 };
 
-/** The folder to upload into, when one is chosen (the library). */
+/**
+ * The folder to upload into: the one chosen, or Public when none is (the
+ * library). Outside any folder only while the shop doesn't use the library.
+ */
 const targetFolder = async (
   orgId: string,
   viewer: Viewer | null,
   raw: FormDataEntryValue | null
 ): Promise<{ ok: true; folderId: string | null } | Response> => {
-  if (raw === null || raw === "") {
-    return { ok: true, folderId: null };
+  const enabled = Boolean(viewer) && (await libraryEnabled(orgId));
+  let chosen = raw;
+  if (chosen === null || chosen === "") {
+    const fallback = enabled ? await publicFolderId(orgId) : null;
+    if (!fallback) {
+      return { ok: true, folderId: null };
+    }
+    chosen = fallback;
   }
-  if (!(viewer && typeof raw === "string" && (await libraryEnabled(orgId)))) {
+  if (!(viewer && typeof chosen === "string" && enabled)) {
     return problem(404, "That folder doesn't exist.");
   }
-  const allowed = await authorizeFolder(viewer, raw, "upload");
+  const allowed = await authorizeFolder(viewer, chosen, "upload");
   if (!allowed.ok) {
     return problem(allowed.status, allowed.error);
   }

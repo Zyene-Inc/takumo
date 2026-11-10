@@ -1,10 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 import { database } from "@repo/database";
+import { log } from "@repo/observability/log";
 import { env } from "@/env";
 import { PROVIDER_NAME, type Provider } from "@/lib/connectors/config";
 import { healthLines, lateReports } from "@/lib/erp/health";
 import { reportLink } from "@/lib/erp/link";
 import { pruneDepartedMembers } from "@/lib/library/departments";
+import { sweepPersonalFolders } from "@/lib/library/personal-sweep";
 import { notifyAdmins } from "@/lib/notify";
 import { markAllEnteredFromErp } from "@/lib/orders/settle";
 import { removeOldFiltered } from "@/lib/quotes/screening";
@@ -54,6 +56,11 @@ export const GET = async (request: Request) => {
     await pruneDepartedMembers(orgId).catch(() => null);
   }
   await removeOldFiltered(now.getTime()).catch(() => 0);
+  // Leavers' Personal folders: marked if the webhook missed it, deleted for
+  // good once the grace period is over.
+  await sweepPersonalFolders(now).catch((error) =>
+    log.warn("Personal folder sweep failed", { error: String(error) })
+  );
   const [reports, broken, renames] = await Promise.all([
     database.erpReport.findMany({
       where: { status: "active" },
